@@ -1,0 +1,6 @@
+{
+  "name": "PT BKWA Maintenance System",
+  "description": "Sistem Informasi & Manajemen Maintenance Unit PT Batu Kali Welang Ampuh dengan role Admin Developer dan Karyawan, modul registrasi asset unit, serta arsitektur modular earth tone.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
