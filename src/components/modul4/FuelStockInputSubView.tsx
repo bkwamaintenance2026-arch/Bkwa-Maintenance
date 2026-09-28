@@ -348,13 +348,13 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                       </span>
                     </td>
                     <td className="py-2.5 px-3 font-mono text-stone-300">
-                      {tx.flowmeterStart.toLocaleString('id-ID')} → {tx.flowmeterEnd.toLocaleString('id-ID')}
+                      {(tx.flowmeterStart ?? 0).toLocaleString('id-ID')} → {(tx.flowmeterEnd ?? 0).toLocaleString('id-ID')}
                     </td>
                     <td className="py-2.5 px-3 font-mono font-bold text-stone-200 text-right">
-                      {tx.qtySupplier.toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">Ltr</span>
+                      {(tx.qtySupplier ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">Ltr</span>
                     </td>
                     <td className="py-2.5 px-3 font-mono font-bold text-emerald-400 text-right">
-                      {tx.actualQtyFlowmeter.toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">Ltr</span>
+                      {(tx.actualQtyFlowmeter ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">Ltr</span>
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <span
@@ -432,14 +432,14 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                     </div>
                   </td>
                   <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
-                    <div>Start: {item.flowmeterStart.toLocaleString('id-ID')}</div>
-                    <div>End: {item.flowmeterEnd.toLocaleString('id-ID')}</div>
+                    <div>Start: {(item.flowmeterStart ?? 0).toLocaleString('id-ID')}</div>
+                    <div>End: {(item.flowmeterEnd ?? 0).toLocaleString('id-ID')}</div>
                   </td>
                   <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
-                    {item.qtySupplier.toLocaleString('id-ID')} Ltr
+                    {(item.qtySupplier ?? 0).toLocaleString('id-ID')} Ltr
                   </td>
                   <td className="py-3 px-3 font-mono font-bold text-emerald-400 text-right">
-                    {item.actualQtyFlowmeter.toLocaleString('id-ID')} Ltr
+                    {(item.actualQtyFlowmeter ?? 0).toLocaleString('id-ID')} Ltr
                   </td>
                   <td className="py-3 px-3">
                     <div className="text-stone-200 font-semibold">{item.picFogName}</div>

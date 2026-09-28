@@ -12,6 +12,7 @@ import {
   FuelDistributionRecord,
   OilDistributionRecord,
   InventoryPeriodBalance,
+  P2HRecord,
 } from './types';
 import { 
   getCurrentUser, 
@@ -50,6 +51,11 @@ import {
   saveInventoryPeriodBalance,
   getAvailableOilTypes,
   addCustomOilType,
+  getAllUsers,
+  getAllP2HRecords,
+  saveP2HRecord,
+  deleteP2HRecord,
+  canUserViewModule,
 } from './utils/storage';
 import { INITIAL_MODULES } from './data/mockUnits';
 import { Navbar } from './components/Navbar';
@@ -57,13 +63,20 @@ import { ModuleTabs } from './components/ModuleTabs';
 import { AssetRegistrationView } from './components/modul1/AssetRegistrationView';
 import { ManpowerView } from './components/modul2/ManpowerView';
 import { MaintenanceDatabaseView } from './components/modul3/MaintenanceDatabaseView';
-import { InventoryManagementView } from './components/modul4/InventoryManagementView';
+import { InventoryManagementView as FOGInventoryView } from './components/modul4/InventoryManagementView';
+import { InventoryManagementView as SparePartInventoryView } from './components/modul6/InventoryManagementView';
+import { DivisiOperationView } from './components/modul5/DivisiOperationView';
+import { TyreManagementView } from './components/modul7/TyreManagementView';
+import { MenuUtamaLauncher } from './components/MenuUtamaLauncher';
 import { LoginModal } from './components/LoginModal';
 import { BkwaLogo } from './components/BkwaLogo';
+import { AccessControlModal } from './components/admin/AccessControlModal';
+import { GoogleSheetsSyncModal } from './components/admin/GoogleSheetsSyncModal';
+import { getSavedSpreadsheetId } from './services/googleSheets';
 
 export default function App() {
   const [currentUser, setLocalCurrentUser] = useState<UserAccount | null>(null);
-  const [activeModuleId, setActiveModuleId] = useState<number>(1);
+  const [activeModuleId, setActiveModuleId] = useState<number>(0);
   const [modules] = useState<ModuleInfo[]>(INITIAL_MODULES);
   
   // Asset units list (Modul 1)
@@ -82,12 +95,16 @@ export default function App() {
   const [oilStockInputs, setOilStockInputs] = useState<OilStockInputRecord[]>([]);
   const [fuelDistributions, setFuelDistributions] = useState<FuelDistributionRecord[]>([]);
   const [oilDistributions, setOilDistributions] = useState<OilDistributionRecord[]>([]);
-  const [periodBalance, setPeriodBalance] = useState<InventoryPeriodBalance>({
-    sisaPeriodeLaluFuelTangki: 12000,
-    sisaPeriodeLaluFuelFT: 2500,
-    sisaPeriodeLaluOli: {}
-  });
+  const [periodBalance, setPeriodBalance] = useState<InventoryPeriodBalance>(() => getInventoryPeriodBalance());
   const [availableOilTypes, setAvailableOilTypes] = useState<string[]>([]);
+  
+  // Modul 5: P2H Records State
+  const [p2hRecords, setP2HRecords] = useState<P2HRecord[]>([]);
+
+  const [usersList, setUsersList] = useState<UserAccount[]>([]);
+  const [isAccessControlOpen, setIsAccessControlOpen] = useState<boolean>(false);
+  const [isGoogleSheetsSyncOpen, setIsGoogleSheetsSyncOpen] = useState<boolean>(false);
+  const [originalAdminUser, setOriginalAdminUser] = useState<UserAccount | null>(null);
 
   // Toast notification
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -120,11 +137,14 @@ export default function App() {
     setOilDistributions(getAllOilDistributions());
     setPeriodBalance(getInventoryPeriodBalance());
     setAvailableOilTypes(getAvailableOilTypes());
+    setP2HRecords(getAllP2HRecords());
+    setUsersList(getAllUsers());
   };
 
   const handleLoginSuccess = (user: UserAccount) => {
     setLocalCurrentUser(user);
     refreshAllData();
+    setActiveModuleId(0); // Buka Menu Utama Launcher
     const greetingName = user.role === 'ADMIN' ? 'Developer' : (user.fullName || user.username);
     showToast(`Selamat datang, ${greetingName}!`, 'success');
   };
@@ -132,13 +152,44 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setLocalCurrentUser(null);
+    setOriginalAdminUser(null);
+    setActiveModuleId(0);
     showToast('Anda telah keluar dari sistem.', 'info');
+  };
+
+  // Simulasi Pengguna oleh Developer
+  const handleSwitchUser = (targetUser: UserAccount) => {
+    if (currentUser?.role === 'ADMIN') {
+      setOriginalAdminUser(currentUser);
+      setLocalCurrentUser(targetUser);
+      setCurrentUser(targetUser);
+      setIsAccessControlOpen(false);
+      showToast(`Beralih tampilan simulasi: ${targetUser.fullName || targetUser.username}`, 'info');
+    }
+  };
+
+  const handleExitSimulation = () => {
+    if (originalAdminUser) {
+      setLocalCurrentUser(originalAdminUser);
+      setCurrentUser(originalAdminUser);
+      setOriginalAdminUser(null);
+      showToast('Kembali ke akun Developer utama.', 'success');
+    }
   };
 
   // Tombol Kembali ke Menu Home / Menu Utama
   const handleGoHome = () => {
-    setActiveModuleId(1);
-    showToast('Kembali ke Menu Utama (Modul 1: Registrasi Asset)', 'info');
+    setActiveModuleId(0);
+    showToast('Kembali ke Menu Utama', 'info');
+  };
+
+  // Navigasi modul dengan validasi hak akses RBAC
+  const handleSelectModule = (moduleId: number) => {
+    if (!canUserViewModule(currentUser, moduleId)) {
+      showToast('Akses dibatasi untuk tingkatan akun Anda pada modul ini.', 'error');
+      return;
+    }
+    setActiveModuleId(moduleId);
   };
 
   // =================== MODUL 1: REGISTRASI ASSET ===================
@@ -210,6 +261,8 @@ export default function App() {
     id: string,
     updateData: {
       startJob?: string;
+      jamStart?: string;
+      jamFinish?: string;
       detailKerusakan?: string;
       progress?: import('./types').BreakdownProgressOption | string;
       statusUnit?: import('./types').BreakdownStatusUnitOption | string;
@@ -420,6 +473,32 @@ export default function App() {
     }
   };
 
+  // =================== MODUL 5: INPUT FORM P2H UNIT ===================
+  const handleSaveP2H = (
+    data: Omit<P2HRecord, 'id' | 'noP2H' | 'createdAt' | 'updatedAt'>,
+    existingId?: string | null
+  ) => {
+    const res = saveP2HRecord(data, existingId);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleDeleteP2H = (id: string) => {
+    const res = deleteP2HRecord(id);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
   // If user is not logged in, render the LoginModal (Tampilan awal tetap dipertahankan utuh)
   if (!currentUser) {
     return <LoginModal onLoginSuccess={handleLoginSuccess} />;
@@ -447,27 +526,46 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onGoHome={handleGoHome}
+        onOpenAccessControl={() => setIsAccessControlOpen(true)}
+        onOpenGoogleSheetsSync={() => setIsGoogleSheetsSyncOpen(true)}
+        isSimulating={!!originalAdminUser}
+        onExitSimulation={handleExitSimulation}
       />
 
-      {/* 2. Tombol 4 Modul Besar Terintegrasi */}
+      {/* 2. Tombol 5 Modul Besar Terintegrasi */}
       <ModuleTabs
         activeModuleId={activeModuleId}
-        onSelectModule={(id) => setActiveModuleId(id)}
+        onSelectModule={handleSelectModule}
         modules={modules}
         totalAssetCount={units.length}
         totalManpowerCount={manpowerList.length}
         totalBreakdownCount={breakdowns.filter((b) => b.statusUnit !== 'COMPLETED').length}
+        totalP2HCount={p2hRecords.length}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {activeModuleId === 1 ? (
+        {activeModuleId === 0 ? (
+          /* Tampilan Menu Utama (Dashboard Launcher & Ringkasan Modul) */
+          <MenuUtamaLauncher
+            currentUser={currentUser}
+            units={units}
+            manpowerList={manpowerList}
+            breakdowns={breakdowns}
+            p2hRecords={p2hRecords}
+            onSelectModule={handleSelectModule}
+            onOpenSheetsSync={() => setIsGoogleSheetsSyncOpen(true)}
+            onOpenAccessControl={() => setIsAccessControlOpen(true)}
+            sheetsConnected={!!getSavedSpreadsheetId()}
+          />
+        ) : activeModuleId === 1 ? (
           /* Modul 1: Registrasi Asset (Materi Script Dipertahankan Utuh dan Tidak Dirubah) */
           <AssetRegistrationView
             units={units}
             currentUser={currentUser}
             onSaveUnit={handleSaveUnit}
             onDeleteUnit={handleDeleteUnit}
+            onBackToMainMenu={handleGoHome}
           />
         ) : activeModuleId === 2 ? (
           /* Modul 2: Data Manpower (NIK, NAMA, JABATAN pilihan, TGL. MASUK KERJA, KETERANGAN, tombol Simpan & aksi View, Edit, Deleted) */
@@ -476,21 +574,24 @@ export default function App() {
             currentUser={currentUser}
             onSaveManpower={handleSaveManpower}
             onDeleteManpower={handleDeleteManpower}
+            onBackToMainMenu={handleGoHome}
           />
         ) : activeModuleId === 3 ? (
-          /* Modul 3: Data Base Maintenance (Sub Modul 1 Input Breakdown, Sub Modul 2 Update Breakdown, Sub Modul 3 Dashboard Maintenance) */
           <MaintenanceDatabaseView
             units={units}
             manpowerList={manpowerList}
             breakdowns={breakdowns}
+            p2hRecords={p2hRecords}
             currentUser={currentUser}
             onSaveBreakdown={handleSaveBreakdown}
             onUpdateActivity={handleUpdateBreakdownActivity}
             onDeleteBreakdown={handleDeleteBreakdown}
+            onBackToMainMenu={handleGoHome}
+            onNavigateToP2H={() => setActiveModuleId(5)}
           />
-        ) : (
-          /* Modul 4: Inventory Management (6 Sub-Modul: Data Suplier, Input Stock Fuel + Top 5, Transfer Fuel Tangki-FT, Input Stock Oli, Distribution Fuel, Distribution Oli) */
-          <InventoryManagementView
+        ) : activeModuleId === 4 ? (
+          /* Modul 4: FOG (6 Sub-Modul: Data Suplier, Input Stock Fuel + Top 5, Transfer Fuel Tangki-FT, Input Stock Oli, Distribution Fuel, Distribution Oli) */
+          <FOGInventoryView
             units={units}
             manpowerList={manpowerList}
             suppliers={suppliers}
@@ -516,6 +617,33 @@ export default function App() {
             onDeleteOilDistribution={handleDeleteOilDistribution}
             onSavePeriodBalance={handleSavePeriodBalance}
             onAddCustomOilType={handleAddCustomOilType}
+            onBackToMainMenu={handleGoHome}
+          />
+        ) : activeModuleId === 5 ? (
+          /* Modul 5: Divisi Operation (Sub Modul 1: Form P2H Unit & Sub Modul 2: Setting Fleet) */
+          <DivisiOperationView
+            units={units}
+            manpowerList={manpowerList}
+            p2hRecords={p2hRecords}
+            currentUser={currentUser}
+            onSaveP2H={handleSaveP2H}
+            onDeleteP2H={handleDeleteP2H}
+            onBackToMainMenu={handleGoHome}
+          />
+        ) : activeModuleId === 6 ? (
+          /* Modul 6: Inventory Management (Spare Part & Transaksi Order Part) */
+          <SparePartInventoryView
+            breakdowns={breakdowns}
+            currentUser={currentUser}
+            onRefreshData={refreshAllData}
+          />
+        ) : (
+          /* Modul 7: Tyre Management System */
+          <TyreManagementView
+            units={units}
+            manpowerList={manpowerList}
+            currentUser={currentUser}
+            onBackToMainMenu={handleGoHome}
           />
         )}
       </main>
@@ -533,13 +661,39 @@ export default function App() {
             </div>
           </div>
           <div className="text-center sm:text-right text-[11px] text-stone-500">
-            <p>Sistem Maintenance Terintegrasi • 4 Modul</p>
+            <p>Sistem Maintenance Terintegrasi • 6 Modul</p>
             <p className="text-amber-500/80 font-mono mt-0.5">
-              Akun Aktif: {currentUser.role === 'ADMIN' ? 'Developer' : currentUser.fullName}
+              Akun Aktif: {currentUser.role === 'ADMIN' ? 'Developer' : (currentUser.fullName || currentUser.username)} ({currentUser.accountTier || 'Member'})
             </p>
           </div>
         </div>
       </footer>
+
+      {/* Modal Otorisasi Pengguna (Developer) */}
+      <AccessControlModal
+        isOpen={isAccessControlOpen}
+        onClose={() => setIsAccessControlOpen(false)}
+        users={usersList}
+        currentUser={originalAdminUser || currentUser}
+        onRefreshUsers={refreshAllData}
+        onSwitchUser={handleSwitchUser}
+      />
+
+      {/* Modal Sinkronisasi Google Sheets & Drive */}
+      <GoogleSheetsSyncModal
+        isOpen={isGoogleSheetsSyncOpen}
+        onClose={() => setIsGoogleSheetsSyncOpen(false)}
+        units={units}
+        manpower={manpowerList}
+        breakdowns={breakdowns}
+        suppliers={suppliers}
+        fuelStocks={fuelStockInputs}
+        fuelTransfers={fuelTransfers}
+        oilStocks={oilStockInputs}
+        fuelDistributions={fuelDistributions}
+        oilDistributions={oilDistributions}
+        p2hRecords={p2hRecords}
+      />
     </div>
   );
 }

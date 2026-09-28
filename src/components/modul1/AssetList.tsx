@@ -47,18 +47,18 @@ export const AssetList: React.FC<AssetListProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
-  const isAdmin = currentUser.role === 'ADMIN';
+  const isAdmin = currentUser.role === 'ADMIN' || currentUser.accountTier === 'DEVELOPER' || currentUser.username === 'adminbkwa09';
 
   // Metrics calculation
   const metrics = useMemo(() => {
     const total = units.length;
-    const operasi = units.filter((u) => u.statusOperasional === 'OPERASI').length;
-    const standby = units.filter((u) => u.statusOperasional === 'STANDBY').length;
-    const maintenance = units.filter((u) => u.statusOperasional === 'MAINTENANCE').length;
-    const breakdown = units.filter((u) => u.statusOperasional === 'BREAKDOWN').length;
+    const opEtika05 = units.filter((u) => (u.statusOperasional || (u as any).status) === 'Operasi Etika 05').length;
+    const opEtika09 = units.filter((u) => (u.statusOperasional || (u as any).status) === 'Operasi Etika 09').length;
+    const breakdown = units.filter((u) => (u.statusOperasional || (u as any).status) === 'Breakdown' || (u.statusOperasional || (u as any).status) === 'BREAKDOWN').length;
+    const stanby = units.filter((u) => (u.statusOperasional || (u as any).status) === 'Stanby' || (u.statusOperasional || (u as any).status) === 'STANDBY').length;
     const totalHM = units.reduce((acc, curr) => acc + (curr.hourMeter || 0), 0);
 
-    return { total, operasi, standby, maintenance, breakdown, totalHM };
+    return { total, opEtika05, opEtika09, breakdown, stanby, totalHM };
   }, [units]);
 
   // Filtered units
@@ -75,8 +75,9 @@ export const AssetList: React.FC<AssetListProps> = ({
       const matchCategory =
         selectedCategory === 'ALL' || unit.kategori === selectedCategory;
 
+      const unitStat = unit.statusOperasional || (unit as any).status;
       const matchStatus =
-        selectedStatus === 'ALL' || unit.statusOperasional === selectedStatus;
+        selectedStatus === 'ALL' || unitStat === selectedStatus;
 
       return matchSearch && matchCategory && matchStatus;
     });
@@ -84,14 +85,18 @@ export const AssetList: React.FC<AssetListProps> = ({
 
   const getStatusBadge = (status: OperationalStatus) => {
     switch (status) {
-      case 'OPERASI':
+      case 'Operasi Etika 05':
         return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-      case 'STANDBY':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
-      case 'MAINTENANCE':
-        return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+      case 'Operasi Etika 09':
+        return 'bg-teal-500/20 text-teal-400 border-teal-500/40';
+      case 'Breakdown':
       case 'BREAKDOWN':
         return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+      case 'Stanby':
+      case 'STANDBY':
+        return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+      case 'OPERASI':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
       default:
         return 'bg-stone-700 text-stone-300 border-stone-600';
     }
@@ -114,7 +119,7 @@ export const AssetList: React.FC<AssetListProps> = ({
             <span className="text-xs text-stone-400 font-semibold">Unit</span>
           </div>
           <p className="text-[11px] text-amber-400/90 mt-1 font-mono">
-            {metrics.totalHM.toLocaleString('id-ID')} Total HM
+            {(metrics?.totalHM ?? 0).toLocaleString('id-ID')} Total HM
           </p>
         </div>
 
@@ -291,10 +296,10 @@ export const AssetList: React.FC<AssetListProps> = ({
               className="w-full px-3 py-2 bg-stone-800/90 border border-stone-700 rounded-xl text-xs text-stone-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="ALL">Semua Status Operasi</option>
-              <option value="OPERASI">OPERASI (Ready)</option>
-              <option value="STANDBY">STANDBY (Siap Kerja)</option>
-              <option value="MAINTENANCE">MAINTENANCE (Servis)</option>
-              <option value="BREAKDOWN">BREAKDOWN (Rusak)</option>
+              <option value="Operasi Etika 05">Operasi Etika 05</option>
+              <option value="Operasi Etika 09">Operasi Etika 09</option>
+              <option value="Breakdown">Breakdown</option>
+              <option value="Stanby">Stanby</option>
             </select>
           </div>
 
@@ -387,7 +392,7 @@ export const AssetList: React.FC<AssetListProps> = ({
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1 font-mono font-bold text-amber-300">
                           <Clock className="w-3.5 h-3.5 text-amber-500/80" />
-                          <span>{u.hourMeter.toLocaleString('id-ID')} Jam</span>
+                          <span>{(u?.hourMeter ?? 0).toLocaleString('id-ID')} Jam</span>
                         </div>
                       </td>
 
@@ -511,7 +516,7 @@ export const AssetList: React.FC<AssetListProps> = ({
                   <div className="flex justify-between">
                     <span>Hour Meter:</span>
                     <strong className="text-amber-300 font-mono">
-                      {u.hourMeter.toLocaleString('id-ID')} Jam
+                      {(u?.hourMeter ?? 0).toLocaleString('id-ID')} Jam
                     </strong>
                   </div>
                   <div className="flex justify-between">

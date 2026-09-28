@@ -265,7 +265,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
           <div>
             <div className="text-[11px] font-mono uppercase text-stone-400">Total Akumulasi Transfer</div>
             <div className="text-lg font-black font-mono text-blue-400">
-              {totalTransferLiter.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
+              {(totalTransferLiter ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
             </div>
           </div>
         </div>
@@ -289,7 +289,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
           <div>
             <div className="text-[11px] font-mono uppercase text-stone-400">Rata-rata Per Pengisian</div>
             <div className="text-lg font-black font-mono text-emerald-400">
-              {fuelTransfers.length > 0 ? Math.round(totalTransferLiter / fuelTransfers.length).toLocaleString('id-ID') : 0} <span className="text-xs font-normal text-stone-400">Ltr</span>
+              {fuelTransfers.length > 0 ? Math.round((totalTransferLiter ?? 0) / fuelTransfers.length).toLocaleString('id-ID') : 0} <span className="text-xs font-normal text-stone-400">Ltr</span>
             </div>
           </div>
         </div>
@@ -336,13 +336,13 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                     <div className="text-[10px] text-stone-500 font-mono">{item.picFogJabatan || '-'}</div>
                   </td>
                   <td className="py-3 px-3 font-mono text-stone-300">
-                    {item.flowmeterStart.toLocaleString('id-ID')}
+                    {(item.flowmeterStart ?? 0).toLocaleString('id-ID')}
                   </td>
                   <td className="py-3 px-3 font-mono text-stone-300">
-                    {item.flowmeterStop.toLocaleString('id-ID')}
+                    {(item.flowmeterStop ?? 0).toLocaleString('id-ID')}
                   </td>
                   <td className="py-3 px-3 font-mono font-black text-blue-400 text-right text-sm">
-                    {item.qty.toLocaleString('id-ID')} Ltr
+                    {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
                   </td>
                   <td className="py-3 px-3 text-stone-400 text-[11px] max-w-xs truncate">
                     {item.remark || '-'}

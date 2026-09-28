@@ -5,6 +5,7 @@ import {
   UserPlus, 
   ShieldCheck, 
   Eye, 
+  EyeOff,
   Edit3, 
   HardHat, 
   Lock, 
@@ -20,13 +21,18 @@ import {
   Phone,
   Layers,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Crown,
+  FileSpreadsheet,
+  Users
 } from 'lucide-react';
 import { 
   registerKaryawanUser, 
   updateUserAccount, 
   updateUserAccessLevel, 
   deleteUserAccount,
+  updateUserPassword,
+  syncAllManpowerToUserAccounts,
   setCurrentUser 
 } from '../../utils/storage';
 
@@ -37,6 +43,7 @@ interface AccessControlModalProps {
   currentUser: UserAccount;
   onRefreshUsers: () => void;
   onSwitchUser?: (user: UserAccount) => void;
+  manpowerCount?: number;
 }
 
 export const AccessControlModal: React.FC<AccessControlModalProps> = ({
@@ -46,11 +53,17 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
   currentUser,
   onRefreshUsers,
   onSwitchUser,
+  manpowerCount,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'BISA_MENGISI' | 'HANYA_VIEW'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'OWNER' | 'ADMINISTRASI' | 'BISA_MENGISI' | 'HANYA_VIEW'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  // Password visibility & edit states
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+  const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
 
   // New user form state
   const [newUserData, setNewUserData] = useState({
@@ -59,12 +72,12 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     password: '',
     department: 'Mekanik Lapangan',
     phone: '',
-    accessLevel: 'BISA_MENGISI' as UserAccessLevel,
+    accessLevel: 'HANYA_VIEW' as UserAccessLevel,
     modulePermissions: {
-      modul1Asset: true,
-      modul2Manpower: true,
-      modul3Maintenance: true,
-      modul4Inventory: true,
+      modul1Asset: false,
+      modul2Manpower: false,
+      modul3Maintenance: false,
+      modul4Inventory: false,
     } as UserModulePermissions,
   });
 
@@ -94,8 +107,22 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     );
   }
 
+  // Helper check status jabatan
+  const isUserOwner = (u: UserAccount) => 
+    u.jabatan === 'OWNER' || 
+    u.jabatan === 'DIREKTUR / MANAGEMENT' || 
+    (u.department && (u.department.toLowerCase().includes('owner') || u.department.toLowerCase().includes('direktur'))) ||
+    u.username.toLowerCase().includes('owner');
+
+  const isUserAdministrasi = (u: UserAccount) =>
+    u.jabatan === 'ADMINISTRASI' ||
+    (u.department && u.department.toLowerCase().includes('administrasi')) ||
+    u.username.toLowerCase().includes('admin_');
+
   // Statistik Otorisasi
   const totalUsers = users.length;
+  const countOwner = users.filter(isUserOwner).length;
+  const countAdministrasi = users.filter(isUserAdministrasi).length;
   const countBisaMengisi = users.filter((u) => u.role === 'ADMIN' || u.accessLevel === 'BISA_MENGISI').length;
   const countHanyaView = users.filter((u) => u.role !== 'ADMIN' && u.accessLevel === 'HANYA_VIEW').length;
 
@@ -104,10 +131,17 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     const matchesSearch = 
       u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (u.department && u.department.toLowerCase().includes(searchTerm.toLowerCase()));
+      (u.department && u.department.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (u.jabatan && u.jabatan.toLowerCase().includes(searchTerm.toLowerCase()));
 
     if (!matchesSearch) return false;
 
+    if (filterType === 'OWNER') {
+      return isUserOwner(u);
+    }
+    if (filterType === 'ADMINISTRASI') {
+      return isUserAdministrasi(u);
+    }
     if (filterType === 'BISA_MENGISI') {
       return u.role === 'ADMIN' || u.accessLevel === 'BISA_MENGISI';
     }
@@ -116,6 +150,44 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     }
     return true;
   });
+
+  // Handler Sinkronisasi Manpower ke Akun Pengguna
+  const handleSyncFromManpower = () => {
+    const res = syncAllManpowerToUserAccounts();
+    if (res.success) {
+      setFeedback({
+        type: 'success',
+        text: `Sinkronisasi selesai! Staf Administrasi disetel BISA MENGISI, Owner dan Karyawan umum disetel HANYA VIEW.`
+      });
+      onRefreshUsers();
+    } else {
+      setFeedback({ type: 'error', text: 'Gagal menyinkronkan data Manpower.' });
+    }
+  };
+
+  // Handler Simpan Password Baru
+  const handleSaveNewPassword = (targetUser: UserAccount) => {
+    if (!newPasswordInput.trim()) {
+      setFeedback({ type: 'error', text: 'Password tidak boleh kosong!' });
+      return;
+    }
+    const res = updateUserPassword(targetUser.id, newPasswordInput.trim());
+    if (res.success) {
+      setFeedback({ type: 'success', text: res.message });
+      setEditingPasswordUserId(null);
+      setNewPasswordInput('');
+      onRefreshUsers();
+    } else {
+      setFeedback({ type: 'error', text: res.message });
+    }
+  };
+
+  const togglePasswordVisibility = (userId: string) => {
+    setVisiblePasswords(prev => ({
+      ...prev,
+      [userId]: !prev[userId]
+    }));
+  };
 
   // Handler Ubah Level Global Akses (Bisa Mengisi vs Hanya View)
   const handleToggleAccessLevel = (targetUser: UserAccount, newLevel: UserAccessLevel) => {
@@ -303,40 +375,84 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           </div>
         )}
 
-        {/* STATISTIK RINGKASAN */}
+        {/* STATISTIK RINGKASAN & BANNER SINKRONISASI MANPOWER */}
         <div className="p-6 pb-2 space-y-4 shrink-0">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Total Akun */}
-            <div className="p-3.5 bg-stone-950/60 border border-stone-800 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-mono uppercase text-stone-400">Total Akun</p>
-                <p className="text-xl font-bold font-mono text-stone-100">{totalUsers} Pengguna</p>
+          
+          {/* BANNER REKOMENDASI RBAC OTOMATIS: SINKRONISASI MANPOWER KE AKUN LOGIN */}
+          <div className="p-4 bg-gradient-to-r from-amber-950/40 via-stone-900 to-sky-950/40 border border-amber-800/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-inner">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                <RefreshCw className="w-5 h-5 text-amber-400" />
               </div>
-              <div className="w-9 h-9 rounded-xl bg-stone-800 flex items-center justify-center text-stone-300">
-                <UserCheck className="w-4 h-4" />
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-xs font-bold font-mono text-amber-300 uppercase tracking-wide">
+                    SINKRONISASI OTOMATIS DARI DATA MANPOWER
+                  </h4>
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold border border-amber-500/30">
+                    Sesuai Aturan Otorisasi
+                  </span>
+                </div>
+                <p className="text-xs text-stone-300 mt-0.5 leading-relaxed">
+                  Semua karyawan dari <strong>Modul 2 Manpower</strong> dan <strong>Owner</strong> otomatis dibuatkan akun dengan hak akses <span className="text-sky-400 font-semibold">Hanya View (Viewer)</span>. Khusus personil dengan jabatan <span className="text-emerald-400 font-semibold">Administrasi</span> otomatis disetel <span className="text-emerald-400 font-semibold">Bisa Mengisi (Editor)</span>.
+                </p>
+              </div>
+            </div>
+            <button
+              id="btn-sync-manpower-users"
+              type="button"
+              onClick={handleSyncFromManpower}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl transition shrink-0 shadow-md shadow-amber-500/20 active:scale-95 whitespace-nowrap"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Sinkronkan Personil Sekarang</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            {/* Total Akun */}
+            <div className="p-3 bg-stone-950/60 border border-stone-800 rounded-2xl flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-mono uppercase text-stone-400">Total Akun</p>
+                <p className="text-lg font-bold font-mono text-stone-100">{totalUsers} Pengguna</p>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-stone-800 flex items-center justify-center text-stone-300">
+                <Users className="w-4 h-4" />
               </div>
             </div>
 
-            {/* Bisa Mengisi */}
-            <div className="p-3.5 bg-emerald-950/20 border border-emerald-800/40 rounded-2xl flex items-center justify-between">
+            {/* Owner (View Only) */}
+            <div className="p-3 bg-purple-950/20 border border-purple-800/40 rounded-2xl flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-mono uppercase text-emerald-400">Bisa Mengisi (Editor)</p>
-                <p className="text-xl font-bold font-mono text-emerald-300">{countBisaMengisi} Pengguna</p>
-                <p className="text-[10px] text-emerald-500/90">Akses Input, Edit & Simpan</p>
+                <p className="text-[10px] font-mono uppercase text-purple-400">Owner / Direksi</p>
+                <p className="text-lg font-bold font-mono text-purple-300">{countOwner} Akun</p>
+                <p className="text-[10px] text-purple-400/80">Akses Hanya View</p>
               </div>
-              <div className="w-9 h-9 rounded-xl bg-emerald-900/40 border border-emerald-700/50 flex items-center justify-center text-emerald-400">
+              <div className="w-8 h-8 rounded-xl bg-purple-900/40 border border-purple-700/50 flex items-center justify-center text-purple-300">
+                <Crown className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Administrasi (Editor) */}
+            <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-2xl flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-mono uppercase text-emerald-400">Administrasi</p>
+                <p className="text-lg font-bold font-mono text-emerald-300">{countAdministrasi} Akun</p>
+                <p className="text-[10px] text-emerald-400/80">Bisa Input &amp; Edit</p>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-emerald-900/40 border border-emerald-700/50 flex items-center justify-center text-emerald-400">
                 <Edit3 className="w-4 h-4" />
               </div>
             </div>
 
-            {/* Hanya View */}
-            <div className="p-3.5 bg-sky-950/20 border border-sky-800/40 rounded-2xl flex items-center justify-between">
+            {/* Karyawan Hanya View */}
+            <div className="p-3 bg-sky-950/20 border border-sky-800/40 rounded-2xl flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-mono uppercase text-sky-400">Hanya View (Viewer)</p>
-                <p className="text-xl font-bold font-mono text-sky-300">{countHanyaView} Pengguna</p>
-                <p className="text-[10px] text-sky-500/90">Hanya Membaca / Monitoring</p>
+                <p className="text-[10px] font-mono uppercase text-sky-400">Total Viewer</p>
+                <p className="text-lg font-bold font-mono text-sky-300">{countHanyaView} Pengguna</p>
+                <p className="text-[10px] text-sky-400/80">Mode Lihat Saja</p>
               </div>
-              <div className="w-9 h-9 rounded-xl bg-sky-900/40 border border-sky-700/50 flex items-center justify-center text-sky-400">
+              <div className="w-8 h-8 rounded-xl bg-sky-900/40 border border-sky-700/50 flex items-center justify-center text-sky-400">
                 <Eye className="w-4 h-4" />
               </div>
             </div>
@@ -344,12 +460,12 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
 
           {/* FILTER & TOMBOL TAMBAH PENGGUNA */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-            <div className="flex items-center gap-2 flex-1">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-500" />
                 <input
                   type="text"
-                  placeholder="Cari user berdasarkan nama / username..."
+                  placeholder="Cari nama, username, jabatan..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -357,11 +473,11 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
               </div>
 
               {/* Filter tabs */}
-              <div className="flex items-center bg-stone-950/80 p-1 border border-stone-800 rounded-xl text-[11px]">
+              <div className="flex items-center bg-stone-950/80 p-1 border border-stone-800 rounded-xl text-[11px] overflow-x-auto">
                 <button
                   type="button"
                   onClick={() => setFilterType('ALL')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                     filterType === 'ALL' ? 'bg-stone-800 text-stone-100 font-bold' : 'text-stone-400 hover:text-stone-200'
                   }`}
                 >
@@ -369,8 +485,28 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setFilterType('OWNER')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap ${
+                    filterType === 'OWNER' ? 'bg-purple-950 text-purple-300 font-bold border border-purple-800' : 'text-stone-400 hover:text-purple-300'
+                  }`}
+                >
+                  <Crown className="w-3 h-3" />
+                  <span>Owner ({countOwner})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterType('ADMINISTRASI')}
+                  className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap ${
+                    filterType === 'ADMINISTRASI' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-stone-400 hover:text-emerald-300'
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>Administrasi ({countAdministrasi})</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setFilterType('BISA_MENGISI')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                     filterType === 'BISA_MENGISI' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-stone-400 hover:text-emerald-400'
                   }`}
                 >
@@ -379,7 +515,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterType('HANYA_VIEW')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
                     filterType === 'HANYA_VIEW' ? 'bg-sky-950 text-sky-300 font-bold border border-sky-800' : 'text-stone-400 hover:text-sky-400'
                   }`}
                 >
@@ -392,25 +528,77 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
               id="btn-tambah-user-baru"
               type="button"
               onClick={() => setShowAddForm(!showAddForm)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95 whitespace-nowrap"
             >
               <UserPlus className="w-4 h-4" />
               <span>{showAddForm ? 'Tutup Pendaftaran' : '+ Daftarkan Akun Baru'}</span>
             </button>
           </div>
 
-          {/* FORM PENDAFTARAN PENGGUNA BARU DENGAN PILIHAN AKSES LANGSUNG */}
+          {/* FORM PENDAFTARAN PENGGUNA BARU DENGAN TEMPLATE CEPAT */}
           {showAddForm && (
             <form
               onSubmit={handleCreateNewUser}
-              className="p-4 bg-stone-950/80 border border-stone-800 rounded-2xl space-y-3 mt-2 animate-fadeIn"
+              className="p-4 bg-stone-950/90 border border-stone-800 rounded-2xl space-y-3 mt-2 animate-fadeIn"
             >
-              <div className="flex items-center justify-between pb-2 border-b border-stone-800">
-                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                  <UserPlus className="w-4 h-4" />
-                  <span>Daftarkan Akun Pengguna Baru & Atur Hak Aksesnya</span>
-                </h4>
-                <span className="text-[11px] text-stone-400">Otorisasi oleh Developer</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-stone-800 gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
+                    <UserPlus className="w-4 h-4" />
+                    <span>Daftarkan Akun Pengguna Baru &amp; Tentukan Password</span>
+                  </h4>
+                  <p className="text-[11px] text-stone-400">Pilih template cepat di bawah atau isi manual.</p>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserData({
+                        fullName: 'Owner BKWA',
+                        username: 'owner_bkwa',
+                        password: 'owner123',
+                        department: 'Owner & Direksi',
+                        phone: '',
+                        accessLevel: 'HANYA_VIEW',
+                        modulePermissions: {
+                          modul1Asset: false,
+                          modul2Manpower: false,
+                          modul3Maintenance: false,
+                          modul4Inventory: false,
+                        }
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-950/60 border border-purple-700/80 text-purple-300 hover:bg-purple-900/60 transition flex items-center gap-1"
+                  >
+                    <Crown className="w-3 h-3" />
+                    <span>Template Owner (Hanya View)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserData({
+                        fullName: 'Staff Administrasi',
+                        username: 'admin_bkwa',
+                        password: 'admin123',
+                        department: 'Administrasi Workshop',
+                        phone: '',
+                        accessLevel: 'BISA_MENGISI',
+                        modulePermissions: {
+                          modul1Asset: true,
+                          modul2Manpower: true,
+                          modul3Maintenance: true,
+                          modul4Inventory: true,
+                        }
+                      });
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-950/60 border border-emerald-700/80 text-emerald-300 hover:bg-emerald-900/60 transition flex items-center gap-1"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>Template Administrasi (Bisa Mengisi)</span>
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -421,7 +609,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="misal: Wahyu Hidayat"
+                    placeholder="misal: Owner BKWA / Budi Santoso"
                     value={newUserData.fullName}
                     onChange={(e) => setNewUserData({ ...newUserData, fullName: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -435,7 +623,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="misal: wahyu_bkwa"
+                    placeholder="misal: owner_bkwa"
                     value={newUserData.username}
                     onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -444,12 +632,12 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Password <span className="text-amber-400">*</span>
+                    Password Akun <span className="text-amber-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="misal: pass123"
+                    placeholder="misal: owner123 / admin123"
                     value={newUserData.password}
                     onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -458,11 +646,11 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Departemen / Bagian
+                    Departemen / Jabatan
                   </label>
                   <input
                     type="text"
-                    placeholder="misal: Workshop Quarry"
+                    placeholder="misal: Owner / Administrasi / Mekanik"
                     value={newUserData.department}
                     onChange={(e) => setNewUserData({ ...newUserData, department: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -485,7 +673,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                 {/* PILIHAN OTORISASI AWAL LANGSUNG DI FORM */}
                 <div>
                   <label className="block text-xs font-bold text-amber-400 mb-1">
-                    Tingkat Akses Pengguna <span className="text-amber-400">*</span>
+                    Tingkat Hak Akses <span className="text-amber-400">*</span>
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -565,6 +753,8 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
             {filteredUsers.map((user) => {
               const isAdmin = user.role === 'ADMIN';
               const isCurrentUser = currentUser.id === user.id;
+              const isOwner = isUserOwner(user);
+              const isAdministrasi = isUserAdministrasi(user);
               const isEditor = isAdmin || user.accessLevel === 'BISA_MENGISI';
               const isViewer = !isAdmin && user.accessLevel === 'HANYA_VIEW';
               const isExpanded = expandedUserId === user.id;
@@ -582,6 +772,10 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   className={`border rounded-2xl transition duration-200 overflow-hidden ${
                     isAdmin
                       ? 'bg-amber-950/15 border-amber-800/40'
+                      : isOwner
+                      ? 'bg-purple-950/20 border-purple-800/40 hover:border-purple-700/60'
+                      : isAdministrasi
+                      ? 'bg-emerald-950/15 border-emerald-800/40 hover:border-emerald-700/60'
                       : isViewer
                       ? 'bg-stone-900/90 border-sky-900/30'
                       : 'bg-stone-900/90 border-stone-800 hover:border-stone-700'
@@ -590,18 +784,26 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   {/* MAIN USER ROW */}
                   <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     {/* User Profile */}
-                    <div className="flex items-center gap-3.5 min-w-[240px]">
+                    <div className="flex items-start gap-3.5 min-w-[240px]">
                       <div
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border shadow-md ${
+                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border shadow-md mt-0.5 ${
                           isAdmin
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                            : isOwner
+                            ? 'bg-purple-950 text-purple-300 border-purple-700/60 shadow-purple-950/40'
+                            : isAdministrasi
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
                             : isViewer
                             ? 'bg-sky-950 text-sky-400 border-sky-800/60'
-                            : 'bg-emerald-950 text-emerald-400 border-emerald-800/60'
+                            : 'bg-stone-800 text-stone-300 border-stone-700'
                         }`}
                       >
                         {isAdmin ? (
                           <ShieldCheck className="w-5 h-5" />
+                        ) : isOwner ? (
+                          <Crown className="w-5 h-5 text-purple-300" />
+                        ) : isAdministrasi ? (
+                          <Edit3 className="w-5 h-5 text-emerald-400" />
                         ) : isViewer ? (
                           <Eye className="w-5 h-5" />
                         ) : (
@@ -609,7 +811,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                         )}
                       </div>
 
-                      <div>
+                      <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="font-bold text-stone-100 text-sm font-mono">
                             {user.fullName}
@@ -619,21 +821,105 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                               Developer
                             </span>
                           )}
+                          {isOwner && (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/80 flex items-center gap-1">
+                              <Crown className="w-3 h-3" />
+                              Owner (Hanya View)
+                            </span>
+                          )}
+                          {isAdministrasi && (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/80 flex items-center gap-1">
+                              <Edit3 className="w-3 h-3" />
+                              Administrasi (Bisa Mengisi)
+                            </span>
+                          )}
+                          {!isAdmin && !isOwner && !isAdministrasi && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
+                              {user.accessLevel === 'BISA_MENGISI' ? 'Editor' : 'Karyawan (Viewer)'}
+                            </span>
+                          )}
                           {isCurrentUser && (
                             <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-stone-800 text-stone-300">
                               (Anda)
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-stone-400 mt-0.5">
-                          <span className="font-mono text-stone-400 font-semibold">@{user.username}</span>
+
+                        <div className="flex items-center gap-2 text-xs text-stone-400">
+                          <span className="font-mono text-stone-300 font-semibold">@{user.username}</span>
                           <span>•</span>
-                          <span className="truncate max-w-[180px]">{user.department || 'Operasional'}</span>
+                          <span className="truncate max-w-[180px]">{user.department || user.jabatan || 'Operasional'}</span>
                           {user.phone && user.phone !== '-' && (
                             <>
                               <span>•</span>
                               <span className="font-mono text-[11px] text-stone-500">{user.phone}</span>
                             </>
+                          )}
+                        </div>
+
+                        {/* PASSWORD DISPLAY & MANAGEMENT BAR */}
+                        <div className="flex items-center gap-2 pt-1 text-xs flex-wrap">
+                          <div className="flex items-center gap-1.5 text-stone-400 font-mono">
+                            <KeyRound className="w-3.5 h-3.5 text-amber-400/80" />
+                            <span className="text-[11px] text-stone-400">Password:</span>
+                            {visiblePasswords[user.id] ? (
+                              <span className="font-bold text-amber-300 bg-stone-950 px-2 py-0.5 rounded border border-stone-800 font-mono">
+                                {user.password || '(Default: user123)'}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400 font-mono tracking-widest text-[11px]">
+                                ••••••••
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => togglePasswordVisibility(user.id)}
+                              className="p-0.5 text-stone-400 hover:text-stone-200 transition"
+                              title={visiblePasswords[user.id] ? 'Sembunyikan password' : 'Lihat password'}
+                            >
+                              {visiblePasswords[user.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+
+                          {editingPasswordUserId === user.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="Password baru..."
+                                value={newPasswordInput}
+                                onChange={(e) => setNewPasswordInput(e.target.value)}
+                                className="bg-stone-950 border border-amber-500 rounded-lg px-2 py-0.5 text-xs text-stone-100 font-mono w-32 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveNewPassword(user)}
+                                className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] rounded-lg transition"
+                              >
+                                Simpan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPasswordUserId(null);
+                                  setNewPasswordInput('');
+                                }}
+                                className="px-2 py-0.5 bg-stone-800 text-stone-400 hover:text-stone-200 text-[11px] rounded-lg transition"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingPasswordUserId(user.id);
+                                setNewPasswordInput(user.password || '');
+                              }}
+                              className="text-[11px] text-amber-400/90 hover:text-amber-300 hover:underline flex items-center gap-1 ml-1"
+                            >
+                              <KeyRound className="w-3 h-3" />
+                              <span>Ubah Password</span>
+                            </button>
                           )}
                         </div>
                       </div>

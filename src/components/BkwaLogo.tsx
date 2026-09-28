@@ -3,10 +3,10 @@ import defaultLogoAsset from '../assets/images/bkwa_logo_emblem_1789455762105.jp
 import { getCustomLogo } from '../utils/storage';
 
 interface BkwaLogoProps {
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'dominant';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'dominant' | 'medium' | 'small' | 'large' | string;
   showText?: boolean;
   className?: string;
-  variant?: 'card' | 'transparent';
+  variant?: 'card' | 'transparent' | 'navbar' | string;
   allowUpload?: boolean;
 }
 
@@ -32,14 +32,20 @@ export const BkwaLogo: React.FC<BkwaLogoProps> = ({
     return () => window.removeEventListener('bkwa-logo-updated', handleLogoUpdate);
   }, []);
 
-  // Dimensions based on size
-  const dimensions = {
+  // Dimensions based on size with fail-safe fallback
+  const dimMap: Record<string, { width: number; height: number; textSize: string; subSize: string }> = {
+    xs: { width: 28, height: 28, textSize: 'text-[10px]', subSize: 'text-[8px]' },
     sm: { width: 38, height: 38, textSize: 'text-xs', subSize: 'text-[10px]' },
+    small: { width: 38, height: 38, textSize: 'text-xs', subSize: 'text-[10px]' },
     md: { width: 56, height: 56, textSize: 'text-sm', subSize: 'text-xs' },
+    medium: { width: 56, height: 56, textSize: 'text-sm', subSize: 'text-xs' },
     lg: { width: 92, height: 92, textSize: 'text-base', subSize: 'text-xs' },
+    large: { width: 92, height: 92, textSize: 'text-base', subSize: 'text-xs' },
     xl: { width: 130, height: 130, textSize: 'text-xl', subSize: 'text-sm' },
     dominant: { width: 190, height: 190, textSize: 'text-2xl', subSize: 'text-sm' },
-  }[size];
+  };
+
+  const dimensions = dimMap[size] || dimMap['md'];
 
   return (
     <div className={`inline-flex items-center gap-3.5 ${className}`}>

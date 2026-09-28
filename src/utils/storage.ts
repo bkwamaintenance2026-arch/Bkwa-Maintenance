@@ -20,7 +20,22 @@ import {
   ManpowerData, 
   UserAccount,
   UserAccessLevel,
-  UserModulePermissions 
+  UserModulePermissions,
+  AccountTier,
+  P2HRecord,
+  P2HCheckItem,
+  P2HKelayakanStatus,
+  FleetSettingRecord,
+  SparePartItem,
+  SparePartTransaction,
+  SparePartTransactionItem,
+  PurchaseRequest,
+  PurchaseRequestItem,
+  TyreRegistration,
+  TyreInstallRecord,
+  TyreRemoveRecord,
+  TyreStatus,
+  TyreJenis
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -31,7 +46,7 @@ import {
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'bkwa_current_user',
-  USERS: 'bkwa_users_list',
+  USERS: 'bkwa_users_list_v3', // updated to ensure clean migration to 4 tiers
   UNITS: 'bkwa_asset_units_v2', // updated version key to guarantee clean state
   MANPOWER: 'bkwa_manpower_list_v1', // storage key for Modul 2 Manpower
   BREAKDOWN: 'bkwa_breakdown_records_v1', // storage key for Modul 3 Breakdown records
@@ -48,6 +63,21 @@ const STORAGE_KEYS = {
   FUEL_DISTRIBUTION: 'bkwa_inventory_fuel_dist_v2',
   OIL_DISTRIBUTION: 'bkwa_inventory_oil_dist_v2',
   PERIOD_BALANCE: 'bkwa_inventory_period_balance_v2',
+  KAPASITAS_TANGKI_UTAMA: 'bkwa_kapasitas_tangki_utama_v1', // storage key kapasitas tangki timbun solar utama
+  KAPASITAS_FUEL_TRUCK: 'bkwa_kapasitas_fuel_truck_v1', // storage key kapasitas armada fuel truck
+  // Modul 5 Divisi Operation (P2H & Setting Fleet)
+  P2H_RECORDS: 'bkwa_p2h_records_v1',
+  P2H_COUNTER: 'bkwa_p2h_counter_v1',
+  FLEET_SETTINGS: 'bkwa_fleet_settings_v1',
+  // Modul 6 Inventory Management (Spare Part & Transaksi)
+  SPARE_PARTS: 'bkwa_spare_parts_v1',
+  SPARE_PART_TRANSACTIONS: 'bkwa_sp_transactions_v1',
+  PURCHASE_REQUESTS: 'bkwa_purchase_requests_v1',
+  PURCHASE_REQUEST_COUNTER: 'bkwa_pr_counter_v1',
+  // Modul 7 Tyre Management System
+  TYRE_REGISTRATIONS: 'bkwa_tyre_registrations_v1',
+  TYRE_INSTALLS: 'bkwa_tyre_installs_v1',
+  TYRE_REMOVES: 'bkwa_tyre_removes_v1',
   ACTIVITY_LOGS: 'bkwa_activity_logs_v2',
   CUSTOM_LOGO: 'bkwa_company_custom_logo',
 };
@@ -106,17 +136,13 @@ export function getAllUsers(): UserAccount[] {
     const parsed: UserAccount[] = JSON.parse(data);
     let modified = false;
 
-    // Ensure admin user matches adminbkwa09 and always has full access
-    const adminIdx = parsed.findIndex((u) => u.role === 'ADMIN');
-    if (adminIdx !== -1) {
-      if (parsed[adminIdx].username !== 'adminbkwa09') {
-        parsed[adminIdx].username = 'adminbkwa09';
-        parsed[adminIdx].password = 'bkwa09';
-        parsed[adminIdx].fullName = 'Developer BKWA';
-        modified = true;
-      }
-      if (parsed[adminIdx].accessLevel !== 'BISA_MENGISI') {
-        parsed[adminIdx].accessLevel = 'BISA_MENGISI';
+    // Pastikan developer selalu ada dengan akun tier DEVELOPER
+    const devIdx = parsed.findIndex((u) => u.username === 'adminbkwa09' || u.accountTier === 'DEVELOPER');
+    if (devIdx !== -1) {
+      if (parsed[devIdx].accountTier !== 'DEVELOPER' || parsed[devIdx].email !== 'developer@bkwa.co.id') {
+        parsed[devIdx].accountTier = 'DEVELOPER';
+        parsed[devIdx].email = parsed[devIdx].email || 'developer@bkwa.co.id';
+        parsed[devIdx].accessLevel = 'BISA_MENGISI';
         modified = true;
       }
     } else {
@@ -124,19 +150,45 @@ export function getAllUsers(): UserAccount[] {
       modified = true;
     }
 
-    // Ensure all users have accessLevel and modulePermissions defined
-    parsed.forEach((user) => {
-      if (!user.accessLevel) {
-        user.accessLevel = user.role === 'ADMIN' ? 'BISA_MENGISI' : 'BISA_MENGISI';
+    // Pastikan akun default (Admin, Khusus, Member) juga tersedia jika belum ada
+    INITIAL_KARYAWAN_USERS.forEach((defaultUser) => {
+      const exists = parsed.some((u) => u.username === defaultUser.username || u.email === defaultUser.email);
+      if (!exists) {
+        parsed.push(defaultUser);
         modified = true;
       }
+    });
+
+    // Pastikan setiap user memiliki accountTier, email, dan permissions lengkap
+    parsed.forEach((user) => {
+      if (!user.accountTier) {
+        if (user.role === 'ADMIN') {
+          user.accountTier = user.username === 'adminbkwa09' ? 'DEVELOPER' : 'ADMIN';
+        } else if (user.username === 'khusus') {
+          user.accountTier = 'KHUSUS';
+        } else {
+          user.accountTier = 'MEMBER';
+        }
+        modified = true;
+      }
+
+      if (!user.email) {
+        user.email = `${user.username || 'user'}@bkwa.co.id`;
+        modified = true;
+      }
+
       if (!user.modulePermissions) {
-        const canFill = user.accessLevel === 'BISA_MENGISI';
         user.modulePermissions = {
-          modul1Asset: canFill,
-          modul2Manpower: canFill,
-          modul3Maintenance: canFill,
-          modul4Inventory: canFill,
+          modul1Asset: user.accountTier === 'DEVELOPER',
+          modul2Manpower: user.accountTier === 'DEVELOPER',
+          modul3Maintenance: user.accountTier === 'DEVELOPER' || user.accountTier === 'ADMIN',
+          modul4Inventory: user.accountTier === 'DEVELOPER' || user.accountTier === 'ADMIN',
+          modul5P2H: user.accountTier !== 'KHUSUS',
+          canExportModul1: user.accountTier === 'DEVELOPER' || user.accountTier === 'KHUSUS',
+          canExportModul2: user.accountTier === 'DEVELOPER' || user.accountTier === 'KHUSUS',
+          canExportModul3: user.accountTier !== 'MEMBER',
+          canExportModul4: user.accountTier !== 'MEMBER',
+          canExportModul5: user.accountTier !== 'MEMBER',
         };
         modified = true;
       }
@@ -156,26 +208,95 @@ export function saveUsers(users: UserAccount[]): void {
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
 }
 
-// Otorisasi Helper: Mengecek apakah pengguna memiliki hak akses untuk mengisi/mengedit form
-export function canUserEdit(user: UserAccount | null, moduleId?: number): boolean {
+// ============================================================
+// ATURAN OTORISASI 4 TINGKATAN AKUN RESMI BKWA:
+// 1. Akun Developer: Full access ke semua fitur & form registrasi
+// 2. Akun Admin: Bisa Input & Export modul 3, 4, & 5 (Modul 1 & 2 view only)
+// 3. Akun Khusus: Bisa Export modul 1 (Daftar Aset), modul 2 (Manpower), export modul 3, 4, 5
+// 4. Akun Biasa/Member: Hanya Viewer modul 3 dan Input modul 5 (P2H)
+// 9. Modul 1 Form Registrasi di hide seluruh akun KECUALI Developer
+// ============================================================
+
+// Helper universal: Cek apakah user adalah Akun Developer (Memiliki semua akses Edit & Delete semua data)
+export function isDeveloper(user: UserAccount | null | undefined): boolean {
   if (!user) return false;
-  // Akun Developer (ADMIN) selalu memiliki hak penuh (Full Access)
-  if (user.role === 'ADMIN') return true;
-  if (user.status === 'NONAKTIF') return false;
+  return user.accountTier === 'DEVELOPER' || user.username === 'adminbkwa09' || user.role === 'ADMIN';
+}
 
-  // Level global
-  const level = user.accessLevel || 'BISA_MENGISI';
-  if (level === 'HANYA_VIEW') return false;
+// Poin 9: Cek apakah user boleh mengakses Form Registrasi Unit (Hanya Developer)
+export function canAccessRegistrationForm(user: UserAccount | null): boolean {
+  if (!user) return false;
+  return isDeveloper(user);
+}
 
-  // Level spesifik modul jika diberikan
-  if (moduleId && user.modulePermissions) {
-    if (moduleId === 1 && user.modulePermissions.modul1Asset === false) return false;
-    if (moduleId === 2 && user.modulePermissions.modul2Manpower === false) return false;
-    if (moduleId === 3 && user.modulePermissions.modul3Maintenance === false) return false;
-    if (moduleId === 4 && user.modulePermissions.modul4Inventory === false) return false;
+// Cek apakah user berhak melihat/membuka modul tertentu
+export function canUserViewModule(user: UserAccount | null, moduleId: number): boolean {
+  if (!user) return false;
+  const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+  if (tier === 'DEVELOPER' || tier === 'ADMIN' || tier === 'KHUSUS') return true;
+  if (tier === 'MEMBER') {
+    // Member hanya Viewer modul 3 dan Input modul 5
+    return moduleId === 3 || moduleId === 5;
+  }
+  return true;
+}
+
+// Cek apakah user berhak menginput/mengedit di modul tertentu
+export function canUserEditModule(user: UserAccount | null, moduleId?: number): boolean {
+  if (!user || user.status === 'NONAKTIF') return false;
+  const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+
+  // 1. Developer: Full Access ke semua fitur, edit, delete
+  if (isDeveloper(user)) return true;
+
+  // 2. Admin: Bisa Input modul 3, 4, 5, 6, & 7
+  if (tier === 'ADMIN') {
+    if (!moduleId) return true;
+    return moduleId === 3 || moduleId === 4 || moduleId === 5 || moduleId === 6 || moduleId === 7;
   }
 
-  return true;
+  // 3. Akun Khusus: Hanya View & Export (Tidak bisa input/edit)
+  if (tier === 'KHUSUS') {
+    return false;
+  }
+
+  // 4. Akun Biasa/Member: Hanya Input modul 5 (P2H)
+  if (tier === 'MEMBER') {
+    return moduleId === 5;
+  }
+
+  return false;
+}
+
+// Backwards-compatible alias for existing code
+export function canUserEdit(user: UserAccount | null, moduleId?: number): boolean {
+  return canUserEditModule(user, moduleId);
+}
+
+// Poin 2, 3, 4: Cek apakah user berhak melakukan Export data pada modul tertentu
+export function canUserExportModule(user: UserAccount | null, moduleId: number): boolean {
+  if (!user || user.status === 'NONAKTIF') return false;
+  const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+
+  // 1. Developer: Full Export semua modul
+  if (isDeveloper(user)) return true;
+
+  // 2. Admin: Bisa Export modul 3, 4, 5, 6, & 7
+  if (tier === 'ADMIN') {
+    return moduleId === 3 || moduleId === 4 || moduleId === 5 || moduleId === 6 || moduleId === 7;
+  }
+
+  // 3. Akun Khusus: Bisa Export modul 1 (Daftar Aset), modul 2 (Manpower), export modul 3, 4, 5, 6, 7
+  if (tier === 'KHUSUS') {
+    return [1, 2, 3, 4, 5, 6, 7].includes(moduleId);
+  }
+
+  // 4. Member: Tidak memiliki hak export
+  if (tier === 'MEMBER') {
+    return false;
+  }
+
+  return false;
 }
 
 // Update Otorisasi Hak Akses Pengguna (Hanya dapat dipanggil oleh Developer)
@@ -297,6 +418,140 @@ export function updateUserAccount(id: string, updates: Partial<UserAccount>): bo
   users[index] = { ...users[index], ...updates };
   saveUsers(users);
   return true;
+}
+
+export function updateUserPassword(id: string, newPassword: string): { success: boolean; message: string } {
+  const users = getAllUsers();
+  const index = users.findIndex((u) => u.id === id);
+  if (index === -1) {
+    return { success: false, message: 'User tidak ditemukan' };
+  }
+
+  users[index].password = newPassword.trim();
+  saveUsers(users);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Developer mengubah password akun: ${users[index].fullName} (@${users[index].username})`,
+  });
+
+  return { success: true, message: `Password akun ${users[index].fullName} berhasil diperbarui!` };
+}
+
+// Sinkronisasi otomatis personil Manpower ke Akun Pengguna:
+// - Administrasi: Otomatis disetel "BISA_MENGISI" (Editor)
+// - Owner dan Karyawan umum: Otomatis disetel "HANYA_VIEW" (Viewer)
+export function syncAllManpowerToUserAccounts(): {
+  success: boolean;
+  createdCount: number;
+  updatedCount: number;
+  message: string;
+} {
+  const manpowerList = getAllManpower();
+  const users = getAllUsers();
+
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  manpowerList.forEach((mp) => {
+    // Cari apakah sudah ada akun user yang tertaut dengan id manpower ini atau username/nama serupa
+    const existingIndex = users.findIndex(
+      (u) => 
+        (u.manpowerId && u.manpowerId === mp.id) ||
+        (mp.nik && u.username.toLowerCase() === mp.nik.toLowerCase().trim()) ||
+        (mp.nama && u.fullName.toLowerCase().trim() === mp.nama.toLowerCase().trim())
+    );
+
+    const isAdministrasi = mp.jabatan === 'ADMINISTRASI';
+    const isOwner = mp.jabatan === 'OWNER' || mp.jabatan === 'DIREKTUR / MANAGEMENT';
+
+    // Otorisasi sesuai kebutuhan user:
+    // - Khusus Administrasi: BISA MENGISI
+    // - Seluruh Karyawan dan Owner: HANYA VIEW
+    const targetAccessLevel: UserAccessLevel = isAdministrasi ? 'BISA_MENGISI' : 'HANYA_VIEW';
+    const targetPermissions: UserModulePermissions = {
+      modul1Asset: isAdministrasi,
+      modul2Manpower: isAdministrasi,
+      modul3Maintenance: isAdministrasi,
+      modul4Inventory: isAdministrasi,
+    };
+
+    if (existingIndex !== -1) {
+      // Update data yang sudah ada jika bukan ADMIN Developer
+      if (users[existingIndex].role !== 'ADMIN') {
+        users[existingIndex].manpowerId = mp.id;
+        users[existingIndex].jabatan = mp.jabatan;
+        users[existingIndex].department = mp.jabatan || 'Workshop & Quarry';
+        users[existingIndex].phone = mp.noWa || users[existingIndex].phone;
+        users[existingIndex].accessLevel = targetAccessLevel;
+        users[existingIndex].modulePermissions = targetPermissions;
+        updatedCount++;
+      }
+    } else {
+      // Buat akun baru
+      // Tentukan username unik yang rapi
+      let baseUsername = '';
+      if (isOwner) {
+        baseUsername = 'owner_bkwa';
+      } else if (mp.nik && mp.nik.trim()) {
+        baseUsername = mp.nik.toLowerCase().replace(/[^a-z0-9]/g, '');
+      } else if (mp.nama && mp.nama.trim()) {
+        baseUsername = mp.nama.toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '');
+      } else {
+        baseUsername = 'karyawan';
+      }
+
+      let candidateUsername = baseUsername;
+      let counter = 1;
+      while (users.some((u) => u.username.toLowerCase() === candidateUsername.toLowerCase())) {
+        candidateUsername = `${baseUsername}${counter}`;
+        counter++;
+      }
+
+      // Tentukan password awal
+      let defaultPassword = 'user123';
+      if (isOwner) {
+        defaultPassword = 'owner123';
+      } else if (isAdministrasi) {
+        defaultPassword = 'admin123';
+      }
+
+      const newUser: UserAccount = {
+        id: `usr-mp-${mp.id}`,
+        manpowerId: mp.id,
+        username: candidateUsername,
+        email: `${candidateUsername.toLowerCase()}@bkwa.co.id`,
+        fullName: mp.nama || (isOwner ? 'Owner BKWA' : 'Karyawan BKWA'),
+        role: 'KARYAWAN',
+        accountTier: isAdministrasi ? 'ADMIN' : (isOwner ? 'KHUSUS' : 'MEMBER'),
+        password: defaultPassword,
+        department: mp.jabatan || 'Operasional',
+        jabatan: mp.jabatan,
+        phone: mp.noWa || '-',
+        status: 'AKTIF',
+        accessLevel: targetAccessLevel,
+        modulePermissions: targetPermissions,
+        createdAt: new Date().toISOString(),
+      };
+
+      users.push(newUser);
+      createdCount++;
+    }
+  });
+
+  saveUsers(users);
+
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Sinkronisasi akun dari data Manpower: ${createdCount} dibuat baru, ${updatedCount} diperbarui. (Administrasi: Bisa Mengisi, Owner & Karyawan lain: Hanya View).`,
+  });
+
+  return {
+    success: true,
+    createdCount,
+    updatedCount,
+    message: `Berhasil menyinkronkan data Manpower ke Akun Login (${createdCount} akun baru dibuat, ${updatedCount} akun disesuaikan).`,
+  };
 }
 
 export function deleteUserAccount(id: string): { success: boolean; message: string } {
@@ -624,7 +879,12 @@ export function getAllBreakdowns(): BreakdownRecord[] {
       localStorage.setItem(STORAGE_KEYS.BREAKDOWN, JSON.stringify([]));
       return [];
     }
-    return JSON.parse(data);
+    const parsed: BreakdownRecord[] = JSON.parse(data);
+    return parsed.map((r) => ({
+      ...r,
+      noMaintenanceOrder: r.noMaintenanceOrder || r.noNotifikasi,
+      namaAlat: r.namaAlat || r.noLama,
+    }));
   } catch (e) {
     console.error('Error reading breakdown records', e);
     return [];
@@ -636,24 +896,21 @@ export function saveBreakdownList(records: BreakdownRecord[]): void {
 }
 
 /**
- * Generate No Laporan Kerusakan / No Notifikasi dengan aturan:
- * 2 digit tahun, 2 digit bulan dan 5 no urut Notifikasi (Contoh: 260900001)
+ * Generate No Maintenance Order / No Notifikasi dengan aturan:
+ * 2 digit tahun dan 4 digit no urut (Contoh: 260001)
  */
 export function generateNextNotificationNumber(dateStr?: string): string {
-  // Ambil tahun dan bulan dari tanggal input atau hari ini
+  // Ambil tahun dari tanggal input atau hari ini
   let year2Digits = '26';
-  let month2Digits = '09';
 
   if (dateStr) {
     const parts = dateStr.split('-');
-    if (parts.length === 3) {
+    if (parts.length >= 1) {
       year2Digits = parts[0].slice(-2);
-      month2Digits = parts[1].padStart(2, '0');
     }
   } else {
     const now = new Date();
     year2Digits = String(now.getFullYear()).slice(-2);
-    month2Digits = String(now.getMonth() + 1).padStart(2, '0');
   }
 
   // Ambil persistent counter
@@ -668,18 +925,24 @@ export function generateNextNotificationNumber(dateStr?: string): string {
     currentCounter = 1;
   }
 
-  // Pastikan tidak duplikat dengan record yang sudah ada (5 digit urut)
+  // Pastikan tidak duplikat dengan record yang sudah ada (4 digit no urut)
   const existingRecords = getAllBreakdowns();
-  while (existingRecords.some(r => r.noNotifikasi.endsWith(String(currentCounter).padStart(5, '0')))) {
+  while (
+    existingRecords.some(
+      (r) =>
+        r.noNotifikasi === `${year2Digits}${String(currentCounter).padStart(4, '0')}` ||
+        r.noMaintenanceOrder === `${year2Digits}${String(currentCounter).padStart(4, '0')}`
+    )
+  ) {
     currentCounter++;
   }
 
   localStorage.setItem(STORAGE_KEYS.BREAKDOWN_COUNTER, String(currentCounter));
 
-  // Format 5 digit nomor urut: 00001
-  const serial5Digits = String(currentCounter).padStart(5, '0');
+  // Format 4 digit nomor urut: 0001 -> 260001
+  const serial4Digits = String(currentCounter).padStart(4, '0');
 
-  return `${year2Digits}${month2Digits}${serial5Digits}`;
+  return `${year2Digits}${serial4Digits}`;
 }
 
 export function registerBreakdown(
@@ -692,9 +955,91 @@ export function registerBreakdown(
   const records = getAllBreakdowns();
   const now = new Date().toISOString();
   const today = data.tanggal || now.split('T')[0];
-
-  const noNotifikasi = generateNextNotificationNumber(today);
   const currentUser = getCurrentUser();
+
+  // CEK APAKAH UNIT INI MEMILIKI BREAKDOWN AKTIF YANG BELUM READY
+  // Sesuai SOP: Jika unit masih BREAKDOWN, jangan buat no MO baru, melainkan tetap referensikan No Maintenance Order sebelumnya!
+  // No Maintenance Order baru HANYA di-generate jika unit sebelumnya sudah 'READY'.
+  const norm = (s: string = '') => s.toLowerCase().replace(/[\s\-_]/g, '').trim();
+  const targetNorm = norm(data.noUnit);
+  const existingActive = records.find(
+    (r) =>
+      Boolean(r.noUnit) &&
+      (norm(r.noUnit) === targetNorm || r.noUnit.toLowerCase().trim() === data.noUnit.toLowerCase().trim()) &&
+      (r.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
+  );
+
+  if (existingActive) {
+    const mo = existingActive.noMaintenanceOrder || existingActive.noNotifikasi;
+    const newStatus = data.statusUnit || existingActive.statusUnit || 'BREAKDOWN';
+
+    // Buat entri update pekerjaan baru pada riwayat
+    const newUpdateEntry: BreakdownUpdateEntry = {
+      id: `upd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      startJob: today,
+      detailKerusakan: data.detailProblem || 'Update Pekerjaan Lanjutan',
+      progress: data.progress || existingActive.progress || 'On Progress',
+      statusUnit: newStatus,
+      pic1: data.pic1 || existingActive.pic1 || '',
+      pic2: data.pic2 || existingActive.pic2 || '',
+      pic3: data.pic3 || existingActive.pic3 || '',
+      partsJasa: data.partsJasa || existingActive.partsJasa || [],
+      remark: data.remark || existingActive.remark || `Update pekerjaan tanggal ${today}`,
+      updatedBy: data.pelapor || currentUser?.fullName || 'Operator / Mekanik',
+      createdAt: now,
+    };
+
+    // Hitung downtime jika status berubah menjadi READY atau LIMIT OPERASI
+    let downtimeHours = existingActive.downtimeHours;
+    let completedAt = existingActive.completedAt;
+
+    if (newStatus === 'READY' || newStatus === 'LIMIT OPERASI') {
+      if (!completedAt) {
+        completedAt = now;
+        const startMs = new Date(existingActive.tanggal).getTime();
+        const endMs = new Date(now).getTime();
+        const diffHours = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60)));
+        downtimeHours = diffHours;
+      }
+    }
+
+    const index = records.findIndex((r) => r.id === existingActive.id);
+    const updatedRecord: BreakdownRecord = {
+      ...existingActive,
+      noMaintenanceOrder: mo,
+      noNotifikasi: mo,
+      hm: data.hm ? (Number(data.hm) || data.hm) : existingActive.hm,
+      component: data.component || existingActive.component,
+      detailProblem: data.detailProblem || existingActive.detailProblem,
+      detailKerusakan: data.detailProblem || existingActive.detailKerusakan,
+      progress: data.progress || existingActive.progress,
+      statusUnit: newStatus,
+      downtimeHours,
+      completedAt,
+      riwayatUpdate: [newUpdateEntry, ...(existingActive.riwayatUpdate || [])],
+      updatedAt: now,
+    };
+
+    records[index] = updatedRecord;
+    saveBreakdownList(records);
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Pekerjaan Breakdown [${mo}] Unit ${updatedRecord.noUnit}: Tetap Reff MO ${mo} (Status: ${newStatus}, Progress: ${updatedRecord.progress})`,
+      detailUnit: updatedRecord.noUnit,
+    });
+
+    return {
+      success: true,
+      message: `Update pekerjaan unit ${updatedRecord.noUnit} berhasil disimpan! Tetap mereferensikan Maintenance Order: ${mo} (karena unit masih berstatus ${existingActive.statusUnit}).`,
+      record: updatedRecord,
+    };
+  }
+
+  // JIKA UNIT BELUM ADA DI DAFTAR BREAKDOWN ATAU STATUS SEBELUMNYA SUDAH 'READY':
+  // GENERATE NO MAINTENANCE ORDER BARU
+  const noMaintenanceOrder = generateNextNotificationNumber(today);
+  const noNotifikasi = noMaintenanceOrder;
 
   const initialUpdateEntry: BreakdownUpdateEntry = {
     id: `upd-${Date.now()}`,
@@ -715,6 +1060,8 @@ export function registerBreakdown(
     ...data,
     id: `bd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
     noNotifikasi,
+    noMaintenanceOrder,
+    namaAlat: data.namaAlat || data.noLama,
     statusUnit: data.statusUnit || 'BREAKDOWN',
     riwayatUpdate: [initialUpdateEntry],
     createdAt: now,
@@ -726,13 +1073,13 @@ export function registerBreakdown(
 
   logActivity({
     aksi: 'REGISTRASI',
-    keterangan: `Input Breakdown No: ${noNotifikasi} - Unit ${newRecord.noUnit} (${newRecord.component}: ${newRecord.detailProblem})`,
+    keterangan: `Input Breakdown Baru No: ${noNotifikasi} (MO: ${noMaintenanceOrder}) - Unit ${newRecord.noUnit} (${newRecord.component}: ${newRecord.detailProblem})`,
     detailUnit: newRecord.noUnit,
   });
 
   return {
     success: true,
-    message: `Data Breakdown berhasil disimpan! No Laporan Kerusakan: ${noNotifikasi}`,
+    message: `Laporan Breakdown baru berhasil disimpan! No Maintenance Order: ${noMaintenanceOrder}`,
     record: newRecord,
   };
 }
@@ -741,6 +1088,8 @@ export function updateBreakdownActivity(
   id: string,
   updateData: {
     startJob?: string;
+    jamStart?: string;
+    jamFinish?: string;
     detailKerusakan?: string;
     progress?: BreakdownProgressOption | string;
     statusUnit?: BreakdownStatusUnitOption | string;
@@ -785,6 +1134,8 @@ export function updateBreakdownActivity(
   const newEntry: BreakdownUpdateEntry = {
     id: `upd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
     startJob: today,
+    jamStart: updateData.jamStart || target.jamStart || '',
+    jamFinish: updateData.jamFinish || target.jamFinish || '',
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan || target.detailProblem || '',
     progress: updateData.progress || target.progress || 'On Progress',
     statusUnit: newStatus,
@@ -800,6 +1151,8 @@ export function updateBreakdownActivity(
   const updatedRecord: BreakdownRecord = {
     ...target,
     startJob: updateData.startJob || target.startJob,
+    jamStart: updateData.jamStart !== undefined ? updateData.jamStart : target.jamStart,
+    jamFinish: updateData.jamFinish !== undefined ? updateData.jamFinish : target.jamFinish,
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan,
     progress: updateData.progress || target.progress,
     statusUnit: newStatus,
@@ -968,7 +1321,12 @@ export function getAllFogDistributions(): FogFuelDistributionRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.FOG_DISTRIBUTION);
     if (!data) return [];
-    return JSON.parse(data);
+    const parsed: FogFuelDistributionRecord[] = JSON.parse(data);
+    return parsed.map((item) => ({
+      ...item,
+      hmPengisian: Number(item.hmPengisian ?? (item as any).hm ?? 0),
+      qty: Number(item.qty) || 0,
+    }));
   } catch (e) {
     console.error('Error loading FOG distributions', e);
     return [];
@@ -1180,60 +1538,24 @@ export function addCustomOilType(newOilName: string): { success: boolean; messag
 // =========================================================================
 
 // --- 1. DATA SUPLIER ---
-export const INITIAL_SUPPLIERS: SupplierRecord[] = [
-  {
-    id: 'sup-1',
-    namaDistributor: 'PT Pertamina Patra Niaga',
-    alamat: 'Jl. Ahmad Yani No. 100, Surabaya, Jawa Timur',
-    noTelpWa: '0812-3456-7890',
-    email: 'sales.surabaya@pertaminapatraniaga.co.id',
-    itemName: 'BBM Solar Industri (Biosolar B35)',
-    createdAt: '2026-09-01T08:00:00.000Z',
-    updatedAt: '2026-09-01T08:00:00.000Z',
-  },
-  {
-    id: 'sup-2',
-    namaDistributor: 'PT United Tractors Pandu Engineering',
-    alamat: 'Kawasan Industri Rungkut Blok B-12, Surabaya',
-    noTelpWa: '0811-9876-5432',
-    email: 'logistics.service@patria.co.id',
-    itemName: 'Oli Hidrolik, Transmisi & Komponen Alat Berat',
-    createdAt: '2026-09-01T08:30:00.000Z',
-    updatedAt: '2026-09-01T08:30:00.000Z',
-  },
-  {
-    id: 'sup-3',
-    namaDistributor: 'PT Pertamina Lubricants',
-    alamat: 'Jl. Kramat Raya No. 59, Jakarta Pusat',
-    noTelpWa: '0812-8899-0011',
-    email: 'cs@pertaminalubricants.com',
-    itemName: 'Turalik 52, Rored HDA SAE 90, Meditran SX 15W-40, ATF',
-    createdAt: '2026-09-02T09:00:00.000Z',
-    updatedAt: '2026-09-02T09:00:00.000Z',
-  },
-  {
-    id: 'sup-4',
-    namaDistributor: 'PT Shell Lubricants Indonesia',
-    alamat: 'Gedung Bursa Efek Tower 1, Lt. 22, Jakarta',
-    noTelpWa: '0813-2233-4455',
-    email: 'orders.indonesia@shell.com',
-    itemName: 'Shell Tellus S2 M 68, Rimula R4X 15W-40, Spirax',
-    createdAt: '2026-09-02T09:30:00.000Z',
-    updatedAt: '2026-09-02T09:30:00.000Z',
-  },
-];
+export const INITIAL_SUPPLIERS: SupplierRecord[] = [];
 
 export function getAllSuppliers(): SupplierRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(INITIAL_SUPPLIERS));
-      return INITIAL_SUPPLIERS;
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: SupplierRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['sup-1', 'sup-2', 'sup-3', 'sup-4'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.SUPPLIERS, JSON.stringify(userOnly));
+    }
+    return userOnly;
   } catch (e) {
     console.error('Error loading suppliers', e);
-    return INITIAL_SUPPLIERS;
+    return [];
   }
 }
 
@@ -1316,17 +1638,80 @@ export function deleteSupplier(id: string): { success: boolean; message: string 
 }
 
 
-// --- INITIAL PERIOD BALANCE ---
+// --- INITIAL PERIOD BALANCE & KAPASITAS TANGKI ---
 export const INITIAL_PERIOD_BALANCE: InventoryPeriodBalance = {
-  sisaPeriodeLaluFuelTangki: 8500, // Ltr di Tangki Utama
-  sisaPeriodeLaluFuelFT: 1500,     // Ltr di Fuel Truck (FT)
-  sisaPeriodeLaluOli: {
-    'TURALIK 52 PERTAMINA': 400,
-    'RORED HDA SAE 90': 250,
-    'SAE 15W 40': 350,
-    'ATF': 120,
-  },
+  sisaPeriodeLaluFuelTangki: 0,
+  sisaPeriodeLaluFuelFT: 0,
+  sisaPeriodeLaluOli: {},
+  kapasitasTangkiUtama: 20000,
+  kapasitasFuelTruck: 5000,
 };
+
+export function getKapasitasTangkiUtama(): number {
+  try {
+    const custom = localStorage.getItem(STORAGE_KEYS.KAPASITAS_TANGKI_UTAMA);
+    if (custom) {
+      const num = Number(custom);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    const balance = getInventoryPeriodBalance();
+    if (balance.kapasitasTangkiUtama && balance.kapasitasTangkiUtama > 0) {
+      return balance.kapasitasTangkiUtama;
+    }
+    return 20000;
+  } catch {
+    return 20000;
+  }
+}
+
+export function setKapasitasTangkiUtama(kapasitas: number): void {
+  try {
+    const valid = Math.max(1, Number(kapasitas) || 20000);
+    localStorage.setItem(STORAGE_KEYS.KAPASITAS_TANGKI_UTAMA, String(valid));
+    const current = getInventoryPeriodBalance();
+    updateInventoryPeriodBalance({
+      ...current,
+      kapasitasTangkiUtama: valid,
+    });
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Kapasitas Manual Tangki Solar Utama: ${valid.toLocaleString('id-ID')} Liter`,
+    });
+  } catch (e) {
+    console.error('Error saving kapasitas tangki utama', e);
+  }
+}
+
+export function getKapasitasFuelTruck(): number {
+  try {
+    const custom = localStorage.getItem(STORAGE_KEYS.KAPASITAS_FUEL_TRUCK);
+    if (custom) {
+      const num = Number(custom);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    const balance = getInventoryPeriodBalance();
+    if (balance.kapasitasFuelTruck && balance.kapasitasFuelTruck > 0) {
+      return balance.kapasitasFuelTruck;
+    }
+    return 5000;
+  } catch {
+    return 5000;
+  }
+}
+
+export function setKapasitasFuelTruck(kapasitas: number): void {
+  try {
+    const valid = Math.max(1, Number(kapasitas) || 5000);
+    localStorage.setItem(STORAGE_KEYS.KAPASITAS_FUEL_TRUCK, String(valid));
+    const current = getInventoryPeriodBalance();
+    updateInventoryPeriodBalance({
+      ...current,
+      kapasitasFuelTruck: valid,
+    });
+  } catch (e) {
+    console.error('Error saving kapasitas fuel truck', e);
+  }
+}
 
 export function getInventoryPeriodBalance(): InventoryPeriodBalance {
   try {
@@ -1335,7 +1720,31 @@ export function getInventoryPeriodBalance(): InventoryPeriodBalance {
       localStorage.setItem(STORAGE_KEYS.PERIOD_BALANCE, JSON.stringify(INITIAL_PERIOD_BALANCE));
       return INITIAL_PERIOD_BALANCE;
     }
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    // Bersihkan nilai dummy bawaan 8500 / 1500 jika belum pernah diubah oleh user secara riil
+    if (parsed.sisaPeriodeLaluFuelTangki === 8500 && parsed.sisaPeriodeLaluFuelFT === 1500) {
+      const cleanBalance: InventoryPeriodBalance = {
+        sisaPeriodeLaluFuelTangki: 0,
+        sisaPeriodeLaluFuelFT: 0,
+        sisaPeriodeLaluOli: {},
+        kapasitasTangkiUtama: parsed.kapasitasTangkiUtama || 20000,
+        kapasitasFuelTruck: parsed.kapasitasFuelTruck || 5000,
+      };
+      localStorage.setItem(STORAGE_KEYS.PERIOD_BALANCE, JSON.stringify(cleanBalance));
+      return cleanBalance;
+    }
+
+    // Pastikan kapasitas manual terisi
+    if (!parsed.kapasitasTangkiUtama) {
+      const savedKap = localStorage.getItem(STORAGE_KEYS.KAPASITAS_TANGKI_UTAMA);
+      parsed.kapasitasTangkiUtama = savedKap ? Number(savedKap) || 20000 : 20000;
+    }
+    if (!parsed.kapasitasFuelTruck) {
+      const savedFt = localStorage.getItem(STORAGE_KEYS.KAPASITAS_FUEL_TRUCK);
+      parsed.kapasitasFuelTruck = savedFt ? Number(savedFt) || 5000 : 5000;
+    }
+
+    return parsed;
   } catch (e) {
     console.error('Error loading inventory period balance', e);
     return INITIAL_PERIOD_BALANCE;
@@ -1346,14 +1755,22 @@ export function updateInventoryPeriodBalance(
   balance: InventoryPeriodBalance
 ): { success: boolean; message: string; balance: InventoryPeriodBalance } {
   try {
+    // Sinkronkan juga key persistent kapasitas jika disediakan
+    if (balance.kapasitasTangkiUtama && balance.kapasitasTangkiUtama > 0) {
+      localStorage.setItem(STORAGE_KEYS.KAPASITAS_TANGKI_UTAMA, String(balance.kapasitasTangkiUtama));
+    }
+    if (balance.kapasitasFuelTruck && balance.kapasitasFuelTruck > 0) {
+      localStorage.setItem(STORAGE_KEYS.KAPASITAS_FUEL_TRUCK, String(balance.kapasitasFuelTruck));
+    }
+
     localStorage.setItem(STORAGE_KEYS.PERIOD_BALANCE, JSON.stringify(balance));
     logActivity({
       aksi: 'UPDATE',
-      keterangan: `Update Sisa Periode Lalu: Tangki Utama ${balance.sisaPeriodeLaluFuelTangki}L, FT ${balance.sisaPeriodeLaluFuelFT}L`,
+      keterangan: `Update Saldo & Kapasitas FOG: Tangki Utama ${balance.sisaPeriodeLaluFuelTangki}L (Kapasitas: ${balance.kapasitasTangkiUtama || 20000}L), FT ${balance.sisaPeriodeLaluFuelFT}L`,
     });
-    return { success: true, message: 'Sisa stok periode sebelumnya berhasil diperbarui!', balance };
+    return { success: true, message: 'Konfigurasi kapasitas & sisa stok berhasil diperbarui!', balance };
   } catch (e) {
-    return { success: false, message: 'Gagal memperbarui sisa stok periode sebelumnya.', balance };
+    return { success: false, message: 'Gagal memperbarui konfigurasi sisa stok & kapasitas.', balance };
   }
 }
 
@@ -1361,60 +1778,24 @@ export const saveInventoryPeriodBalance = updateInventoryPeriodBalance;
 
 
 // --- 2. INPUT STOCK (FUEL) ---
-export const INITIAL_FUEL_STOCK_INPUTS: FuelStockInputRecord[] = [
-  {
-    id: 'fsi-1',
-    distributor: 'PT Pertamina Patra Niaga',
-    snReffNo: 'SJ-PTM-2026/09/014',
-    platNomor: 'L 9821 UA',
-    driverName: 'Bambang Sudibyo',
-    qtySupplier: 8000,
-    flowmeterStart: 124000,
-    flowmeterEnd: 131980,
-    actualQtyFlowmeter: 7980,
-    hasilUkurStickSebelum: 45,
-    hasilUkurStickSesudah: 185,
-    picFogName: 'Danang Prasetyo',
-    picFogJabatan: 'Staff Logistik / Admin',
-    tanggal: '2026-09-12',
-    jam: '09:30',
-    remark: 'Penerimaan Solar B35 aman, segel utuh',
-    createdAt: '2026-09-12T09:30:00.000Z',
-    updatedAt: '2026-09-12T09:30:00.000Z',
-  },
-  {
-    id: 'fsi-2',
-    distributor: 'PT Pertamina Patra Niaga',
-    snReffNo: 'SJ-PTM-2026/09/028',
-    platNomor: 'W 8192 UZ',
-    driverName: 'Heri Kurniawan',
-    qtySupplier: 5000,
-    flowmeterStart: 131980,
-    flowmeterEnd: 136975,
-    actualQtyFlowmeter: 4995,
-    hasilUkurStickSebelum: 110,
-    hasilUkurStickSesudah: 198,
-    picFogName: 'Danang Prasetyo',
-    picFogJabatan: 'Staff Logistik / Admin',
-    tanggal: '2026-09-15',
-    jam: '14:15',
-    remark: 'Kondisi BBM jernih, density normal 0.840',
-    createdAt: '2026-09-15T14:15:00.000Z',
-    updatedAt: '2026-09-15T14:15:00.000Z',
-  },
-];
+export const INITIAL_FUEL_STOCK_INPUTS: FuelStockInputRecord[] = [];
 
 export function getAllFuelStockInputs(): FuelStockInputRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.FUEL_STOCK);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.FUEL_STOCK, JSON.stringify(INITIAL_FUEL_STOCK_INPUTS));
-      return INITIAL_FUEL_STOCK_INPUTS;
+      localStorage.setItem(STORAGE_KEYS.FUEL_STOCK, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: FuelStockInputRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['fsi-1', 'fsi-2'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.FUEL_STOCK, JSON.stringify(userOnly));
+    }
+    return userOnly;
   } catch (e) {
     console.error('Error loading fuel stock inputs', e);
-    return INITIAL_FUEL_STOCK_INPUTS;
+    return [];
   }
 }
 
@@ -1510,50 +1891,24 @@ export function getTop5FuelStockInputs(): FuelStockInputRecord[] {
 
 
 // --- 3. DATA TRANSFER FUEL (TANGKI-FT) ---
-export const INITIAL_FUEL_TRANSFERS: FuelTransferRecord[] = [
-  {
-    id: 'ftr-1',
-    tanggal: '2026-09-14',
-    jam: '07:30',
-    namaDriverFt: 'Agus Setiawan',
-    driverFtJabatan: 'Driver DT & Dump Truck',
-    picFog: 'Danang Prasetyo',
-    picFogJabatan: 'Staff Logistik / Admin',
-    flowmeterStart: 25400,
-    flowmeterStop: 28400,
-    qty: 3000,
-    remark: 'Transfer dari Tangki Utama ke Fuel Truck FT-01 untuk suplai pit tambang',
-    createdAt: '2026-09-14T07:30:00.000Z',
-    updatedAt: '2026-09-14T07:30:00.000Z',
-  },
-  {
-    id: 'ftr-2',
-    tanggal: '2026-09-16',
-    jam: '13:00',
-    namaDriverFt: 'Agus Setiawan',
-    driverFtJabatan: 'Driver DT & Dump Truck',
-    picFog: 'Danang Prasetyo',
-    picFogJabatan: 'Staff Logistik / Admin',
-    flowmeterStart: 28400,
-    flowmeterStop: 30400,
-    qty: 2000,
-    remark: 'Top-up FT-01 persiapan shift sore quarry',
-    createdAt: '2026-09-16T13:00:00.000Z',
-    updatedAt: '2026-09-16T13:00:00.000Z',
-  },
-];
+export const INITIAL_FUEL_TRANSFERS: FuelTransferRecord[] = [];
 
 export function getAllFuelTransfers(): FuelTransferRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.FUEL_TRANSFER);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.FUEL_TRANSFER, JSON.stringify(INITIAL_FUEL_TRANSFERS));
-      return INITIAL_FUEL_TRANSFERS;
+      localStorage.setItem(STORAGE_KEYS.FUEL_TRANSFER, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: FuelTransferRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['ftr-1', 'ftr-2'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.FUEL_TRANSFER, JSON.stringify(userOnly));
+    }
+    return userOnly;
   } catch (e) {
     console.error('Error loading fuel transfers', e);
-    return INITIAL_FUEL_TRANSFERS;
+    return [];
   }
 }
 
@@ -1637,62 +1992,24 @@ export function deleteFuelTransfer(id: string): { success: boolean; message: str
 
 
 // --- 4. INPUT STOCK OLI ---
-export const INITIAL_OIL_STOCK_INPUTS: OilStockInputRecord[] = [
-  {
-    id: 'osi-1',
-    distributor: 'PT Pertamina Lubricants',
-    tanggal: '2026-09-10',
-    jam: '10:00',
-    namaOli: 'TURALIK 52 PERTAMINA',
-    qty: 600,
-    satuan: 'Ltr',
-    picGudangMaterial: 'Danang Prasetyo',
-    picGudangJabatan: 'Staff Logistik / Admin',
-    remark: 'Penerimaan 3 Drum @200L, kondisi drum segel utuh',
-    createdAt: '2026-09-10T10:00:00.000Z',
-    updatedAt: '2026-09-10T10:00:00.000Z',
-  },
-  {
-    id: 'osi-2',
-    distributor: 'PT United Tractors Pandu Engineering',
-    tanggal: '2026-09-12',
-    jam: '11:30',
-    namaOli: 'SAE 15W 40',
-    qty: 400,
-    satuan: 'Ltr',
-    picGudangMaterial: 'Danang Prasetyo',
-    picGudangJabatan: 'Staff Logistik / Admin',
-    remark: 'Oli mesin diesel alat berat, 2 Drum',
-    createdAt: '2026-09-12T11:30:00.000Z',
-    updatedAt: '2026-09-12T11:30:00.000Z',
-  },
-  {
-    id: 'osi-3',
-    distributor: 'PT Pertamina Lubricants',
-    tanggal: '2026-09-14',
-    jam: '14:00',
-    namaOli: 'RORED HDA SAE 90',
-    qty: 200,
-    satuan: 'Ltr',
-    picGudangMaterial: 'Danang Prasetyo',
-    picGudangJabatan: 'Staff Logistik / Admin',
-    remark: 'Oli gardan / gear oil, 1 Drum',
-    createdAt: '2026-09-14T14:00:00.000Z',
-    updatedAt: '2026-09-14T14:00:00.000Z',
-  },
-];
+export const INITIAL_OIL_STOCK_INPUTS: OilStockInputRecord[] = [];
 
 export function getAllOilStockInputs(): OilStockInputRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.OIL_STOCK);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.OIL_STOCK, JSON.stringify(INITIAL_OIL_STOCK_INPUTS));
-      return INITIAL_OIL_STOCK_INPUTS;
+      localStorage.setItem(STORAGE_KEYS.OIL_STOCK, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: OilStockInputRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['osi-1', 'osi-2', 'osi-3'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.OIL_STOCK, JSON.stringify(userOnly));
+    }
+    return userOnly;
   } catch (e) {
     console.error('Error loading oil stock inputs', e);
-    return INITIAL_OIL_STOCK_INPUTS;
+    return [];
   }
 }
 
@@ -1776,71 +2093,31 @@ export function deleteOilStockInput(id: string): { success: boolean; message: st
 
 
 // --- 5. DISTRIBUTION FUEL ---
-export const INITIAL_FUEL_DISTRIBUTIONS: FuelDistributionRecord[] = [
-  {
-    id: 'fdist-1',
-    noBon: 'BON-F-260901',
-    cnAlat: 'EX-01',
-    namaAlat: 'Excavator Kobelco SK330',
-    operatorName: 'Slamet Raharjo',
-    operatorJabatan: 'Operator Excavator',
-    hm: 4820,
-    tanggal: '2026-09-16',
-    jam: '08:15',
-    flowmeterStart: 18500,
-    flowmeterStop: 18850,
-    qty: 350,
-    remark: 'Pengisian rutin awal shift pagi di Pit Tambang Batu',
-    createdAt: '2026-09-16T08:15:00.000Z',
-    updatedAt: '2026-09-16T08:15:00.000Z',
-  },
-  {
-    id: 'fdist-2',
-    noBon: 'BON-F-260902',
-    cnAlat: 'WL-01',
-    namaAlat: 'Wheel Loader Komatsu WA380',
-    operatorName: 'Sugiono',
-    operatorJabatan: 'Operator Wheel Loader',
-    hm: 3650,
-    tanggal: '2026-09-16',
-    jam: '10:45',
-    flowmeterStart: 18850,
-    flowmeterStop: 19100,
-    qty: 250,
-    remark: 'Suplai Solar area Crusher Pabrik',
-    createdAt: '2026-09-16T10:45:00.000Z',
-    updatedAt: '2026-09-16T10:45:00.000Z',
-  },
-  {
-    id: 'fdist-3',
-    noBon: 'BON-F-260903',
-    cnAlat: 'DT-01',
-    namaAlat: 'Dump Truck Hino FM260JD',
-    operatorName: 'Agus Setiawan',
-    operatorJabatan: 'Driver DT & Dump Truck',
-    hm: 5210,
-    tanggal: '2026-09-17',
-    jam: '07:30',
-    flowmeterStart: 19100,
-    flowmeterStop: 19300,
-    qty: 200,
-    remark: 'Pengisian solar hauling quarry ke crusher',
-    createdAt: '2026-09-17T07:30:00.000Z',
-    updatedAt: '2026-09-17T07:30:00.000Z',
-  },
-];
+export const INITIAL_FUEL_DISTRIBUTIONS: FuelDistributionRecord[] = [];
 
 export function getAllFuelDistributions(): FuelDistributionRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.FUEL_DISTRIBUTION);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.FUEL_DISTRIBUTION, JSON.stringify(INITIAL_FUEL_DISTRIBUTIONS));
-      return INITIAL_FUEL_DISTRIBUTIONS;
+      localStorage.setItem(STORAGE_KEYS.FUEL_DISTRIBUTION, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: FuelDistributionRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['fdist-1', 'fdist-2', 'fdist-3'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.FUEL_DISTRIBUTION, JSON.stringify(userOnly));
+    }
+    return userOnly.map((item) => ({
+      ...item,
+      hm: Number(item.hm) || Number(item.hmPengisian) || 0,
+      hmPengisian: Number(item.hmPengisian ?? item.hm ?? 0),
+      flowmeterStart: Number(item.flowmeterStart) || 0,
+      flowmeterStop: Number(item.flowmeterStop) || 0,
+      qty: Number(item.qty) || 0,
+    }));
   } catch (e) {
     console.error('Error loading fuel distributions', e);
-    return INITIAL_FUEL_DISTRIBUTIONS;
+    return [];
   }
 }
 
@@ -1927,58 +2204,28 @@ export function deleteFuelDistribution(id: string): { success: boolean; message:
 
 
 // --- 6. DISTRIBUTION OLI ---
-export const INITIAL_OIL_DISTRIBUTIONS: OilDistributionRecord[] = [
-  {
-    id: 'odist-1',
-    noUnit: 'EX-01',
-    namaAlat: 'Excavator Kobelco SK330',
-    hmUnit: 4820,
-    jenisOli: 'TURALIK 52 PERTAMINA',
-    qty: 40,
-    satuan: 'Ltr',
-    rincianKerusakan: 'Bocor pada seal hose boom cylinder hidrolik',
-    picMekanik: 'Supriyanto',
-    picMekanikJabatan: 'Mekanik Heavy Equipment',
-    picGudangMaterial: 'Danang Prasetyo',
-    picGudangJabatan: 'Staff Logistik / Admin',
-    tanggal: '2026-09-15',
-    jam: '11:00',
-    remark: 'Penggantian oli hidrolik setelah ganti hose',
-    createdAt: '2026-09-15T11:00:00.000Z',
-    updatedAt: '2026-09-15T11:00:00.000Z',
-  },
-  {
-    id: 'odist-2',
-    noUnit: 'DT-01',
-    namaAlat: 'Dump Truck Hino FM260JD',
-    hmUnit: 5210,
-    jenisOli: 'SAE 15W 40',
-    qty: 28,
-    satuan: 'Ltr',
-    rincianKerusakan: 'Service periodik berkala ganti oli mesin 250 jam',
-    picMekanik: 'Rudi Hartono',
-    picMekanikJabatan: 'Mekanik Heavy Equipment',
-    picGudangMaterial: 'Danang Prasetyo',
-    picGudangJabatan: 'Staff Logistik / Admin',
-    tanggal: '2026-09-16',
-    jam: '15:30',
-    remark: 'Sudah termasuk penggantian filter oli engine',
-    createdAt: '2026-09-16T15:30:00.000Z',
-    updatedAt: '2026-09-16T15:30:00.000Z',
-  },
-];
+export const INITIAL_OIL_DISTRIBUTIONS: OilDistributionRecord[] = [];
 
 export function getAllOilDistributions(): OilDistributionRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.OIL_DISTRIBUTION);
     if (!data) {
-      localStorage.setItem(STORAGE_KEYS.OIL_DISTRIBUTION, JSON.stringify(INITIAL_OIL_DISTRIBUTIONS));
-      return INITIAL_OIL_DISTRIBUTIONS;
+      localStorage.setItem(STORAGE_KEYS.OIL_DISTRIBUTION, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(data);
+    const parsed: OilDistributionRecord[] = JSON.parse(data);
+    const userOnly = parsed.filter((item) => !['odist-1', 'odist-2'].includes(item.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.OIL_DISTRIBUTION, JSON.stringify(userOnly));
+    }
+    return userOnly.map((item) => ({
+      ...item,
+      hmUnit: Number(item.hmUnit ?? (item as any).hm ?? 0),
+      qty: Number(item.qty) || 0,
+    }));
   } catch (e) {
     console.error('Error loading oil distributions', e);
-    return INITIAL_OIL_DISTRIBUTIONS;
+    return [];
   }
 }
 
@@ -2105,8 +2352,13 @@ export function calculateInventoryStockLevels(
   oilDistributions: OilDistributionRecord[],
   availableOilTypes: string[]
 ): InventoryStockComputation {
-  const KAPASITAS_TANGKI_UTAMA = 20000; // Standar tangki timbun solar 20.000 Liter
-  const KAPASITAS_FUEL_TRUCK = 5000;   // Standar armada FT-01 5.000 Liter
+  // Kapasitas Tangki Solar Utama dibuat manual (dinamis sesuai kebutuhan penggantian tangki baru)
+  const manualTangki = Number(periodBalance?.kapasitasTangkiUtama);
+  const KAPASITAS_TANGKI_UTAMA = manualTangki > 0 ? manualTangki : getKapasitasTangkiUtama();
+
+  // Kapasitas Fuel Truck FT-01 Manual
+  const manualFT = Number(periodBalance?.kapasitasFuelTruck);
+  const KAPASITAS_FUEL_TRUCK = manualFT > 0 ? manualFT : getKapasitasFuelTruck();
 
   // 1. Tangki Utama
   // Total Masuk = Sum of Actual Qty Flowmeter from Input Stock (Fuel)
@@ -2175,5 +2427,1298 @@ export function calculateInventoryStockLevels(
   };
 }
 
+// ==========================================
+// MODUL 5: STORAGE METHODS UNTUK P2H UNIT
+// ==========================================
+
+export const INITIAL_P2H_RECORDS: P2HRecord[] = [];
+
+export function getAllP2HRecords(): P2HRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.P2H_RECORDS);
+    if (!data) return [];
+    const parsed: P2HRecord[] = JSON.parse(data);
+    // Hapus data dummy initial, pertahankan 100% data yang diinput oleh pengguna
+    const userOnly = parsed.filter(
+      (r) => !r.id.startsWith('p2h-init') && !r.noP2H?.startsWith('P2H-2609-000')
+    );
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.P2H_RECORDS, JSON.stringify(userOnly));
+    }
+    return userOnly;
+  } catch (e) {
+    console.error('Error loading P2H records', e);
+    return [];
+  }
+}
+
+export function saveAllP2HRecords(records: P2HRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.P2H_RECORDS, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving P2H records', e);
+  }
+}
+
+export function getNextP2HNumber(): string {
+  try {
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `P2H-${yy}${mm}`;
+
+    const currentCounterStr = localStorage.getItem(STORAGE_KEYS.P2H_COUNTER);
+    let counter = 1;
+    if (currentCounterStr) {
+      const parsed = JSON.parse(currentCounterStr);
+      if (parsed.prefix === prefix) {
+        counter = parsed.counter + 1;
+      }
+    }
+
+    localStorage.setItem(
+      STORAGE_KEYS.P2H_COUNTER,
+      JSON.stringify({ prefix, counter })
+    );
+
+    const seqStr = String(counter).padStart(4, '0');
+    return `${prefix}-${seqStr}`;
+  } catch {
+    const random = Math.floor(1000 + Math.random() * 9000);
+    return `P2H-${Date.now().toString().slice(-4)}-${random}`;
+  }
+}
+
+export function saveP2HRecord(
+  data: Omit<P2HRecord, 'id' | 'noP2H' | 'createdAt' | 'updatedAt'>,
+  existingId?: string | null
+): { success: boolean; message: string; record?: P2HRecord } {
+  try {
+    const records = getAllP2HRecords();
+    const nowIso = new Date().toISOString();
+
+    if (existingId) {
+      const index = records.findIndex((r) => r.id === existingId);
+      if (index === -1) {
+        return { success: false, message: 'Data P2H tidak ditemukan untuk diperbarui.' };
+      }
+
+      const updatedRecord: P2HRecord = {
+        ...records[index],
+        ...data,
+        updatedAt: nowIso,
+      };
+
+      records[index] = updatedRecord;
+      saveAllP2HRecords(records);
+
+      logActivity({
+        aksi: 'UPDATE',
+        keterangan: `Update Pemeriksaan P2H No. ${updatedRecord.noP2H} (Unit: ${updatedRecord.noUnit})`,
+      });
+
+      return {
+        success: true,
+        message: `Laporan P2H No. ${updatedRecord.noP2H} berhasil diperbarui.`,
+        record: updatedRecord,
+      };
+    } else {
+      const newNoP2H = getNextP2HNumber();
+      const newRecord: P2HRecord = {
+        ...data,
+        id: `p2h-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+        noP2H: newNoP2H,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      records.unshift(newRecord);
+      saveAllP2HRecords(records);
+
+      logActivity({
+        aksi: 'REGISTRASI',
+        keterangan: `Input Laporan P2H No. ${newNoP2H} (Unit: ${newRecord.noUnit}, Operator: ${newRecord.operatorName}) - Status: ${newRecord.statusKelayakan}`,
+      });
+
+      return {
+        success: true,
+        message: `Laporan P2H No. ${newNoP2H} berhasil disimpan. Status: ${
+          newRecord.statusKelayakan === 'LAYAK_OPERASI' ? 'Layak Operasi' : 'Tidak Layak / Perlu Perbaikan'
+        }.`,
+        record: newRecord,
+      };
+    }
+  } catch (e: any) {
+    return { success: false, message: `Gagal menyimpan data P2H: ${e?.message || 'Error sistem'}` };
+  }
+}
+
+export function deleteP2HRecord(id: string): { success: boolean; message: string } {
+  try {
+    const records = getAllP2HRecords();
+    const target = records.find((r) => r.id === id);
+    if (!target) {
+      return { success: false, message: 'Data P2H tidak ditemukan.' };
+    }
+
+    const filtered = records.filter((r) => r.id !== id);
+    saveAllP2HRecords(filtered);
+
+    logActivity({
+      aksi: 'HAPUS',
+      keterangan: `Hapus Laporan P2H No. ${target.noP2H} (${target.noUnit})`,
+    });
+
+    return { success: true, message: `Laporan P2H No. ${target.noP2H} berhasil dihapus.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal menghapus data P2H: ${e?.message || 'Error'}` };
+  }
+}
+
+// ==========================================
+// MODUL 5: SUB MODUL 2 - SETTING FLEET
+// Alokasi No Unit, Nama Operator, Lokasi Kerja
+// Input Manual & Opsi Sinkronisasi Otomatis dari P2H
+// ==========================================
+
+export function getAllFleetSettings(): FleetSettingRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.FLEET_SETTINGS);
+    if (!data) return [];
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error loading fleet settings', e);
+    return [];
+  }
+}
+
+export function saveAllFleetSettings(records: FleetSettingRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FLEET_SETTINGS, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving fleet settings', e);
+  }
+}
+
+export function addOrUpdateFleetSetting(
+  data: Omit<FleetSettingRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: FleetSettingRecord } {
+  try {
+    const current = getAllFleetSettings();
+    const nowIso = new Date().toISOString();
+
+    if (idToEdit) {
+      const idx = current.findIndex((f) => f.id === idToEdit);
+      if (idx === -1) {
+        return { success: false, message: 'Data setting fleet tidak ditemukan!' };
+      }
+      const updated: FleetSettingRecord = {
+        ...current[idx],
+        ...data,
+        updatedAt: nowIso,
+      };
+      current[idx] = updated;
+      saveAllFleetSettings(current);
+
+      logActivity({
+        aksi: 'UPDATE',
+        keterangan: `Update Setting Fleet Unit ${updated.noUnit} (Operator: ${updated.namaOperator}, Lokasi: ${updated.lokasiKerja})`,
+        detailUnit: updated.noUnit,
+      });
+
+      return {
+        success: true,
+        message: `Setting fleet unit ${updated.noUnit} berhasil diperbarui!`,
+        record: updated,
+      };
+    } else {
+      const newRecord: FleetSettingRecord = {
+        ...data,
+        id: `fleet-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      current.unshift(newRecord);
+      saveAllFleetSettings(current);
+
+      logActivity({
+        aksi: 'REGISTRASI',
+        keterangan: `Input Setting Fleet Unit ${newRecord.noUnit} (Operator: ${newRecord.namaOperator}, Lokasi: ${newRecord.lokasiKerja}) [${newRecord.source}]`,
+        detailUnit: newRecord.noUnit,
+      });
+
+      return {
+        success: true,
+        message: `Setting fleet unit ${newRecord.noUnit} berhasil ditambahkan!`,
+        record: newRecord,
+      };
+    }
+  } catch (e: any) {
+    return { success: false, message: `Gagal menyimpan setting fleet: ${e?.message || 'Error'}` };
+  }
+}
+
+export function deleteFleetSetting(id: string): { success: boolean; message: string } {
+  try {
+    const current = getAllFleetSettings();
+    const target = current.find((f) => f.id === id);
+    if (!target) {
+      return { success: false, message: 'Data setting fleet tidak ditemukan!' };
+    }
+    const filtered = current.filter((f) => f.id !== id);
+    saveAllFleetSettings(filtered);
+
+    logActivity({
+      aksi: 'HAPUS',
+      keterangan: `Hapus Setting Fleet Unit ${target.noUnit} (Operator: ${target.namaOperator})`,
+      detailUnit: target.noUnit,
+    });
+
+    return { success: true, message: `Setting fleet unit ${target.noUnit} berhasil dihapus.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal menghapus setting fleet: ${e?.message || 'Error'}` };
+  }
+}
+
+export function syncFleetFromP2H(
+  targetDate?: string,
+  targetShift: string = 'Shift 1',
+  targetLokasiDefault: string = 'Pit Tambang Purwosari'
+): { 
+  success: boolean; 
+  message: string; 
+  addedCount: number; 
+  updatedCount: number; 
+  totalP2H: number 
+} {
+  try {
+    const todayStr = targetDate || new Date().toISOString().split('T')[0];
+    const allP2H = getAllP2HRecords();
+    const allUnits = getAllUnits();
+    const currentFleet = getAllFleetSettings();
+
+    // Filter P2H berdasarkan tanggal terpilih
+    const p2hTarget = allP2H.filter((p) => p.tanggal === todayStr);
+
+    if (p2hTarget.length === 0) {
+      return {
+        success: false,
+        message: `Tidak ada data pengisian P2H yang ditemukan untuk tanggal ${todayStr}. Operator belum mengisi checklist P2H pada tanggal tersebut.`,
+        addedCount: 0,
+        updatedCount: 0,
+        totalP2H: 0,
+      };
+    }
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    const nowIso = new Date().toISOString();
+
+    p2hTarget.forEach((p2h) => {
+      const matchedUnit = allUnits.find(
+        (u) => u.cnNew.toLowerCase().trim() === p2h.noUnit.toLowerCase().trim()
+      );
+
+      const lokasi = matchedUnit?.loc || targetLokasiDefault;
+      const statusFleet = p2h.statusKelayakan === 'LAYAK_OPERASI' ? 'OPERASI' : 'BREAKDOWN';
+
+      // Cek apakah sudah ada setting fleet untuk unit ini pada tanggal dan shift yang sama
+      const existingIdx = currentFleet.findIndex(
+        (f) => f.tanggal === todayStr && f.noUnit.toLowerCase().trim() === p2h.noUnit.toLowerCase().trim() && f.shift === targetShift
+      );
+
+      if (existingIdx !== -1) {
+        currentFleet[existingIdx] = {
+          ...currentFleet[existingIdx],
+          jamStartOperasi: currentFleet[existingIdx].jamStartOperasi || '07:00',
+          jamFinishOperasi: currentFleet[existingIdx].jamFinishOperasi || '17:00',
+          jenisAlat: p2h.jenisAlat || matchedUnit?.jenis || currentFleet[existingIdx].jenisAlat || 'Heavy Equipment',
+          namaOperator: p2h.operatorName || currentFleet[existingIdx].namaOperator,
+          operatorJabatan: p2h.operatorJabatan || currentFleet[existingIdx].operatorJabatan,
+          statusFleet,
+          source: 'SYNC_P2H',
+          p2hRefId: p2h.id,
+          p2hNo: p2h.noP2H,
+          updatedAt: nowIso,
+        };
+        updatedCount++;
+      } else {
+        const newFleet: FleetSettingRecord = {
+          id: `fleet-sync-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          tanggal: todayStr,
+          jamStartOperasi: '07:00',
+          jamFinishOperasi: '17:00',
+          shift: targetShift,
+          noUnit: p2h.noUnit,
+          namaAlat: p2h.namaAlat || matchedUnit?.namaAlat || p2h.noUnit,
+          jenisAlat: p2h.jenisAlat || matchedUnit?.jenis || 'Heavy Equipment',
+          namaOperator: p2h.operatorName,
+          operatorJabatan: p2h.operatorJabatan || 'Operator Lapangan',
+          lokasiKerja: lokasi,
+          fleetGroup: 'Fleet Operasi',
+          statusFleet,
+          catatan: `Disinkronkan otomatis dari form P2H No. ${p2h.noP2H} (HM: ${p2h.hmKm})`,
+          source: 'SYNC_P2H',
+          p2hRefId: p2h.id,
+          p2hNo: p2h.noP2H,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        currentFleet.unshift(newFleet);
+        addedCount++;
+      }
+    });
+
+    saveAllFleetSettings(currentFleet);
+
+    logActivity({
+      aksi: 'REGISTRASI',
+      keterangan: `Sinkronisasi Fleet dari P2H Tanggal ${todayStr}: +${addedCount} unit baru, ${updatedCount} unit diperbarui`,
+    });
+
+    return {
+      success: true,
+      message: `Sinkronisasi selesai! Berhasil menambahkan ${addedCount} unit baru dan memperbarui ${updatedCount} unit dari ${p2hTarget.length} laporan P2H.`,
+      addedCount,
+      updatedCount,
+      totalP2H: p2hTarget.length,
+    };
+  } catch (e: any) {
+    return {
+      success: false,
+      message: `Gagal melakukan sinkronisasi: ${e?.message || 'Error sistem'}`,
+      addedCount: 0,
+      updatedCount: 0,
+      totalP2H: 0,
+    };
+  }
+}
+
+// ==========================================
+// MODUL 6: INVENTORY MANAGEMENT (SPARE PART)
+// Sub Modul 1: Input Spare Part (Incoming Part/Component, Stock PN, Qty & Satuan)
+// Sub Modul 2: Transaksi Spare Part (List Unit Breakdown & Reff MO, Order Part, Kurangi Stok / Permintaan Barang)
+// ==========================================
+
+export const INITIAL_SPARE_PARTS: SparePartItem[] = [];
+
+export function getAllSpareParts(): SparePartItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SPARE_PARTS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.SPARE_PARTS, JSON.stringify([]));
+      return [];
+    }
+    const parsed: SparePartItem[] = JSON.parse(raw);
+    const dummyIds = [
+      'sp-01', 'sp-02', 'sp-03', 'sp-04', 'sp-05', 'sp-06',
+      'sp-07', 'sp-08', 'sp-09', 'sp-10', 'sp-11', 'sp-12'
+    ];
+    // Singkirkan data dummy bawaan, pertahankan 100% data yang diinput oleh user
+    const userOnly = parsed.filter((p) => !dummyIds.includes(p.id));
+    if (userOnly.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.SPARE_PARTS, JSON.stringify(userOnly));
+    }
+    return userOnly;
+  } catch (e) {
+    console.error('Error reading spare parts', e);
+    return [];
+  }
+}
+
+export function saveSpareParts(items: SparePartItem[]): void {
+  localStorage.setItem(STORAGE_KEYS.SPARE_PARTS, JSON.stringify(items));
+}
+
+export function addOrUpdateSparePart(
+  data: Omit<SparePartItem, 'id' | 'createdAt' | 'updatedAt'>,
+  id?: string
+): { success: boolean; message: string; item?: SparePartItem } {
+  try {
+    const parts = getAllSpareParts();
+    const now = new Date().toISOString();
+
+    if (id) {
+      const idx = parts.findIndex((p) => p.id === id);
+      if (idx === -1) return { success: false, message: 'Spare part tidak ditemukan.' };
+      parts[idx] = {
+        ...parts[idx],
+        ...data,
+        updatedAt: now,
+      };
+      saveSpareParts(parts);
+      logActivity({
+        aksi: 'UPDATE',
+        keterangan: `Update Spare Part [PN: ${data.partNumber}] ${data.namaBarang}`,
+      });
+      return { success: true, message: 'Data spare part berhasil diperbarui.', item: parts[idx] };
+    } else {
+      // Periksa apakah PN sudah ada
+      const existing = parts.find(
+        (p) => p.partNumber.trim().toLowerCase() === data.partNumber.trim().toLowerCase()
+      );
+      if (existing) {
+        return {
+          success: false,
+          message: `Part Number (PN) "${data.partNumber}" sudah terdaftar dengan nama "${existing.namaBarang}". Gunakan tombol Tambah Stok untuk menambah kuantitas.`,
+        };
+      }
+
+      const newItem: SparePartItem = {
+        ...data,
+        id: `sp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+      parts.unshift(newItem);
+      saveSpareParts(parts);
+      logActivity({
+        aksi: 'REGISTRASI',
+        keterangan: `Registrasi Spare Part Baru [PN: ${newItem.partNumber}] ${newItem.namaBarang} (Stok: ${newItem.qty} ${newItem.satuan})`,
+      });
+      return { success: true, message: 'Spare part baru berhasil ditambahkan.', item: newItem };
+    }
+  } catch (e: any) {
+    return { success: false, message: `Gagal menyimpan spare part: ${e?.message || 'Error'}` };
+  }
+}
+
+export function addSparePartStock(
+  partId: string,
+  qtyToAdd: number,
+  keterangan?: string
+): { success: boolean; message: string; updatedItem?: SparePartItem } {
+  try {
+    if (qtyToAdd <= 0) {
+      return { success: false, message: 'Jumlah kuantitas penambahan stok harus lebih dari 0.' };
+    }
+    const parts = getAllSpareParts();
+    const idx = parts.findIndex((p) => p.id === partId);
+    if (idx === -1) {
+      return { success: false, message: 'Spare part tidak ditemukan.' };
+    }
+
+    const prevQty = parts[idx].qty;
+    parts[idx].qty += Number(qtyToAdd);
+    parts[idx].updatedAt = new Date().toISOString();
+    saveSpareParts(parts);
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Incoming Stock [PN: ${parts[idx].partNumber}] ${parts[idx].namaBarang}: +${qtyToAdd} ${parts[idx].satuan} (Stok: ${prevQty} -> ${parts[idx].qty}). ${keterangan || ''}`,
+    });
+
+    return {
+      success: true,
+      message: `Stok [PN: ${parts[idx].partNumber}] ${parts[idx].namaBarang} bertambah +${qtyToAdd} ${parts[idx].satuan} (Total sekarang: ${parts[idx].qty} ${parts[idx].satuan}).`,
+      updatedItem: parts[idx],
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal menambah stok: ${e?.message || 'Error'}` };
+  }
+}
+
+export function deleteSparePart(id: string): { success: boolean; message: string } {
+  try {
+    const parts = getAllSpareParts();
+    const target = parts.find((p) => p.id === id);
+    if (!target) return { success: false, message: 'Item tidak ditemukan.' };
+
+    const filtered = parts.filter((p) => p.id !== id);
+    saveSpareParts(filtered);
+
+    logActivity({
+      aksi: 'HAPUS',
+      keterangan: `Hapus Spare Part [PN: ${target.partNumber}] ${target.namaBarang}`,
+    });
+
+    return { success: true, message: `Spare part ${target.namaBarang} berhasil dihapus.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal menghapus spare part: ${e?.message || 'Error'}` };
+  }
+}
+
+// --- TRANSAKSI SPARE PART ---
+
+export function getAllSparePartTransactions(): SparePartTransaction[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SPARE_PART_TRANSACTIONS);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading transactions', e);
+    return [];
+  }
+}
+
+export function saveSparePartTransactions(trxs: SparePartTransaction[]): void {
+  localStorage.setItem(STORAGE_KEYS.SPARE_PART_TRANSACTIONS, JSON.stringify(trxs));
+}
+
+export function recordSparePartTransaction(
+  data: Omit<SparePartTransaction, 'id' | 'noTransaksi' | 'createdAt' | 'status'>
+): {
+  success: boolean;
+  message: string;
+  transaction?: SparePartTransaction;
+  shortageItems?: SparePartTransactionItem[];
+} {
+  try {
+    const parts = getAllSpareParts();
+    const transactions = getAllSparePartTransactions();
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const year2Digits = String(now.getFullYear()).slice(-2);
+    const trxCounter = transactions.length + 1;
+    const noTransaksi = `TRX-${year2Digits}${String(trxCounter).padStart(4, '0')}`;
+
+    const processedItems: SparePartTransactionItem[] = [];
+    const shortageItems: SparePartTransactionItem[] = [];
+
+    // Iterasi item permintaan part
+    for (const reqItem of data.items) {
+      const partIdx = parts.findIndex(
+        (p) =>
+          p.partNumber.trim().toLowerCase() === reqItem.partNumber.trim().toLowerCase() ||
+          p.namaBarang.trim().toLowerCase() === reqItem.namaBarang.trim().toLowerCase()
+      );
+
+      const requestedQty = Number(reqItem.qtyDiminta);
+      let releasedQty = 0;
+      let statusKetersediaan: 'TERSEDIA' | 'SEBAGIAN' | 'HABIS' = 'HABIS';
+
+      if (partIdx !== -1) {
+        const available = parts[partIdx].qty;
+        if (available >= requestedQty) {
+          releasedQty = requestedQty;
+          parts[partIdx].qty -= requestedQty;
+          parts[partIdx].updatedAt = now.toISOString();
+          statusKetersediaan = 'TERSEDIA';
+        } else if (available > 0) {
+          releasedQty = available;
+          parts[partIdx].qty = 0;
+          parts[partIdx].updatedAt = now.toISOString();
+          statusKetersediaan = 'SEBAGIAN';
+          shortageItems.push({
+            ...reqItem,
+            qtyDiminta: requestedQty - available,
+            qtyDikeluarkan: 0,
+            statusKetersediaan: 'HABIS',
+            keterangan: `Kurang ${requestedQty - available} ${reqItem.satuan}`,
+          });
+        } else {
+          releasedQty = 0;
+          statusKetersediaan = 'HABIS';
+          shortageItems.push({
+            ...reqItem,
+            qtyDiminta: requestedQty,
+            qtyDikeluarkan: 0,
+            statusKetersediaan: 'HABIS',
+            keterangan: `Stok Gudang Habis`,
+          });
+        }
+      } else {
+        // Part tidak ada dalam master inventory
+        releasedQty = 0;
+        statusKetersediaan = 'HABIS';
+        shortageItems.push({
+          ...reqItem,
+          qtyDiminta: requestedQty,
+          qtyDikeluarkan: 0,
+          statusKetersediaan: 'HABIS',
+          keterangan: `Item belum ada di master inventory`,
+        });
+      }
+
+      processedItems.push({
+        ...reqItem,
+        qtyDiminta: requestedQty,
+        qtyDikeluarkan: releasedQty,
+        statusKetersediaan,
+      });
+    }
+
+    // Tentukan status transaksi
+    let trxStatus: 'SELESAI' | 'SEBAGIAN' | 'PERMINTAAN_BARANG' = 'SELESAI';
+    if (shortageItems.length > 0) {
+      trxStatus = processedItems.some((i) => i.qtyDikeluarkan > 0)
+        ? 'SEBAGIAN'
+        : 'PERMINTAAN_BARANG';
+    }
+
+    const newTransaction: SparePartTransaction = {
+      ...data,
+      id: `trx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      noTransaksi,
+      tanggal: data.tanggal || dateStr,
+      jam: data.jam || timeStr,
+      items: processedItems,
+      status: trxStatus,
+      createdAt: now.toISOString(),
+    };
+
+    transactions.unshift(newTransaction);
+    saveSparePartTransactions(transactions);
+    saveSpareParts(parts); // Simpan perubahan stok
+
+    logActivity({
+      aksi: 'REGISTRASI',
+      keterangan: `Transaksi Spare Part [${noTransaksi}] Reff MO ${data.noMaintenanceOrder} Unit ${data.noUnit} (${processedItems.length} item, status: ${trxStatus})`,
+      detailUnit: data.noUnit,
+    });
+
+    let message = `Transaksi Spare Part [${noTransaksi}] berhasil dicatat!`;
+    if (shortageItems.length > 0) {
+      message += ` Terdapat ${shortageItems.length} item part yang stoknya kurang/habis di gudang. Silakan buat Form Permintaan Barang.`;
+    } else {
+      message += ` Seluruh stok part mencukupi dan kuantitas di inventory otomatis terpotong.`;
+    }
+
+    return {
+      success: true,
+      message,
+      transaction: newTransaction,
+      shortageItems,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal memproses transaksi spare part: ${e?.message || 'Error'}` };
+  }
+}
+
+// --- FORM PERMINTAAN BARANG (PURCHASE / MATERIAL REQUEST) ---
+
+export function getAllPurchaseRequests(): PurchaseRequest[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PURCHASE_REQUESTS);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading purchase requests', e);
+    return [];
+  }
+}
+
+export function savePurchaseRequests(requests: PurchaseRequest[]): void {
+  localStorage.setItem(STORAGE_KEYS.PURCHASE_REQUESTS, JSON.stringify(requests));
+}
+
+export function createPurchaseRequest(
+  data: Omit<PurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'status'>
+): {
+  success: boolean;
+  message: string;
+  request?: PurchaseRequest;
+} {
+  try {
+    const requests = getAllPurchaseRequests();
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const year2Digits = String(now.getFullYear()).slice(-2);
+    const counter = requests.length + 1;
+    const noPermintaan = `SPB-${year2Digits}${String(counter).padStart(4, '0')}`;
+
+    const newRequest: PurchaseRequest = {
+      ...data,
+      id: `pr-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      noPermintaan,
+      tanggal: data.tanggal || dateStr,
+      jam: data.jam || timeStr,
+      status: 'DIAJUKAN',
+      createdAt: now.toISOString(),
+    };
+
+    requests.unshift(newRequest);
+    savePurchaseRequests(requests);
+
+    logActivity({
+      aksi: 'REGISTRASI',
+      keterangan: `Form Permintaan Barang [${noPermintaan}] Reff MO ${data.noMaintenanceOrder || '-'} Unit ${data.noUnit || '-'} (${data.items.length} item part diajukan)`,
+      detailUnit: data.noUnit,
+    });
+
+    return {
+      success: true,
+      message: `Form Permintaan Barang [${noPermintaan}] berhasil dibuat dan diajukan ke Pengadaan/Logistik!`,
+      request: newRequest,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal membuat form permintaan barang: ${e?.message || 'Error'}` };
+  }
+}
+
+export function updatePurchaseRequestStatus(
+  id: string,
+  status: PurchaseRequest['status'],
+  approver?: string
+): { success: boolean; message: string } {
+  try {
+    const requests = getAllPurchaseRequests();
+    const idx = requests.findIndex((r) => r.id === id);
+    if (idx === -1) return { success: false, message: 'Permintaan tidak ditemukan.' };
+
+    requests[idx].status = status;
+    if (approver) requests[idx].disetujuiOleh = approver;
+    savePurchaseRequests(requests);
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Status Permintaan Barang [${requests[idx].noPermintaan}] diubah menjadi ${status}`,
+    });
+
+    return { success: true, message: `Status permintaan [${requests[idx].noPermintaan}] diperbarui menjadi ${status}.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal mengupdate status: ${e?.message || 'Error'}` };
+  }
+}
+
+// Aliases for Spare Part Storage APIs
+export const getStoredSpareParts = getAllSpareParts;
+export const saveSparePartItem = addOrUpdateSparePart;
+export const deleteSparePartItem = deleteSparePart;
+export const getStoredSparePartTransactions = getAllSparePartTransactions;
+export const getStoredPurchaseRequests = getAllPurchaseRequests;
+
+// ============================================================
+// MODUL 7: TYRE MANAGEMENT SYSTEM STORAGE
+// ============================================================
+
+// Sample Initial Tyres untuk demonstrasi Dashboard & Monitoring Keausan
+export const INITIAL_TYRE_REGISTRATIONS: TyreRegistration[] = [
+  {
+    id: 'tyre-reg-001',
+    kodeTyre: 'ET09-0001',
+    merkTyre: 'Bridgestone',
+    ukuranTyre: '12.00R24',
+    codeExpired: '4827',
+    initialDepthThread: 25,
+    status: 'INSTALLED',
+    currentUnit: 'DT01',
+    currentPosisi: 'FL',
+    currentDepthThread: 5, // 5mm / 25mm = 20% (KRITIS - Segera ganti)
+    catatan: 'Ban depan kiri DT01, kembangan menipis akibat medan batu pit',
+    createdAt: '2026-02-01T08:00:00Z',
+    updatedAt: '2026-09-20T10:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-002',
+    kodeTyre: 'ET09-0002',
+    merkTyre: 'Bridgestone',
+    ukuranTyre: '12.00R24',
+    codeExpired: '4827',
+    initialDepthThread: 25,
+    status: 'INSTALLED',
+    currentUnit: 'DT01',
+    currentPosisi: 'FR',
+    currentDepthThread: 6, // 6mm / 25mm = 24% (KRITIS - Segera ganti)
+    catatan: 'Ban depan kanan DT01, tread sisa tipis perlu persiapan ban baru',
+    createdAt: '2026-02-01T08:30:00Z',
+    updatedAt: '2026-09-20T10:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-003',
+    kodeTyre: 'ET09-0003',
+    merkTyre: 'Giti',
+    ukuranTyre: '12.00R24',
+    codeExpired: '2228',
+    initialDepthThread: 25,
+    status: 'INSTALLED',
+    currentUnit: 'DT01',
+    currentPosisi: 'RL1',
+    currentDepthThread: 8, // 8mm / 25mm = 32% (PERINGATAN - Siapkan ban)
+    catatan: 'Ban belakang kiri luar, keausan wajar muatan overburden',
+    createdAt: '2026-02-10T09:00:00Z',
+    updatedAt: '2026-09-15T11:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-004',
+    kodeTyre: 'ET09-0004',
+    merkTyre: 'Giti',
+    ukuranTyre: '12.00R24',
+    codeExpired: '2228',
+    initialDepthThread: 25,
+    status: 'INSTALLED',
+    currentUnit: 'DT01',
+    currentPosisi: 'RL2',
+    currentDepthThread: 18, // 18mm / 25mm = 72% (AMAN)
+    catatan: 'Ban belakang kiri dalam, kondisi sangat baik',
+    createdAt: '2026-03-01T10:00:00Z',
+    updatedAt: '2026-09-10T14:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-005',
+    kodeTyre: 'ET09-0005',
+    merkTyre: 'Michelin',
+    ukuranTyre: '23.5R25',
+    codeExpired: '1228',
+    initialDepthThread: 30,
+    status: 'INSTALLED',
+    currentUnit: 'WL01',
+    currentPosisi: 'POS-1',
+    currentDepthThread: 7, // 7mm / 30mm = 23% (KRITIS - Segera ganti)
+    catatan: 'Ban depan kiri Wheel Loader WL01, tapak ban sering slip di loading point',
+    createdAt: '2026-01-15T08:00:00Z',
+    updatedAt: '2026-09-22T09:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-006',
+    kodeTyre: 'ET09-0006',
+    merkTyre: 'Michelin',
+    ukuranTyre: '23.5R25',
+    codeExpired: '1228',
+    initialDepthThread: 30,
+    status: 'INSTALLED',
+    currentUnit: 'WL01',
+    currentPosisi: 'POS-2',
+    currentDepthThread: 24, // 24mm / 30mm = 80% (AMAN)
+    catatan: 'Ban depan kanan Wheel Loader WL01, kondisi prima',
+    createdAt: '2026-04-10T11:00:00Z',
+    updatedAt: '2026-09-22T09:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-007',
+    kodeTyre: 'ET09-0007',
+    merkTyre: 'GoodYear',
+    ukuranTyre: '11.00R20',
+    codeExpired: '3028',
+    initialDepthThread: 22,
+    status: 'AVAILABLE',
+    currentDepthThread: 22,
+    catatan: 'Stock ban baru di Gudang Workshop BKWA',
+    createdAt: '2026-06-01T08:00:00Z',
+    updatedAt: '2026-06-01T08:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+  {
+    id: 'tyre-reg-008',
+    kodeTyre: 'ET09-0008',
+    merkTyre: 'Advance',
+    ukuranTyre: '12.00R24',
+    codeExpired: '1528',
+    initialDepthThread: 25,
+    status: 'AVAILABLE',
+    currentDepthThread: 25,
+    catatan: 'Stock ban baru di Gudang Workshop BKWA siap pasang',
+    createdAt: '2026-07-05T09:00:00Z',
+    updatedAt: '2026-07-05T09:00:00Z',
+    createdBy: 'Developer BKWA',
+  },
+];
+
+export const INITIAL_TYRE_INSTALLS: TyreInstallRecord[] = [
+  {
+    id: 'tyre-inst-001',
+    cnNew: 'DT01',
+    namaAlat: 'Dump Truck Hino 500',
+    hmKm: 4200,
+    tanggal: '2026-02-01',
+    jenisTyre: 'New',
+    kodeTyre: 'ET09-0001',
+    posisi: 'FL',
+    depthThread: 25,
+    pic: 'Joko Prabowo',
+    picJabatan: 'MEKANIK',
+    remark: 'Pemasangan ban baru Bridgestone di roda depan kiri',
+    createdAt: '2026-02-01T08:00:00Z',
+    updatedAt: '2026-02-01T08:00:00Z',
+  },
+  {
+    id: 'tyre-inst-002',
+    cnNew: 'DT01',
+    namaAlat: 'Dump Truck Hino 500',
+    hmKm: 4200,
+    tanggal: '2026-02-01',
+    jenisTyre: 'New',
+    kodeTyre: 'ET09-0002',
+    posisi: 'FR',
+    depthThread: 25,
+    pic: 'Joko Prabowo',
+    picJabatan: 'MEKANIK',
+    remark: 'Pemasangan ban baru Bridgestone di roda depan kanan',
+    createdAt: '2026-02-01T08:30:00Z',
+    updatedAt: '2026-02-01T08:30:00Z',
+  },
+  {
+    id: 'tyre-inst-003',
+    cnNew: 'WL01',
+    namaAlat: 'Wheel Loader Komatsu WA380',
+    hmKm: 6150,
+    tanggal: '2026-01-15',
+    jenisTyre: 'New',
+    kodeTyre: 'ET09-0005',
+    posisi: 'POS-1',
+    depthThread: 30,
+    pic: 'Rudi Hartono',
+    picJabatan: 'HELPER MEKANIK',
+    remark: 'Pemasangan ban baru Michelin 23.5R25 depan kiri',
+    createdAt: '2026-01-15T08:00:00Z',
+    updatedAt: '2026-01-15T08:00:00Z',
+  },
+];
+
+export const INITIAL_TYRE_REMOVES: TyreRemoveRecord[] = [
+  {
+    id: 'tyre-rem-001',
+    cnNew: 'DT01',
+    namaAlat: 'Dump Truck Hino 500',
+    hmKm: 4200,
+    tanggal: '2026-02-01',
+    jenisTyre: 'Used',
+    kodeTyre: 'ET09-OLD01',
+    posisi: 'FL',
+    depthThread: 3,
+    pic: 'Joko Prabowo',
+    picJabatan: 'MEKANIK',
+    remark: 'Ban lama botak dan ada sobekan di side wall',
+    statusSetelahDilepas: 'SCRAP',
+    createdAt: '2026-02-01T07:45:00Z',
+    updatedAt: '2026-02-01T07:45:00Z',
+  },
+];
+
+// 1. Get All Tyre Registrations
+export function getAllTyreRegistrations(): TyreRegistration[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TYRE_REGISTRATIONS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.TYRE_REGISTRATIONS, JSON.stringify(INITIAL_TYRE_REGISTRATIONS));
+      return INITIAL_TYRE_REGISTRATIONS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading tyre registrations', e);
+    return INITIAL_TYRE_REGISTRATIONS;
+  }
+}
+
+// Save Tyre Registrations
+export function saveTyreRegistrations(list: TyreRegistration[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TYRE_REGISTRATIONS, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving tyre registrations', e);
+  }
+}
+
+// Generate Next Kode Tyre Otomatis (ET09-xxxx)
+export function generateNextTyreCode(): string {
+  const currentList = getAllTyreRegistrations();
+  let maxNum = 0;
+  currentList.forEach((t) => {
+    const match = t.kodeTyre.match(/^ET09-(\d+)$/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  const nextNum = maxNum + 1;
+  return `ET09-${String(nextNum).padStart(4, '0')}`;
+}
+
+// Add or Update Tyre Registration
+export function addOrUpdateTyreRegistration(
+  data: Omit<TyreRegistration, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: TyreRegistration } {
+  const currentList = getAllTyreRegistrations();
+  const now = new Date().toISOString();
+
+  // Cek duplikasi kode tyre
+  const duplicate = currentList.find(
+    (t) => t.kodeTyre.trim().toUpperCase() === data.kodeTyre.trim().toUpperCase() && t.id !== idToEdit
+  );
+  if (duplicate) {
+    return { success: false, message: `Kode Tyre "${data.kodeTyre}" sudah terdaftar!` };
+  }
+
+  if (idToEdit) {
+    const idx = currentList.findIndex((t) => t.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data registrasi tyre tidak ditemukan.' };
+    }
+    const updated: TyreRegistration = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = updated;
+    saveTyreRegistrations(currentList);
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Registrasi Tyre: ${data.kodeTyre} (${data.merkTyre} ${data.ukuranTyre})`,
+      detailUnit: data.currentUnit || '-',
+    });
+
+    return {
+      success: true,
+      message: `Registrasi Tyre ${data.kodeTyre} berhasil diperbarui!`,
+      record: updated,
+    };
+  } else {
+    const newRecord: TyreRegistration = {
+      id: `tyre-reg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    };
+    currentList.unshift(newRecord);
+    saveTyreRegistrations(currentList);
+
+    logActivity({
+      aksi: 'CREATE',
+      keterangan: `Registrasi Tyre Baru: ${data.kodeTyre} (${data.merkTyre} ${data.ukuranTyre}) Exp: ${data.codeExpired}`,
+      detailUnit: data.currentUnit || '-',
+    });
+
+    return {
+      success: true,
+      message: `Registrasi Tyre ${data.kodeTyre} berhasil ditambahkan!`,
+      record: newRecord,
+    };
+  }
+}
+
+// Delete Tyre Registration
+export function deleteTyreRegistration(id: string): { success: boolean; message: string } {
+  const currentList = getAllTyreRegistrations();
+  const target = currentList.find((t) => t.id === id);
+  if (!target) {
+    return { success: false, message: 'Data registrasi tyre tidak ditemukan.' };
+  }
+
+  const filtered = currentList.filter((t) => t.id !== id);
+  saveTyreRegistrations(filtered);
+
+  logActivity({
+    aksi: 'DELETE',
+    keterangan: `Hapus Registrasi Tyre: ${target.kodeTyre} (${target.merkTyre})`,
+    detailUnit: target.currentUnit || '-',
+  });
+
+  return { success: true, message: `Tyre ${target.kodeTyre} berhasil dihapus!` };
+}
+
+// 2. Get All Tyre Installs
+export function getAllTyreInstalls(): TyreInstallRecord[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TYRE_INSTALLS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.TYRE_INSTALLS, JSON.stringify(INITIAL_TYRE_INSTALLS));
+      return INITIAL_TYRE_INSTALLS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading tyre installs', e);
+    return INITIAL_TYRE_INSTALLS;
+  }
+}
+
+// Save Tyre Installs
+export function saveTyreInstalls(list: TyreInstallRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TYRE_INSTALLS, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving tyre installs', e);
+  }
+}
+
+// Add or Update Tyre Install
+export function addOrUpdateTyreInstall(
+  data: Omit<TyreInstallRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: TyreInstallRecord } {
+  const currentList = getAllTyreInstalls();
+  const now = new Date().toISOString();
+
+  let savedRecord: TyreInstallRecord;
+  if (idToEdit) {
+    const idx = currentList.findIndex((t) => t.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data pemasangan tyre tidak ditemukan.' };
+    }
+    savedRecord = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = savedRecord;
+  } else {
+    savedRecord = {
+      id: `tyre-inst-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    };
+    currentList.unshift(savedRecord);
+  }
+
+  saveTyreInstalls(currentList);
+
+  // Otomatis update status Master Registrasi Tyre jika ada
+  const tyreRegistrations = getAllTyreRegistrations();
+  const regIdx = tyreRegistrations.findIndex(
+    (t) => t.kodeTyre.trim().toUpperCase() === data.kodeTyre.trim().toUpperCase()
+  );
+  if (regIdx !== -1) {
+    tyreRegistrations[regIdx] = {
+      ...tyreRegistrations[regIdx],
+      status: 'INSTALLED',
+      currentUnit: data.cnNew,
+      currentPosisi: data.posisi,
+      currentDepthThread: data.depthThread,
+      updatedAt: now,
+    };
+    saveTyreRegistrations(tyreRegistrations);
+  }
+
+  logActivity({
+    aksi: idToEdit ? 'UPDATE' : 'CREATE',
+    keterangan: `${idToEdit ? 'Update' : 'Pemasangan'} Tyre [${data.kodeTyre}] pada Unit ${data.cnNew} Posisi ${data.posisi} (${data.depthThread}mm)`,
+    detailUnit: data.cnNew,
+  });
+
+  return {
+    success: true,
+    message: `Data pemasangan Tyre ${data.kodeTyre} pada ${data.cnNew} berhasil disimpan!`,
+    record: savedRecord,
+  };
+}
+
+// Delete Tyre Install
+export function deleteTyreInstall(id: string): { success: boolean; message: string } {
+  const currentList = getAllTyreInstalls();
+  const target = currentList.find((t) => t.id === id);
+  if (!target) {
+    return { success: false, message: 'Data pemasangan tyre tidak ditemukan.' };
+  }
+
+  const filtered = currentList.filter((t) => t.id !== id);
+  saveTyreInstalls(filtered);
+
+  logActivity({
+    aksi: 'DELETE',
+    keterangan: `Hapus Catatan Pemasangan Tyre: ${target.kodeTyre} pada Unit ${target.cnNew}`,
+    detailUnit: target.cnNew,
+  });
+
+  return { success: true, message: `Catatan pemasangan tyre ${target.kodeTyre} berhasil dihapus!` };
+}
+
+// 3. Get All Tyre Removes
+export function getAllTyreRemoves(): TyreRemoveRecord[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TYRE_REMOVES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.TYRE_REMOVES, JSON.stringify(INITIAL_TYRE_REMOVES));
+      return INITIAL_TYRE_REMOVES;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error reading tyre removes', e);
+    return INITIAL_TYRE_REMOVES;
+  }
+}
+
+// Save Tyre Removes
+export function saveTyreRemoves(list: TyreRemoveRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TYRE_REMOVES, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error saving tyre removes', e);
+  }
+}
+
+// Add or Update Tyre Remove
+export function addOrUpdateTyreRemove(
+  data: Omit<TyreRemoveRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: TyreRemoveRecord } {
+  const currentList = getAllTyreRemoves();
+  const now = new Date().toISOString();
+
+  let savedRecord: TyreRemoveRecord;
+  if (idToEdit) {
+    const idx = currentList.findIndex((t) => t.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data pelepasan tyre tidak ditemukan.' };
+    }
+    savedRecord = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = savedRecord;
+  } else {
+    savedRecord = {
+      id: `tyre-rem-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    };
+    currentList.unshift(savedRecord);
+  }
+
+  saveTyreRemoves(currentList);
+
+  // Otomatis update status Master Registrasi Tyre jika ada
+  const tyreRegistrations = getAllTyreRegistrations();
+  const regIdx = tyreRegistrations.findIndex(
+    (t) => t.kodeTyre.trim().toUpperCase() === data.kodeTyre.trim().toUpperCase()
+  );
+  if (regIdx !== -1) {
+    tyreRegistrations[regIdx] = {
+      ...tyreRegistrations[regIdx],
+      status: data.statusSetelahDilepas || 'USED_READY',
+      currentUnit: undefined,
+      currentPosisi: undefined,
+      currentDepthThread: data.depthThread,
+      updatedAt: now,
+    };
+    saveTyreRegistrations(tyreRegistrations);
+  }
+
+  logActivity({
+    aksi: idToEdit ? 'UPDATE' : 'CREATE',
+    keterangan: `${idToEdit ? 'Update' : 'Pelepasan'} Tyre [${data.kodeTyre}] dari Unit ${data.cnNew} Posisi ${data.posisi} (Sisa ${data.depthThread}mm)`,
+    detailUnit: data.cnNew,
+  });
+
+  return {
+    success: true,
+    message: `Data pelepasan Tyre ${data.kodeTyre} dari ${data.cnNew} berhasil disimpan!`,
+    record: savedRecord,
+  };
+}
+
+// Delete Tyre Remove
+export function deleteTyreRemove(id: string): { success: boolean; message: string } {
+  const currentList = getAllTyreRemoves();
+  const target = currentList.find((t) => t.id === id);
+  if (!target) {
+    return { success: false, message: 'Data pelepasan tyre tidak ditemukan.' };
+  }
+
+  const filtered = currentList.filter((t) => t.id !== id);
+  saveTyreRemoves(filtered);
+
+  logActivity({
+    aksi: 'DELETE',
+    keterangan: `Hapus Catatan Pelepasan Tyre: ${target.kodeTyre} dari Unit ${target.cnNew}`,
+    detailUnit: target.cnNew,
+  });
+
+  return { success: true, message: `Catatan pelepasan tyre ${target.kodeTyre} berhasil dihapus!` };
+}
 
 

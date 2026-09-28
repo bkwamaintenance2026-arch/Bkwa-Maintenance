@@ -250,20 +250,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                       <td className="py-1.5 px-3 font-bold text-[10px]">
                         <span
                           className={`px-1.5 py-0.5 rounded ${
-                            u.statusOperasional === 'OPERASI'
+                            u.statusOperasional === 'Operasi Etika 05'
                               ? 'text-emerald-400 bg-emerald-950/40'
-                              : u.statusOperasional === 'MAINTENANCE'
-                              ? 'text-amber-400 bg-amber-950/40'
-                              : u.statusOperasional === 'BREAKDOWN'
+                              : u.statusOperasional === 'Operasi Etika 09'
+                              ? 'text-teal-400 bg-teal-950/40'
+                              : u.statusOperasional === 'Breakdown' || u.statusOperasional === 'BREAKDOWN'
                               ? 'text-rose-400 bg-rose-950/40'
-                              : 'text-blue-400 bg-blue-950/40'
+                              : 'text-amber-400 bg-amber-950/40'
                           }`}
                         >
                           {u.statusOperasional}
                         </span>
                       </td>
                       <td className="py-1.5 px-3 text-right font-mono text-stone-200">
-                        {u.hourMeter.toLocaleString('id-ID')} Jam
+                        {(u?.hourMeter ?? 0).toLocaleString('id-ID')} Jam
                       </td>
                       <td className="py-1.5 px-3 text-stone-400 truncate max-w-[120px]">{u.lokasiKerja}</td>
                     </tr>

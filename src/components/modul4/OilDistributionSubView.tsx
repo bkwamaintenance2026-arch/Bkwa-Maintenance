@@ -309,7 +309,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
           <div>
             <div className="text-[11px] font-mono uppercase text-stone-400">Total Oli Keluar</div>
             <div className="text-lg font-black font-mono text-amber-400">
-              {totalOliDistribusi.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
+              {(totalOliDistribusi ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
             </div>
           </div>
         </div>
@@ -376,13 +376,13 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
                     <div className="text-[10px] text-stone-400 mt-0.5">{item.namaUnit}</div>
                   </td>
                   <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
-                    {item.hmUnit.toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">HM</span>
+                    {(item.hmUnit ?? (item as any).hm ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">HM</span>
                   </td>
                   <td className="py-3 px-3 font-mono font-bold text-emerald-400">
                     {item.jenisOli}
                   </td>
                   <td className="py-3 px-3 font-mono font-black text-amber-400 text-right text-sm">
-                    {item.qty.toLocaleString('id-ID')} <span className="text-[10px] text-stone-400 font-normal">{item.satuan || 'Ltr'}</span>
+                    {(item.qty ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-400 font-normal">{item.satuan || 'Ltr'}</span>
                   </td>
                   <td className="py-3 px-3">
                     <div className="text-stone-200 text-[11px] font-medium max-w-xs flex items-start gap-1">

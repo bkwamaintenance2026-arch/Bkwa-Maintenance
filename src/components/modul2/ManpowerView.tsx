@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ManpowerData, 
   MANPOWER_JABATAN_OPTIONS, 
@@ -20,9 +20,14 @@ import {
   Calendar,
   Briefcase,
   Search,
-  Lock
+  Lock,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  FileSpreadsheet,
+  ArrowLeft
 } from 'lucide-react';
-import { canUserEdit } from '../../utils/storage';
+import { canUserEdit, canUserExportModule } from '../../utils/storage';
 
 interface ManpowerViewProps {
   manpowerList: ManpowerData[];
@@ -32,6 +37,7 @@ interface ManpowerViewProps {
     existingId?: string | null
   ) => { success: boolean; message: string; manpower?: ManpowerData };
   onDeleteManpower: (id: string) => { success: boolean; message: string };
+  onBackToMainMenu?: () => void;
 }
 
 const EMPTY_FORM = {
@@ -49,9 +55,24 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   currentUser,
   onSaveManpower,
   onDeleteManpower,
+  onBackToMainMenu,
 }) => {
   // Cek otorisasi hak akses user untuk Modul 2
   const canEdit = canUserEdit(currentUser, 2);
+  const canExport = canUserExportModule(currentUser, 2);
+
+  // Sorting state untuk header tabel data manpower
+  const [sortField, setSortField] = useState<keyof ManpowerData>('nama');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: keyof ManpowerData) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   // Form state - Sesuai aturan: tidak semua wajib diisi, fleksibel untuk diupdate sewaktu-waktu
   const [formData, setFormData] = useState(EMPTY_FORM);
@@ -205,22 +226,112 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     }
   };
 
-  // Filtered list
-  const filteredList = manpowerList.filter((m) => {
-    const q = searchTerm.toLowerCase();
+  // Export CSV handler for authorized users (Akun Khusus & Developer)
+  const handleExportCSV = () => {
+    if (sortedList.length === 0) {
+      alert('Tidak ada data manpower untuk di-export.');
+      return;
+    }
+    const headers = [
+      'NIK',
+      'NAMA LENGKAP',
+      'JABATAN',
+      'NO WHATSAPP',
+      'STATUS KARYAWAN',
+      'TGL MASUK KERJA',
+      'KETERANGAN'
+    ];
+    const rows = sortedList.map((m) => [
+      `"${m.nik || ''}"`,
+      `"${(m.nama || '').replace(/"/g, '""')}"`,
+      `"${(m.jabatan || '').replace(/"/g, '""')}"`,
+      `"${m.noWa || ''}"`,
+      `"${m.statusKaryawan || ''}"`,
+      `"${m.tglMasukKerja || ''}"`,
+      `"${(m.keterangan || '').replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Data_Manpower_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtered & Sorted list
+  const sortedList = useMemo(() => {
+    const filtered = manpowerList.filter((m) => {
+      const q = searchTerm.toLowerCase();
+      return (
+        (m.nik && m.nik.toLowerCase().includes(q)) ||
+        (m.nama && m.nama.toLowerCase().includes(q)) ||
+        (m.jabatan && m.jabatan.toLowerCase().includes(q)) ||
+        (m.noWa && m.noWa.toLowerCase().includes(q)) ||
+        (m.statusKaryawan && m.statusKaryawan.toLowerCase().includes(q)) ||
+        (m.tglMasukKerja && m.tglMasukKerja.toLowerCase().includes(q)) ||
+        (m.keterangan && m.keterangan.toLowerCase().includes(q))
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
+      let aVal = a[sortField] || '';
+      let bVal = b[sortField] || '';
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [manpowerList, searchTerm, sortField, sortOrder]);
+
+  const renderSortHeader = (label: string, field: keyof ManpowerData) => {
+    const isSorted = sortField === field;
     return (
-      (m.nik && m.nik.toLowerCase().includes(q)) ||
-      (m.nama && m.nama.toLowerCase().includes(q)) ||
-      (m.jabatan && m.jabatan.toLowerCase().includes(q)) ||
-      (m.noWa && m.noWa.toLowerCase().includes(q)) ||
-      (m.statusKaryawan && m.statusKaryawan.toLowerCase().includes(q)) ||
-      (m.tglMasukKerja && m.tglMasukKerja.toLowerCase().includes(q)) ||
-      (m.keterangan && m.keterangan.toLowerCase().includes(q))
+      <th
+        onClick={() => handleSort(field)}
+        className="py-3 px-3 cursor-pointer hover:bg-stone-900 transition select-none group text-left"
+        title={`Klik untuk mengurutkan (Sort by ${label})`}
+      >
+        <div className="flex items-center gap-1.5 justify-start">
+          <span>{label}</span>
+          {isSorted ? (
+            sortOrder === 'asc' ? (
+              <ArrowUp className="w-3 h-3 text-amber-400" />
+            ) : (
+              <ArrowDown className="w-3 h-3 text-amber-400" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3 h-3 text-stone-600 group-hover:text-stone-400 transition" />
+          )}
+        </div>
+      </th>
     );
-  });
+  };
 
   return (
     <div className="space-y-6">
+      {/* Top Back to Menu Button */}
+      {onBackToMainMenu && (
+        <div className="flex items-center justify-between">
+          <button
+            id="btn-back-to-menu-modul2"
+            type="button"
+            onClick={onBackToMainMenu}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-amber-400 hover:text-amber-300 text-xs font-mono font-bold transition shadow"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>← Kembali ke Menu Utama</span>
+          </button>
+          <span className="text-[11px] font-mono text-stone-500">
+            Modul 2: Database Data Manpower & Personil
+          </span>
+        </div>
+      )}
+
       {/* Feedback Banner */}
       {feedback && (
         <div
@@ -515,17 +626,32 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             </p>
           </div>
 
-          {/* Fast Search */}
-          <div className="w-full sm:w-72">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Cari NIK / Nama / WA / Status..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-stone-800 border border-stone-700 rounded-xl text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-2 pointer-events-none" />
+          {/* Fast Search & Export */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {canExport && (
+              <button
+                id="btn-export-modul2-csv"
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                title="Export data personil manpower ke format CSV / Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export Excel</span>
+              </button>
+            )}
+
+            <div className="w-full sm:w-72">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Cari NIK / Nama / WA / Status..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-stone-800 border border-stone-700 rounded-xl text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-2 pointer-events-none" />
+              </div>
             </div>
           </div>
         </div>
@@ -535,21 +661,21 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-950/80 text-stone-400 uppercase font-mono text-[10px] tracking-wider border-b border-stone-800">
               <tr>
-                <th className="py-3 px-3">NIK</th>
-                <th className="py-3 px-3">NAMA</th>
-                <th className="py-3 px-3">JABATAN</th>
-                <th className="py-3 px-3">NO WA</th>
-                <th className="py-3 px-3">STATUS KARYAWAN</th>
-                <th className="py-3 px-3">TGL. MASUK</th>
-                <th className="py-3 px-3">KETERANGAN</th>
+                {renderSortHeader('NIK', 'nik')}
+                {renderSortHeader('NAMA', 'nama')}
+                {renderSortHeader('JABATAN', 'jabatan')}
+                {renderSortHeader('NO WA', 'noWa')}
+                {renderSortHeader('STATUS KARYAWAN', 'statusKaryawan')}
+                {renderSortHeader('TGL. MASUK', 'tglMasukKerja')}
+                {renderSortHeader('KETERANGAN', 'keterangan')}
                 <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                   AKSI
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/80">
-              {filteredList.length > 0 ? (
-                filteredList.map((mp) => {
+              {sortedList.length > 0 ? (
+                sortedList.map((mp) => {
                   const isBeingEdited = editingId === mp.id;
 
                   // Styling badge untuk status karyawan

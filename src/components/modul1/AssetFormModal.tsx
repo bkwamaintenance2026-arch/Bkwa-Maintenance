@@ -32,10 +32,10 @@ const CATEGORIES: UnitCategory[] = [
 ];
 
 const STATUSES: { value: OperationalStatus; label: string; color: string }[] = [
-  { value: 'OPERASI', label: 'OPERASI (Ready/Bekerja)', color: 'text-emerald-400' },
-  { value: 'STANDBY', label: 'STANDBY (Siap Operasi)', color: 'text-blue-400' },
-  { value: 'MAINTENANCE', label: 'MAINTENANCE (Servis/Perawatan)', color: 'text-amber-400' },
-  { value: 'BREAKDOWN', label: 'BREAKDOWN (Kerusakan)', color: 'text-rose-400' },
+  { value: 'Operasi Etika 05', label: 'Operasi Etika 05', color: 'text-emerald-400' },
+  { value: 'Operasi Etika 09', label: 'Operasi Etika 09', color: 'text-teal-400' },
+  { value: 'Breakdown', label: 'Breakdown', color: 'text-rose-400' },
+  { value: 'Stanby', label: 'Stanby', color: 'text-amber-400' },
 ];
 
 export const AssetFormModal: React.FC<AssetFormModalProps> = ({
@@ -55,7 +55,7 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
     noSeriRangka: '',
     noMesin: '',
     tahunPembuatan: new Date().getFullYear(),
-    statusOperasional: 'OPERASI' as OperationalStatus,
+    statusOperasional: 'Operasi Etika 05' as OperationalStatus,
     lokasiKerja: 'Pit Tambang Kali Welang',
     hourMeter: 0,
     picOperator: '',
@@ -74,7 +74,7 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
         noSeriRangka: initialData.noSeriRangka || '',
         noMesin: initialData.noMesin || '',
         tahunPembuatan: initialData.tahunPembuatan || new Date().getFullYear(),
-        statusOperasional: initialData.statusOperasional || 'OPERASI',
+        statusOperasional: initialData.statusOperasional || 'Operasi Etika 05',
         lokasiKerja: initialData.lokasiKerja || 'Pit Tambang Kali Welang',
         hourMeter: initialData.hourMeter || 0,
         picOperator: initialData.picOperator || '',
@@ -89,7 +89,7 @@ export const AssetFormModal: React.FC<AssetFormModalProps> = ({
         noSeriRangka: '',
         noMesin: '',
         tahunPembuatan: new Date().getFullYear(),
-        statusOperasional: 'OPERASI',
+        statusOperasional: 'Operasi Etika 05',
         lokasiKerja: 'Pit Tambang Kali Welang',
         hourMeter: 0,
         picOperator: '',

@@ -617,10 +617,10 @@ export const FogOilDistributionSubView: React.FC<FogOilDistributionSubViewProps>
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right text-stone-300">
-                      {rec.hmPengisian !== undefined ? rec.hmPengisian.toLocaleString('id-ID') : '-'}
+                      {rec.hmPengisian !== undefined && rec.hmPengisian !== null ? rec.hmPengisian.toLocaleString('id-ID') : '-'}
                     </td>
                     <td className="py-3 px-3 text-right font-black text-emerald-400 text-sm">
-                      {rec.qty.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">{rec.satuan}</span>
+                      {(rec.qty ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">{rec.satuan}</span>
                     </td>
                     <td className="py-3 px-3 text-stone-400 text-[11px]">
                       {rec.dokumenNumber || '-'}

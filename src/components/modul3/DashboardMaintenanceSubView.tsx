@@ -3,7 +3,8 @@ import {
   BreakdownRecord, 
   AssetUnit, 
   BREAKDOWN_COMPONENT_OPTIONS, 
-  BREAKDOWN_PROGRESS_OPTIONS 
+  BREAKDOWN_PROGRESS_OPTIONS,
+  UserAccount 
 } from '../../types';
 import { 
   BarChart3, 
@@ -16,18 +17,35 @@ import {
   RotateCcw,
   Layers,
   Wrench,
-  TrendingDown
+  TrendingDown,
+  Printer,
+  FileSpreadsheet,
+  FileText,
+  Download,
+  Lock,
+  ArrowLeft,
+  ClipboardCheck
 } from 'lucide-react';
+import { canUserExportModule } from '../../utils/storage';
 
 interface DashboardMaintenanceSubViewProps {
   breakdowns: BreakdownRecord[];
   units: AssetUnit[];
+  currentUser?: UserAccount;
+  onBackToMainMenu?: () => void;
+  onOpenLaporanHarian?: () => void;
 }
 
 export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewProps> = ({
   breakdowns,
   units,
+  currentUser,
+  onBackToMainMenu,
+  onOpenLaporanHarian,
 }) => {
+  // Cek hak akses export untuk Modul 3: Developer, Admin, dan Khusus memiliki izin export.
+  const canExport = canUserExportModule(currentUser || null, 3);
+
   // Filter Tanggal, Bulan, Tahun
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
@@ -197,6 +215,209 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
       .slice(0, 10); // Top 10 unit paling sering rusak
   }, [filteredBreakdowns]);
 
+  // 1. PRINT HANDLER
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // 2. EXPORT PDF HANDLER (Menggunakan print view beresolusi tinggi yang dapat langsung disimpan sebagai PDF)
+  const handleExportPDF = () => {
+    window.print();
+  };
+
+  // 3. EXPORT EXCEL HANDLER (.csv format kompatibel dengan Excel, Google Sheets, dll)
+  const handleExportExcel = () => {
+    if (!canExport) {
+      alert('Akses Ditolak: Akun Anda dalam mode Hanya Viewer.');
+      return;
+    }
+    const headers = [
+      'No Notifikasi',
+      'Tanggal',
+      'Jam',
+      'No Unit',
+      'Nama Alat',
+      'Jenis',
+      'Model Unit',
+      'Serial Number',
+      'Komponen Rusak',
+      'Detail Kerusakan',
+      'Status Unit',
+      'Progress',
+      'Start Job',
+      'Downtime Hours',
+      'PIC 1',
+      'PIC 2',
+      'PIC 3',
+      'Remark'
+    ];
+    const rows = filteredBreakdowns.map((b) => [
+      `"${b.noNotifikasi || ''}"`,
+      `"${b.tanggal || ''}"`,
+      `"${b.jam || ''}"`,
+      `"${b.noUnit || ''}"`,
+      `"${(b.namaAlat || '').replace(/"/g, '""')}"`,
+      `"${(b.jenis || '').replace(/"/g, '""')}"`,
+      `"${(b.modelUnit || '').replace(/"/g, '""')}"`,
+      `"${(b.snUnit || '').replace(/"/g, '""')}"`,
+      `"${(b.komponenRusak || '').replace(/"/g, '""')}"`,
+      `"${(b.detailKerusakan || '').replace(/"/g, '""')}"`,
+      `"${b.statusUnit || ''}"`,
+      `"${b.progress || ''}"`,
+      `"${b.startJob || ''}"`,
+      `"${b.downtimeHours ?? ''}"`,
+      `"${(b.pic1 || '').replace(/"/g, '""')}"`,
+      `"${(b.pic2 || '').replace(/"/g, '""')}"`,
+      `"${(b.pic3 || '').replace(/"/g, '""')}"`,
+      `"${(b.remark || '').replace(/"/g, '""')}"`,
+    ]);
+
+    const summary = [
+      ['PT. BUMI KARYA WIRA AGUNG (BKWA)'],
+      ['LAPORAN REKAPITULASI MAINTENANCE & PHYSICAL AVAILABILITY (PA)'],
+      [`Periode Filter:`, `${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Kini'} | Bulan: ${filterBulan || 'Semua'} | Tahun: ${filterTahun || 'Semua'}`],
+      [`Tanggal Export:`, `${new Date().toLocaleString('id-ID')}`],
+      [`Diexport Oleh:`, `${currentUser?.nama || currentUser?.username || 'User'} (${currentUser?.accountTier || currentUser?.role})`],
+      [],
+      ['--- RINGKASAN METRIK KPI FLEET AVAILABILITY ---'],
+      ['Rata-rata Physical Availability (PA %)', `${paStats.paPercentage}%`],
+      ['Total Akumulasi Downtime (Jam)', `${paStats.totalDowntimeHours} Jam`],
+      ['Total Jam Kalender Armada', `${paStats.standardCalendarHours} Jam`],
+      ['Total Armada Terdaftar', `${units.length} Unit`],
+      ['Total Kasus Breakdown', `${filteredBreakdowns.length} Kejadian`],
+      [],
+      ['--- DAFTAR DETAIL RIWAYAT BREAKDOWN MAINTENANCE ---']
+    ];
+
+    const csvContent = '\uFEFF' + 
+      summary.map(s => s.join(',')).join('\r\n') + '\r\n' +
+      headers.join(',') + '\r\n' +
+      rows.map(r => r.join(',')).join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Laporan_Dashboard_Maintenance_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 4. EXPORT WORD HANDLER (.doc format)
+  const handleExportWord = () => {
+    if (!canExport) {
+      alert('Akses Ditolak: Akun Anda dalam mode Hanya Viewer.');
+      return;
+    }
+    const dateStr = new Date().toLocaleDateString('id-ID', { dateStyle: 'full' });
+    const content = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>Laporan Dashboard Maintenance - PT BKWA</title>
+        <style>
+          body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #222; margin: 20px; }
+          h1 { font-size: 16pt; color: #b45309; text-align: center; margin-bottom: 2px; }
+          h2 { font-size: 12pt; color: #1e293b; border-bottom: 2px solid #cbd5e1; padding-bottom: 3px; margin-top: 16px; }
+          p.subtitle { text-align: center; font-size: 9.5pt; color: #64748b; margin-top: 0; }
+          table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 9pt; }
+          th, td { border: 1px solid #94a3b8; padding: 5px 7px; text-align: left; }
+          th { background-color: #f1f5f9; font-weight: bold; }
+          .kpi-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; margin-bottom: 12px; border-radius: 6px; }
+        </style>
+      </head>
+      <body>
+        <h1>PT. BUMI KARYA WIRA AGUNG (BKWA)</h1>
+        <p class="subtitle"><strong>DIVISI ALAT BERAT & PERAWATAN ARMADA (MAINTENANCE)</strong><br>Laporan Eksekutif Dashboard Maintenance & Physical Availability (PA) Unit<br>Tanggal Cetak: ${dateStr}</p>
+        
+        <div class="kpi-card">
+          <strong>RINGKASAN EKSEKUTIF KPI:</strong><br>
+          • Rata-rata Physical Availability (PA): <strong>${paStats.paPercentage}%</strong><br>
+          • Total Akumulasi Downtime: <strong>${paStats.totalDowntimeHours} Jam</strong><br>
+          • Total Armada Terdaftar: <strong>${units.length} Unit</strong><br>
+          • Kejadian Kerusakan Terfilter: <strong>${filteredBreakdowns.length} Kasus</strong><br>
+          • Filter Periode: <strong>${filterStartDate || 'Semua'} s/d ${filterEndDate || 'Sekarang'} (Bulan: ${filterBulan || 'Semua'}, Tahun: ${filterTahun || 'Semua'})</strong>
+        </div>
+
+        <h2>1. Rekapitulasi Kasus Kerusakan per Jenis Alat</h2>
+        <table>
+          <thead>
+            <tr><th>Jenis Alat</th><th>Jumlah Kasus Kerusakan</th></tr>
+          </thead>
+          <tbody>
+            ${rusakByJenisData.map(j => `<tr><td>${j.jenis}</td><td>${j.count} Kasus</td></tr>`).join('')}
+          </tbody>
+        </table>
+
+        <h2>2. Rekapitulasi Kasus Kerusakan per Komponen</h2>
+        <table>
+          <thead>
+            <tr><th>Komponen Unit</th><th>Jumlah Kasus</th><th>Persentase (%)</th></tr>
+          </thead>
+          <tbody>
+            ${paretoComponentData.map(p => `<tr><td>${p.component}</td><td>${p.count}</td><td>${p.percentage}%</td></tr>`).join('')}
+          </tbody>
+        </table>
+
+        <h2>3. Detail Riwayat Breakdown & Penanganan</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>No Notifikasi</th>
+              <th>Tgl & Jam</th>
+              <th>No Unit</th>
+              <th>Nama Alat</th>
+              <th>Komponen</th>
+              <th>Status Unit</th>
+              <th>Progress</th>
+              <th>PIC</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredBreakdowns.map(b => `
+              <tr>
+                <td>${b.noNotifikasi || '-'}</td>
+                <td>${b.tanggal} ${b.jam || ''}</td>
+                <td><strong>${b.noUnit}</strong></td>
+                <td>${b.namaAlat}</td>
+                <td>${b.komponenRusak || '-'}</td>
+                <td>${b.statusUnit}</td>
+                <td>${b.progress || '-'}</td>
+                <td>${[b.pic1, b.pic2].filter(Boolean).join(', ') || '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <br><br>
+        <table style="border: none; margin-top: 30px;">
+          <tr style="border: none;">
+            <td style="border: none; width: 50%; text-align: center;">
+              Dibuat Oleh,<br><br><br><br>
+              <strong>(${currentUser?.nama || currentUser?.username || 'Staff Maintenance'})</strong><br>
+              ${currentUser?.accountTier || currentUser?.role || 'Staff'}
+            </td>
+            <td style="border: none; width: 50%; text-align: center;">
+              Mengetahui & Menyetujui,<br><br><br><br>
+              <strong>( Kepala Workshop / Developer )</strong><br>
+              PT. BKWA Quarry Purwosari
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+    const blob = new Blob(['\uFEFF' + content], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Laporan_Dashboard_Maintenance_BKWA_${new Date().toISOString().split('T')[0]}.doc`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       {/* HEADER & FILTER TGL, BLN, TH (Hanya Menampilkan Data Saja) */}
@@ -216,14 +437,88 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleResetFilter}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-700 bg-stone-800/80 text-stone-300 hover:text-stone-100 hover:bg-stone-700 text-xs font-mono transition self-start lg:self-auto"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Filter</span>
-          </button>
+          {/* MENU EXPORT (PDF/Word/Excel) & PRINT */}
+          <div className="flex flex-wrap items-center gap-2">
+            {canExport ? (
+              <>
+                {/* 1. PRINT BUTTON */}
+                <button
+                  id="btn-print-maintenance"
+                  type="button"
+                  onClick={handlePrint}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold transition shadow"
+                  title="Cetak Laporan Maintenance langsung"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Print</span>
+                </button>
+
+                {/* 2. EXPORT PDF BUTTON */}
+                <button
+                  id="btn-export-pdf-maintenance"
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900/80 text-rose-200 border border-rose-800 text-xs font-bold transition shadow"
+                  title="Download / Simpan sebagai PDF"
+                >
+                  <FileText className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Export PDF</span>
+                </button>
+
+                {/* 3. EXPORT WORD BUTTON */}
+                <button
+                  id="btn-export-word-maintenance"
+                  type="button"
+                  onClick={handleExportWord}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-950/80 hover:bg-blue-900/80 text-blue-200 border border-blue-800 text-xs font-bold transition shadow"
+                  title="Download format Microsoft Word (.doc)"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Word (.doc)</span>
+                </button>
+
+                {/* 4. EXPORT EXCEL BUTTON */}
+                <button
+                  id="btn-export-excel-maintenance"
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-200 border border-emerald-800 text-xs font-bold transition shadow"
+                  title="Download format Excel Spreadsheet (.csv / .xls)"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Excel</span>
+                </button>
+
+                {/* 5. GOTO LAPORAN HARIAN (READY P2H & BREAKDOWN) */}
+                {onOpenLaporanHarian && (
+                  <button
+                    id="btn-goto-laporan-harian"
+                    type="button"
+                    onClick={onOpenLaporanHarian}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/80 hover:bg-teal-900/90 text-teal-200 border border-teal-800 text-xs font-bold transition shadow"
+                    title="Buka Menu Export Laporan Harian Unit Ready (P2H) & Breakdown"
+                  >
+                    <ClipboardCheck className="w-3.5 h-3.5 text-teal-400" />
+                    <span>Laporan Harian (P2H &amp; BD)</span>
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800/80 border border-stone-700 text-stone-400 text-xs font-mono">
+                <Lock className="w-3.5 h-3.5 text-stone-500" />
+                <span>Export Terbatas (Hanya View)</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleResetFilter}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-stone-700 bg-stone-800/80 text-stone-300 hover:text-stone-100 hover:bg-stone-700 text-xs font-mono transition"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          </div>
         </div>
 
         {/* Panel Filter: Tanggal, Bulan, Tahun */}

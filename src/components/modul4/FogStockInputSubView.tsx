@@ -722,7 +722,7 @@ export const FogStockInputSubView: React.FC<FogStockInputSubViewProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-black text-amber-400 text-sm">
-                      {rec.qty.toLocaleString('id-ID')}{' '}
+                      {(rec.qty ?? 0).toLocaleString('id-ID')}{' '}
                       <span className="text-xs font-normal text-stone-400">{rec.satuan}</span>
                     </td>
                     <td className="py-3 px-3 font-sans text-stone-400 text-[11px]">

@@ -33,14 +33,18 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'OPERASI':
+      case 'Operasi Etika 05':
         return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
-      case 'STANDBY':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
-      case 'MAINTENANCE':
-        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'Operasi Etika 09':
+        return 'bg-teal-500/20 text-teal-300 border-teal-500/40';
+      case 'Breakdown':
       case 'BREAKDOWN':
         return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+      case 'Stanby':
+      case 'STANDBY':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'OPERASI':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
       default:
         return 'bg-stone-700 text-stone-300 border-stone-600';
     }
@@ -90,7 +94,7 @@ export const AssetDetailModal: React.FC<AssetDetailModalProps> = ({
                 Hour Meter (HM)
               </span>
               <p className="text-base font-black text-amber-300 font-mono mt-1">
-                {unit.hourMeter.toLocaleString('id-ID')} Jam
+                {(unit?.hourMeter ?? 0).toLocaleString('id-ID')} Jam
               </p>
             </div>
 

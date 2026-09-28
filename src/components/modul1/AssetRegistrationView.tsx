@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AssetUnit, OperationalStatus, UserAccount } from '../../types';
 import { 
   Save, 
@@ -9,9 +9,15 @@ import {
   X,
   Eye,
   Edit3,
-  Lock
+  Lock,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  FileSpreadsheet,
+  ArrowLeft,
+  ShieldCheck
 } from 'lucide-react';
-import { canUserEdit } from '../../utils/storage';
+import { canAccessRegistrationForm, canUserExportModule } from '../../utils/storage';
 
 interface AssetRegistrationViewProps {
   units: AssetUnit[];
@@ -22,6 +28,7 @@ interface AssetRegistrationViewProps {
     unit?: AssetUnit;
   };
   onDeleteUnit: (id: string) => { success: boolean; message: string };
+  onBackToMainMenu?: () => void;
 }
 
 const EMPTY_FORM = {
@@ -30,7 +37,7 @@ const EMPTY_FORM = {
   jenis: '',
   classUnit: '',
   loc: '',
-  status: 'OPERASI' as OperationalStatus,
+  status: 'Operasi Etika 05' as OperationalStatus,
   brandMerk: '',
   snUnit: '',
   modelUnit: '',
@@ -45,9 +52,27 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   currentUser,
   onSaveUnit,
   onDeleteUnit,
+  onBackToMainMenu,
 }) => {
-  // Cek otorisasi hak akses user untuk Modul 1
-  const canEdit = canUserEdit(currentUser, 1);
+  // Cek otorisasi hak akses user untuk Modul 1:
+  // Form Registrasi hanya untuk Developer.
+  // Export Daftar Aset Unit untuk Akun Khusus & Developer.
+  const canAccessForm = canAccessRegistrationForm(currentUser);
+  const canExport = canUserExportModule(currentUser, 1);
+  const canEdit = canAccessForm;
+
+  // Sorting state untuk header kolom tabel Daftar Aset Unit
+  const [sortField, setSortField] = useState<keyof AssetUnit>('cnNew');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (field: keyof AssetUnit) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   // Form state
   const [formData, setFormData] = useState(EMPTY_FORM);
@@ -145,7 +170,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
       jenis: unit.jenis || '',
       classUnit: unit.classUnit || '',
       loc: unit.loc || '',
-      status: unit.status || 'OPERASI',
+      status: unit.status || 'Operasi Etika 05',
       brandMerk: unit.brandMerk || '',
       snUnit: unit.snUnit || '',
       modelUnit: unit.modelUnit || '',
@@ -191,29 +216,115 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
     }
   };
 
-  // Filtered list
-  const filteredUnits = units.filter((u) => {
-    const q = searchTerm.toLowerCase();
+  // Export CSV handler for authorized users (Akun Khusus & Developer)
+  const handleExportCSV = () => {
+    if (sortedUnits.length === 0) {
+      alert('Tidak ada data unit untuk di-export.');
+      return;
+    }
+    const headers = [
+      'CN_NEW',
+      'NAMA ALAT',
+      'JENIS',
+      'CLASS',
+      'LOC',
+      'STATUS',
+      'BRAND/MERK',
+      'SN UNIT',
+      'MODEL UNIT',
+      'ENGINE MODEL',
+      'SN ENGINE',
+      'MERK ENGINE'
+    ];
+    const rows = sortedUnits.map((u) => [
+      `"${u.cnNew || ''}"`,
+      `"${(u.namaAlat || '').replace(/"/g, '""')}"`,
+      `"${(u.jenis || '').replace(/"/g, '""')}"`,
+      `"${(u.classUnit || '').replace(/"/g, '""')}"`,
+      `"${(u.loc || '').replace(/"/g, '""')}"`,
+      `"${u.status || ''}"`,
+      `"${(u.brandMerk || '').replace(/"/g, '""')}"`,
+      `"${(u.snUnit || '').replace(/"/g, '""')}"`,
+      `"${(u.modelUnit || '').replace(/"/g, '""')}"`,
+      `"${(u.engineModel || '').replace(/"/g, '""')}"`,
+      `"${(u.snEngine || '').replace(/"/g, '""')}"`,
+      `"${(u.merkEngine || '').replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Daftar_Aset_Unit_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filtered & Sorted list
+  const sortedUnits = useMemo(() => {
+    const filtered = units.filter((u) => {
+      const q = searchTerm.toLowerCase();
+      return (
+        (u.cnNew && u.cnNew.toLowerCase().includes(q)) ||
+        (u.namaAlat && u.namaAlat.toLowerCase().includes(q)) ||
+        (u.jenis && u.jenis.toLowerCase().includes(q)) ||
+        (u.brandMerk && u.brandMerk.toLowerCase().includes(q)) ||
+        (u.loc && u.loc.toLowerCase().includes(q)) ||
+        (u.status && u.status.toLowerCase().includes(q))
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
+      let aVal = a[sortField] || '';
+      let bVal = b[sortField] || '';
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [units, searchTerm, sortField, sortOrder]);
+
+  const renderSortHeader = (label: string, field: keyof AssetUnit, align: 'left' | 'center' = 'left') => {
+    const isSorted = sortField === field;
     return (
-      (u.cnNew && u.cnNew.toLowerCase().includes(q)) ||
-      (u.namaAlat && u.namaAlat.toLowerCase().includes(q)) ||
-      (u.jenis && u.jenis.toLowerCase().includes(q)) ||
-      (u.brandMerk && u.brandMerk.toLowerCase().includes(q)) ||
-      (u.loc && u.loc.toLowerCase().includes(q)) ||
-      (u.status && u.status.toLowerCase().includes(q))
+      <th
+        onClick={() => handleSort(field)}
+        className={`py-3 px-3 cursor-pointer hover:bg-stone-900 transition select-none group text-${align}`}
+        title={`Klik untuk mengurutkan (Sort by ${label})`}
+      >
+        <div className={`flex items-center gap-1.5 ${align === 'center' ? 'justify-center' : 'justify-start'}`}>
+          <span>{label}</span>
+          {isSorted ? (
+            sortOrder === 'asc' ? (
+              <ArrowUp className="w-3 h-3 text-amber-400" />
+            ) : (
+              <ArrowDown className="w-3 h-3 text-amber-400" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3 h-3 text-stone-600 group-hover:text-stone-400 transition" />
+          )}
+        </div>
+      </th>
     );
-  });
+  };
 
   const getStatusBadge = (status: OperationalStatus) => {
     switch (status) {
-      case 'OPERASI':
+      case 'Operasi Etika 05':
         return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-      case 'STANDBY':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
-      case 'MAINTENANCE':
-        return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+      case 'Operasi Etika 09':
+        return 'bg-teal-500/20 text-teal-400 border-teal-500/40';
+      case 'Breakdown':
       case 'BREAKDOWN':
         return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+      case 'Stanby':
+      case 'STANDBY':
+        return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+      case 'OPERASI':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
       default:
         return 'bg-stone-700 text-stone-300 border-stone-600';
     }
@@ -221,6 +332,24 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Top Back to Menu Button */}
+      {onBackToMainMenu && (
+        <div className="flex items-center justify-between">
+          <button
+            id="btn-back-to-menu-modul1"
+            type="button"
+            onClick={onBackToMainMenu}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-amber-400 hover:text-amber-300 text-xs font-mono font-bold transition shadow"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>← Kembali ke Menu Utama</span>
+          </button>
+          <span className="text-[11px] font-mono text-stone-500">
+            Modul 1: Registrasi & Inventaris Asset Unit
+          </span>
+        </div>
+      )}
+
       {/* Feedback Banner */}
       {feedback && (
         <div
@@ -389,10 +518,10 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
                 onChange={(e) => setFormData({ ...formData, status: e.target.value as OperationalStatus })}
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
-                <option value="OPERASI">OPERASI (Ready/Aktif)</option>
-                <option value="STANDBY">STANDBY (Siap Kerja)</option>
-                <option value="MAINTENANCE">MAINTENANCE (Servis)</option>
-                <option value="BREAKDOWN">BREAKDOWN (Rusak)</option>
+                <option value="Operasi Etika 05">Operasi Etika 05</option>
+                <option value="Operasi Etika 09">Operasi Etika 09</option>
+                <option value="Breakdown">Breakdown</option>
+                <option value="Stanby">Stanby</option>
               </select>
             </div>
 
@@ -568,15 +697,30 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
             </p>
           </div>
 
-          {/* Fast Search */}
-          <div className="w-full sm:w-64">
-            <input
-              type="text"
-              placeholder="Cari CN_NEW / Nama Alat..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-1.5 bg-stone-800 border border-stone-700 rounded-xl text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+          {/* Fast Search & Export */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {canExport && (
+              <button
+                id="btn-export-modul1-csv"
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                title="Export seluruh daftar aset ke format CSV / Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export Excel</span>
+              </button>
+            )}
+
+            <div className="w-full sm:w-64">
+              <input
+                type="text"
+                placeholder="Cari CN_NEW / Nama Alat..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-3 py-1.5 bg-stone-800 border border-stone-700 rounded-xl text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
           </div>
         </div>
 
@@ -585,26 +729,26 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-950/80 text-stone-400 uppercase font-mono text-[10px] tracking-wider border-b border-stone-800">
               <tr>
-                <th className="py-3 px-3">CN_NEW</th>
-                <th className="py-3 px-3">NAMA ALAT</th>
-                <th className="py-3 px-3">JENIS</th>
-                <th className="py-3 px-3">CLASS</th>
-                <th className="py-3 px-3">LOC</th>
-                <th className="py-3 px-3 text-center">STATUS</th>
-                <th className="py-3 px-3">BRAND/MERK</th>
-                <th className="py-3 px-3">SN UNIT</th>
-                <th className="py-3 px-3">MODEL UNIT</th>
-                <th className="py-3 px-3">ENGINE MODEL</th>
-                <th className="py-3 px-3">SN ENGINE</th>
-                <th className="py-3 px-3">MERK ENGINE</th>
+                {renderSortHeader('CN_NEW', 'cnNew')}
+                {renderSortHeader('NAMA ALAT', 'namaAlat')}
+                {renderSortHeader('JENIS', 'jenis')}
+                {renderSortHeader('CLASS', 'classUnit')}
+                {renderSortHeader('LOC', 'loc')}
+                {renderSortHeader('STATUS', 'status', 'center')}
+                {renderSortHeader('BRAND/MERK', 'brandMerk')}
+                {renderSortHeader('SN UNIT', 'snUnit')}
+                {renderSortHeader('MODEL UNIT', 'modelUnit')}
+                {renderSortHeader('ENGINE MODEL', 'engineModel')}
+                {renderSortHeader('SN ENGINE', 'snEngine')}
+                {renderSortHeader('MERK ENGINE', 'merkEngine')}
                 <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                   AKSI
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/80">
-              {filteredUnits.length > 0 ? (
-                filteredUnits.map((u) => {
+              {sortedUnits.length > 0 ? (
+                sortedUnits.map((u) => {
                   const isBeingEdited = editingUnitId === u.id;
                   return (
                     <tr

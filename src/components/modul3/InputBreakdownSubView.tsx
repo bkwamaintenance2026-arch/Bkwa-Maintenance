@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   AssetUnit, 
   BreakdownRecord, 
   BreakdownComponentOption, 
   BREAKDOWN_COMPONENT_OPTIONS, 
+  BreakdownProgressOption,
+  BREAKDOWN_PROGRESS_OPTIONS,
+  BreakdownStatusUnitOption,
+  BREAKDOWN_STATUS_UNIT_OPTIONS,
   ManpowerData, 
   UserAccount 
 } from '../../types';
@@ -23,8 +27,11 @@ import {
   Edit, 
   AlertTriangle,
   Layers,
-  X
+  X,
+  ArrowRight,
+  Trash2
 } from 'lucide-react';
+import { isDeveloper } from '../../utils/storage';
 
 interface InputBreakdownSubViewProps {
   units: AssetUnit[];
@@ -35,6 +42,7 @@ interface InputBreakdownSubViewProps {
     data: Omit<BreakdownRecord, 'id' | 'noNotifikasi' | 'createdAt' | 'updatedAt' | 'riwayatUpdate'>
   ) => { success: boolean; message: string; record?: BreakdownRecord };
   onNavigateToUpdate: (record: BreakdownRecord) => void;
+  onDeleteBreakdown?: (id: string) => { success: boolean; message: string };
 }
 
 export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
@@ -44,7 +52,9 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   currentUser,
   onSaveBreakdown,
   onNavigateToUpdate,
+  onDeleteBreakdown,
 }) => {
+  const isDev = isDeveloper(currentUser);
   // Ambil daftar unik jenis unit dari Modul 1
   const availableJenisList = Array.from(
     new Set(units.map((u) => u.jenis).filter((j) => Boolean(j && j.trim())))
@@ -62,6 +72,8 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     jabatan: '',
     component: '' as BreakdownComponentOption | '',
     detailProblem: '',
+    statusUnit: 'BREAKDOWN' as BreakdownStatusUnitOption,
+    progress: 'On Progress' as BreakdownProgressOption,
   });
 
   const [feedback, setFeedback] = useState<{
@@ -72,6 +84,29 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
   // Modal View Detail Notifikasi
   const [viewingRecord, setViewingRecord] = useState<BreakdownRecord | null>(null);
+
+  // Tab filter tampilan tabel di bawah: ACTIVE (sedang breakdown) vs ALL (semua riwayat)
+  const [tableFilterTab, setTableFilterTab] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
+
+  // Filter unit yang berstatus aktif breakdown (belum READY)
+  const activeBreakdownRecords = useMemo(() => {
+    return breakdowns.filter(
+      (b) => (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
+    );
+  }, [breakdowns]);
+
+  const displayedBreakdownRecords = tableFilterTab === 'ACTIVE' ? activeBreakdownRecords : breakdowns;
+
+  // Cek apakah unit terpilih saat ini sedang aktif breakdown (status belum READY)
+  const norm = (s: string = '') => s.toLowerCase().replace(/[\s\-_]/g, '').trim();
+  const activeBreakdownForSelectedUnit = formData.noUnit
+    ? breakdowns.find(
+        (b) =>
+          Boolean(b.noUnit) &&
+          (norm(b.noUnit) === norm(formData.noUnit) || b.noUnit.toLowerCase().trim() === formData.noUnit.toLowerCase().trim()) &&
+          (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
+      )
+    : undefined;
 
   // Filter daftar unit berdasarkan "JENIS" yang dipilih
   const filteredUnitsByJenis = formData.jenis
@@ -88,15 +123,25 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     }));
   };
 
-  // Handler saat NO UNIT dipilih
+  // Handler saat NO UNIT dipilih (Reff Modul 1: CN New)
   const handleSelectNoUnit = (cn: string) => {
     const selectedAsset = units.find((u) => u.cnNew.toLowerCase().trim() === cn.toLowerCase().trim());
+    const existingActive = breakdowns.find(
+      (b) =>
+        Boolean(b.noUnit) &&
+        (norm(b.noUnit) === norm(cn) || b.noUnit.toLowerCase().trim() === cn.toLowerCase().trim()) &&
+        (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
+    );
+
     setFormData((prev) => ({
       ...prev,
       noUnit: cn,
-      jenis: prev.jenis || selectedAsset?.jenis || '',
-      // NO LAMA menampilkan secara otomatis (mengambil dari snUnit / modelUnit atau no lama pada aset)
-      noLama: selectedAsset ? (selectedAsset.snUnit || selectedAsset.modelUnit || selectedAsset.namaAlat) : '',
+      jenis: prev.jenis || selectedAsset?.jenis || existingActive?.jenis || '',
+      // NO LAMA ganti reff NAMA ALAT dari Modul 1
+      noLama: selectedAsset ? selectedAsset.namaAlat : (existingActive?.namaAlat || existingActive?.noLama || ''),
+      component: existingActive ? (existingActive.component as BreakdownComponentOption) : prev.component,
+      statusUnit: (existingActive?.statusUnit as BreakdownStatusUnitOption) || 'BREAKDOWN',
+      progress: (existingActive?.progress as BreakdownProgressOption) || 'On Progress',
     }));
   };
 
@@ -126,6 +171,8 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
       jabatan: '',
       component: '',
       detailProblem: '',
+      statusUnit: 'BREAKDOWN',
+      progress: 'On Progress',
     });
   };
 
@@ -138,7 +185,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
       return;
     }
     if (!formData.detailProblem.trim()) {
-      setFeedback({ type: 'error', message: 'Detail Problem wajib diisi!' });
+      setFeedback({ type: 'error', message: 'Detail Problem / Pekerjaan wajib diisi!' });
       return;
     }
 
@@ -153,8 +200,8 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
       jabatan: formData.jabatan.trim() || 'OPERATOR',
       component: formData.component || 'Other',
       detailProblem: formData.detailProblem.trim(),
-      statusUnit: 'BREAKDOWN',
-      progress: 'On Progress',
+      statusUnit: formData.statusUnit || 'BREAKDOWN',
+      progress: formData.progress || 'On Progress',
       startJob: formData.tanggal || new Date().toISOString().split('T')[0],
     };
 
@@ -163,7 +210,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
       setFeedback({
         type: 'success',
         message: res.message,
-        noNotifikasi: res.record.noNotifikasi,
+        noNotifikasi: res.record.noMaintenanceOrder || res.record.noNotifikasi,
       });
       handleResetForm();
     } else {
@@ -195,11 +242,11 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               <p className="text-xs font-bold font-mono tracking-wide">{feedback.message}</p>
               {feedback.noNotifikasi && (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] text-stone-300">No Laporan Kerusakan:</span>
+                  <span className="text-[11px] text-stone-300">No. Maintenance Order:</span>
                   <span className="px-2.5 py-1 rounded bg-amber-500 text-stone-950 text-xs font-mono font-black tracking-wider">
                     {feedback.noNotifikasi}
                   </span>
-                  <span className="text-[11px] text-emerald-400">(Format: 26 Th, 09 Bln, 5 digit urut)</span>
+                  <span className="text-[11px] text-emerald-400">(Format: 2 digit th + 4 digit no urut)</span>
                 </div>
               )}
             </div>
@@ -316,12 +363,12 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                 <p className="text-[10px] text-stone-500 mt-1">Pilih kategori untuk memfilter No Unit</p>
               </div>
 
-              {/* NO UNIT (Dropdown sesuai Jenis Unit terpilih) */}
+              {/* NO UNIT (Dropdown CN New dari Modul 1) */}
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1 flex items-center justify-between">
-                  <span>NO UNIT <span className="text-rose-400">*</span></span>
+                  <span>NO UNIT (CN NEW) <span className="text-rose-400">*</span></span>
                   <span className="text-[10px] text-stone-400 font-normal lowercase">
-                    ({filteredUnitsByJenis.length} unit tersedia)
+                    (reff Modul 1 CN New: {filteredUnitsByJenis.length} unit)
                   </span>
                 </label>
                 <select
@@ -331,31 +378,76 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   onChange={(e) => handleSelectNoUnit(e.target.value)}
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="">-- Pilih No Unit (CN_NEW) --</option>
-                  {filteredUnitsByJenis.map((u) => (
-                    <option key={u.id} value={u.cnNew}>
-                      {u.cnNew} - {u.namaAlat} ({u.jenis})
-                    </option>
-                  ))}
+                  <option value="">-- Pilih No Unit (CN New Modul 1) --</option>
+                  {filteredUnitsByJenis.map((u) => {
+                    const isBD = breakdowns.some(
+                      (b) => b.noUnit.toLowerCase().trim() === u.cnNew.toLowerCase().trim() && b.statusUnit !== 'READY'
+                    );
+                    return (
+                      <option key={u.id} value={u.cnNew}>
+                        {u.cnNew} - {u.namaAlat} ({u.jenis}) {isBD ? '⚠️ [SEDANG BREAKDOWN]' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
-                <p className="text-[10px] text-stone-500 mt-1">Dropdown sesuai JENIS yang dipilih</p>
+                <p className="text-[10px] text-stone-500 mt-1">Daftar CN New teregistrasi di Modul 1</p>
+
+                {/* Banner Deteksi Unit Sedang Breakdown */}
+                {activeBreakdownForSelectedUnit && (
+                  <div className="mt-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 animate-fade-in">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-stone-100 text-xs font-mono">
+                              Unit Sedang Breakdown:
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-amber-500 text-stone-950 font-mono font-black text-xs">
+                              MO: {activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-stone-800 text-amber-300 font-mono text-[10px] border border-amber-500/40 font-bold">
+                              Status: {activeBreakdownForSelectedUnit.statusUnit}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-stone-300 mt-1 leading-relaxed">
+                            Unit ini dalam perbaikan sejak tanggal <strong>{activeBreakdownForSelectedUnit.tanggal}</strong> (Problem awal: <span className="italic text-stone-200 font-sans">"{activeBreakdownForSelectedUnit.detailProblem}"</span>).
+                            Pembaruan pekerjaan pada hari berikutnya ini otomatis <strong>tetap mereferensikan Maintenance Order {activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi}</strong>.
+                          </p>
+                          <p className="text-[10px] text-amber-400/90 mt-1 font-mono">
+                            ✓ No. Maintenance Order baru HANYA akan dibuat jika status unit sebelumnya sudah dinyatakan 'READY'.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToUpdate(activeBreakdownForSelectedUnit)}
+                        className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-bold transition shadow"
+                        title="Buka di Sub Modul 2 untuk update penugasan mekanik atau penambahan part/jasa"
+                      >
+                        <span>Ke Sub Modul 2</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* NO LAMA (Menampilkan secara otomatis ketika NO UNIT dipilih) */}
+              {/* NO LAMA (Reff NAMA ALAT dari Modul 1) */}
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-stone-300 mb-1 flex items-center justify-between">
-                  <span>NO LAMA</span>
-                  <span className="text-[10px] text-amber-400 font-normal lowercase">(otomatis)</span>
+                  <span>NO LAMA (NAMA ALAT)</span>
+                  <span className="text-[10px] text-amber-400 font-normal lowercase">(reff Modul 1)</span>
                 </label>
                 <input
                   id="field-breakdown-nolama"
                   type="text"
                   readOnly
                   value={formData.noLama}
-                  placeholder="Terisi otomatis saat No Unit dipilih"
+                  placeholder="Terisi otomatis NAMA ALAT dari Modul 1"
                   className="w-full bg-stone-800/50 border border-stone-700/70 rounded-xl px-3 py-2.5 text-xs text-amber-200 font-mono font-semibold cursor-not-allowed"
                 />
-                <p className="text-[10px] text-stone-500 mt-1">Nomor seri/lambung lama dari registrasi asset</p>
+                <p className="text-[10px] text-stone-500 mt-1">Referensi otomatis NAMA ALAT dari Modul 1</p>
               </div>
 
               {/* Lokasi (Text bebas karena lokasi breakdown bervariasi) */}
@@ -434,11 +526,15 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
             </div>
           </div>
 
-          {/* GRID 3: Component Rusak & Detail Problem */}
+          {/* GRID 3: Component Rusak & Detail Problem / Update Pekerjaan */}
           <div className="pt-2 border-t border-stone-800/80">
             <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2 mb-3">
               <Cpu className="w-4 h-4" />
-              <span>3. Gejala & Komponen Kerusakan</span>
+              <span>
+                {activeBreakdownForSelectedUnit
+                  ? `3. Pembaruan Pekerjaan & Status Unit (Reff MO: ${activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})`
+                  : '3. Gejala & Komponen Kerusakan'}
+              </span>
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -464,10 +560,66 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                 <p className="text-[10px] text-stone-500 mt-1">Data komponen untuk analisis Pareto</p>
               </div>
 
-              {/* Detail Problem (Type Text bebas) */}
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-stone-300 mb-1">
-                  Detail Problem <span className="text-rose-400">*</span>
+              {/* Jika unit sedang breakdown, tampilkan pilihan Status Unit & Progress */}
+              {activeBreakdownForSelectedUnit && (
+                <>
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
+                      Status Unit Terkini <span className="text-rose-400">*</span>
+                    </label>
+                    <select
+                      id="field-breakdown-statusunit"
+                      value={formData.statusUnit}
+                      onChange={(e) => setFormData({ ...formData, statusUnit: e.target.value as BreakdownStatusUnitOption })}
+                      className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {BREAKDOWN_STATUS_UNIT_OPTIONS.map((st) => (
+                        <option key={st} value={st}>
+                          {st} {st === 'READY' ? '(Selesai diperbaiki - Siap Operasi)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-500 mt-1">
+                      {formData.statusUnit === 'READY'
+                        ? 'Unit dinyatakan selesai. Laporan kerusakan berikutnya akan membuat No MO baru.'
+                        : 'Tetap status BREAKDOWN, MO tidak berubah.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
+                      Progress Pengerjaan
+                    </label>
+                    <select
+                      id="field-breakdown-progress"
+                      value={formData.progress}
+                      onChange={(e) => setFormData({ ...formData, progress: e.target.value as BreakdownProgressOption })}
+                      className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {BREAKDOWN_PROGRESS_OPTIONS.map((pr) => (
+                        <option key={pr} value={pr}>
+                          {pr}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-500 mt-1">Tahapan proses perbaikan saat ini</p>
+                  </div>
+                </>
+              )}
+
+              {/* Detail Problem / Catatan Pekerjaan Hari Ini */}
+              <div className={activeBreakdownForSelectedUnit ? 'sm:col-span-3' : 'sm:col-span-2'}>
+                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-stone-300 mb-1 flex items-center justify-between">
+                  <span>
+                    {activeBreakdownForSelectedUnit
+                      ? 'Catatan Pembaruan Pekerjaan Hari Ini'
+                      : 'Detail Problem'} <span className="text-rose-400">*</span>
+                  </span>
+                  {activeBreakdownForSelectedUnit && (
+                    <span className="text-[10px] text-amber-400 font-mono">
+                      (Akan ditambahkan ke riwayat pekerjaan MO {activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})
+                    </span>
+                  )}
                 </label>
                 <textarea
                   id="field-breakdown-detailproblem"
@@ -475,10 +627,18 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   rows={2}
                   value={formData.detailProblem}
                   onChange={(e) => setFormData({ ...formData, detailProblem: e.target.value })}
-                  placeholder="Deskripsikan laporan awal masalah/kerusakan unit..."
+                  placeholder={
+                    activeBreakdownForSelectedUnit
+                      ? 'Deskripsikan progres pekerjaan hari ini (contoh: Lanjut perbaikan transmisi, penggantian seal, tes kelistrikan...)'
+                      : 'Deskripsikan laporan awal masalah/kerusakan unit...'
+                  }
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
                 />
-                <p className="text-[10px] text-stone-500 mt-0.5">Catatan problem awal ini akan bersifat tetap (read-only) saat proses update</p>
+                <p className="text-[10px] text-stone-500 mt-0.5">
+                  {activeBreakdownForSelectedUnit
+                    ? 'Catatan ini akan tersimpan dalam riwayat timeline perbaikan unit ini.'
+                    : 'Catatan problem awal ini akan bersifat tetap (read-only) saat proses update'}
+                </p>
               </div>
             </div>
           </div>
@@ -491,7 +651,11 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-500 text-stone-950 font-mono font-black text-xs uppercase tracking-wider hover:bg-amber-400 shadow-lg shadow-amber-500/20 active:scale-95 transition"
             >
               <Save className="w-4 h-4" />
-              <span>SIMPAN LAPORAN BREAKDOWN</span>
+              <span>
+                {activeBreakdownForSelectedUnit
+                  ? `SIMPAN UPDATE PEKERJAAN (REFF MO: ${activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})`
+                  : 'SIMPAN LAPORAN BREAKDOWN BARU'}
+              </span>
             </button>
           </div>
         </form>
@@ -499,34 +663,92 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
       {/* LIST DI BAWAHNYA: Unit yang sudah berhasil di Input */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-stone-800">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 mb-4 border-b border-stone-800">
           <div>
             <h3 className="text-sm font-bold text-stone-100 font-mono uppercase tracking-wider flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
               <span>Daftar Laporan Breakdown Hasil Input</span>
             </h3>
             <p className="text-xs text-stone-400 mt-0.5">
-              Total {breakdowns.length} laporan kerusakan terdaftar di database
+              Menampilkan {displayedBreakdownRecords.length} dari {breakdowns.length} total laporan kerusakan terdaftar di database
             </p>
+          </div>
+
+          {/* Tab Filter: Unit Sedang Breakdown vs Semua Riwayat */}
+          <div className="flex items-center gap-1.5 p-1 bg-stone-950 rounded-xl border border-stone-800">
+            <button
+              type="button"
+              onClick={() => setTableFilterTab('ACTIVE')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                tableFilterTab === 'ACTIVE'
+                  ? 'bg-amber-500 text-stone-950 shadow'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <span>Sedang Breakdown</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                  tableFilterTab === 'ACTIVE'
+                    ? 'bg-stone-950/20 text-stone-950'
+                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                }`}
+              >
+                {activeBreakdownRecords.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableFilterTab('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                tableFilterTab === 'ALL'
+                  ? 'bg-amber-500 text-stone-950 shadow'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <span>Semua Riwayat (Termasuk READY)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                  tableFilterTab === 'ALL'
+                    ? 'bg-stone-950/20 text-stone-950'
+                    : 'bg-stone-800 text-stone-300'
+                }`}
+              >
+                {breakdowns.length}
+              </span>
+            </button>
           </div>
         </div>
 
-        {breakdowns.length === 0 ? (
+        {displayedBreakdownRecords.length === 0 ? (
           <div className="text-center py-10 border border-dashed border-stone-800 rounded-xl bg-stone-950/40">
-            <Wrench className="w-8 h-8 text-stone-600 mx-auto mb-2" />
-            <p className="text-xs text-stone-400 font-mono">Belum ada unit breakdown yang di-input.</p>
-            <p className="text-[11px] text-stone-500 mt-1">Gunakan formulir di atas untuk mencatat laporan kerusakan unit.</p>
+            {tableFilterTab === 'ACTIVE' ? (
+              <>
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                <p className="text-xs text-stone-200 font-mono font-bold">
+                  Tidak ada unit yang sedang berstatus Breakdown aktif.
+                </p>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  Seluruh unit telah selesai diperbaiki dan berstatus READY. Klik tab &quot;Semua Riwayat&quot; di atas untuk melihat arsip data.
+                </p>
+              </>
+            ) : (
+              <>
+                <Wrench className="w-8 h-8 text-stone-600 mx-auto mb-2" />
+                <p className="text-xs text-stone-400 font-mono">Belum ada unit breakdown yang di-input.</p>
+                <p className="text-[11px] text-stone-500 mt-1">Gunakan formulir di atas untuk mencatat laporan kerusakan unit.</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-stone-800">
             <table className="w-full text-left text-xs text-stone-300">
               <thead className="bg-stone-950/80 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
                 <tr>
-                  <th className="px-3 py-3">No Notifikasi</th>
+                  <th className="px-3 py-3">No. Maintenance Order</th>
                   <th className="px-3 py-3">Tanggal</th>
                   <th className="px-3 py-3">Jenis</th>
-                  <th className="px-3 py-3">No Unit</th>
-                  <th className="px-3 py-3">No Lama</th>
+                  <th className="px-3 py-3">No Unit (CN New)</th>
+                  <th className="px-3 py-3">Nama Alat (No Lama)</th>
                   <th className="px-3 py-3">Pelapor / Jabatan</th>
                   <th className="px-3 py-3">Component</th>
                   <th className="px-3 py-3">Problem Awal</th>
@@ -535,15 +757,15 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
-                {breakdowns.map((b) => (
+                {displayedBreakdownRecords.map((b) => (
                   <tr key={b.id} className="hover:bg-stone-800/40 transition">
                     <td className="px-3 py-3 font-bold text-amber-400 whitespace-nowrap">
-                      {b.noNotifikasi}
+                      {b.noMaintenanceOrder || b.noNotifikasi}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap text-stone-300">{b.tanggal}</td>
                     <td className="px-3 py-3 text-stone-300 font-sans">{b.jenis || '-'}</td>
                     <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">{b.noUnit}</td>
-                    <td className="px-3 py-3 text-stone-400 whitespace-nowrap">{b.noLama || '-'}</td>
+                    <td className="px-3 py-3 text-stone-400 whitespace-nowrap">{b.namaAlat || b.noLama || '-'}</td>
                     <td className="px-3 py-3 font-sans">
                       <div className="font-semibold text-stone-200">{b.pelapor}</div>
                       <div className="text-[10px] text-stone-400">{b.jabatan}</div>
@@ -590,6 +812,22 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                           <Eye className="w-3 h-3" />
                           <span>View</span>
                         </button>
+
+                        {/* Tombol HAPUS: Khusus Akun Developer */}
+                        {isDev && onDeleteBreakdown && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm(`Hapus laporan kerusakan ${b.noNotifikasi} (Unit ${b.noUnit})?`)) {
+                                onDeleteBreakdown(b.id);
+                              }
+                            }}
+                            className="p-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition"
+                            title="Hapus Laporan Breakdown (Developer Only)"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -731,26 +969,47 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-3 pt-3 border-t border-stone-800">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = viewingRecord;
-                  setViewingRecord(null);
-                  onNavigateToUpdate(target);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
-              >
-                <Edit className="w-3.5 h-3.5" />
-                <span>Buka Form Update</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewingRecord(null)}
-                className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 hover:bg-stone-700 text-xs font-bold"
-              >
-                Tutup
-              </button>
+            <div className="mt-6 flex items-center justify-between pt-3 border-t border-stone-800">
+              <div>
+                {isDev && onDeleteBreakdown && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Hapus laporan kerusakan ${viewingRecord.noNotifikasi} (Unit ${viewingRecord.noUnit})?`)) {
+                        onDeleteBreakdown(viewingRecord.id);
+                        setViewingRecord(null);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition"
+                    title="Hapus Laporan Breakdown (Developer Only)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Laporan</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingRecord;
+                    setViewingRecord(null);
+                    onNavigateToUpdate(target);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  <span>Buka Form Update</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewingRecord(null)}
+                  className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 hover:bg-stone-700 text-xs font-bold"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>

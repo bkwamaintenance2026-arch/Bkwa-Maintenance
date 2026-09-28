@@ -741,7 +741,7 @@ export const FogDistributionSubView: React.FC<FogDistributionSubViewProps> = ({
                       <div className="text-[10px] text-stone-400">{rec.operatorJabatan}</div>
                     </td>
                     <td className="py-3 px-3 text-right font-bold text-stone-200">
-                      {rec.hmPengisian.toLocaleString('id-ID')}
+                      {rec.hmPengisian !== undefined && rec.hmPengisian !== null ? rec.hmPengisian.toLocaleString('id-ID') : '-'}
                     </td>
                     <td className="py-3 px-3 font-sans">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-800 text-stone-300">
@@ -762,7 +762,7 @@ export const FogDistributionSubView: React.FC<FogDistributionSubViewProps> = ({
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-black text-amber-400 text-sm">
-                      {rec.qty.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">{rec.satuan}</span>
+                      {(rec.qty ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">{rec.satuan}</span>
                     </td>
                     <td className="py-3 px-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">

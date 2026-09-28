@@ -37,7 +37,9 @@ import {
   AlertCircle,
   HelpCircle,
   TrendingUp,
-  Warehouse
+  Warehouse,
+  ArrowLeft,
+  Pencil
 } from 'lucide-react';
 
 interface InventoryManagementViewProps {
@@ -84,6 +86,7 @@ interface InventoryManagementViewProps {
   onDeleteOilDistribution: (id: string) => { success: boolean; message: string };
   onSavePeriodBalance: (balance: InventoryPeriodBalance) => { success: boolean; message: string };
   onAddCustomOilType: (newOilName: string) => void;
+  onBackToMainMenu?: () => void;
 }
 
 export const InventoryManagementView: React.FC<InventoryManagementViewProps> = ({
@@ -112,6 +115,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   onDeleteOilDistribution,
   onSavePeriodBalance,
   onAddCustomOilType,
+  onBackToMainMenu,
 }) => {
   // 6 Sub-Modul Navigasi:
   // 1 = Data Suplier
@@ -122,10 +126,18 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   // 6 = Distribution Oli
   const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5 | 6>(2);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [showQuickCapacityModal, setShowQuickCapacityModal] = useState(false);
+  const [quickCapacityVal, setQuickCapacityVal] = useState<number>(20000);
 
-  // Form states untuk kalibrasi Sisa Periode Sebelumnya (Formula: Data Input + Sisa Periode Sebelumnya)
+  // Form states untuk kalibrasi Sisa Periode Sebelumnya & Kapasitas Tangki Manual
   const [editFuelTangki, setEditFuelTangki] = useState<number>(periodBalance.sisaPeriodeLaluFuelTangki || 0);
   const [editFuelFT, setEditFuelFT] = useState<number>(periodBalance.sisaPeriodeLaluFuelFT || 0);
+  const [editKapasitasTangkiUtama, setEditKapasitasTangkiUtama] = useState<number>(
+    periodBalance.kapasitasTangkiUtama || 20000
+  );
+  const [editKapasitasFT, setEditKapasitasFT] = useState<number>(
+    periodBalance.kapasitasFuelTruck || 5000
+  );
   const [editOliBalance, setEditOliBalance] = useState<Record<string, number>>(
     periodBalance.sisaPeriodeLaluOli || {}
   );
@@ -135,6 +147,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   React.useEffect(() => {
     setEditFuelTangki(periodBalance.sisaPeriodeLaluFuelTangki || 0);
     setEditFuelFT(periodBalance.sisaPeriodeLaluFuelFT || 0);
+    setEditKapasitasTangkiUtama(periodBalance.kapasitasTangkiUtama || 20000);
+    setEditKapasitasFT(periodBalance.kapasitasFuelTruck || 5000);
     setEditOliBalance(periodBalance.sisaPeriodeLaluOli || {});
   }, [periodBalance]);
 
@@ -163,6 +177,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const handleOpenBalanceModal = () => {
     setEditFuelTangki(periodBalance.sisaPeriodeLaluFuelTangki || 0);
     setEditFuelFT(periodBalance.sisaPeriodeLaluFuelFT || 0);
+    setEditKapasitasTangkiUtama(periodBalance.kapasitasTangkiUtama || 20000);
+    setEditKapasitasFT(periodBalance.kapasitasFuelTruck || 5000);
     setEditOliBalance({ ...(periodBalance.sisaPeriodeLaluOli || {}) });
     setBalanceSavedMsg('');
     setShowBalanceModal(true);
@@ -174,6 +190,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       sisaPeriodeLaluFuelTangki: Number(editFuelTangki) || 0,
       sisaPeriodeLaluFuelFT: Number(editFuelFT) || 0,
       sisaPeriodeLaluOli: { ...editOliBalance },
+      kapasitasTangkiUtama: Number(editKapasitasTangkiUtama) > 0 ? Number(editKapasitasTangkiUtama) : 20000,
+      kapasitasFuelTruck: Number(editKapasitasFT) > 0 ? Number(editKapasitasFT) : 5000,
     };
     const res = onSavePeriodBalance(updated);
     if (res.success) {
@@ -182,6 +200,19 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         setShowBalanceModal(false);
         setBalanceSavedMsg('');
       }, 1200);
+    }
+  };
+
+  const handleSaveQuickCapacity = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = Math.max(1, Number(quickCapacityVal) || 20000);
+    const updated: InventoryPeriodBalance = {
+      ...periodBalance,
+      kapasitasTangkiUtama: val,
+    };
+    const res = onSavePeriodBalance(updated);
+    if (res.success) {
+      setShowQuickCapacityModal(false);
     }
   };
 
@@ -244,6 +275,24 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   return (
     <div className="space-y-6">
+      {/* Top Back to Main Menu */}
+      {onBackToMainMenu && (
+        <div className="flex items-center justify-between">
+          <button
+            id="btn-back-to-menu-modul4"
+            type="button"
+            onClick={onBackToMainMenu}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-amber-400 hover:text-amber-300 text-xs font-mono font-bold transition shadow"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>← Kembali ke Menu Utama</span>
+          </button>
+          <span className="text-[11px] font-mono text-stone-500">
+            Modul 4: Inventory Management (FOG & Workshop)
+          </span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* TOP HEADER: REAL-TIME INVENTORY GAUGES & STOCK CAPACITY CALCULATION */}
       {/* Rule: Kapasitas dihitung dari (Data Input + Sisa Periode Sebelumnya) */}
@@ -263,7 +312,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </div>
                 <div>
                   <h1 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide uppercase">
-                    MODUL 4: INVENTORY MANAGEMENT (FOG & WORKSHOP)
+                    MODUL 4: FOG (FUEL, OIL & GREASE)
                   </h1>
                   <p className="text-xs text-stone-400 mt-0.5">
                     Monitoring Stok Real-Time Fuel (Solar) & Oli Pelumas Quarry Purwosari • Rumus: <span className="text-amber-400 font-mono font-semibold">Stok = (Data Input + Sisa Periode Sebelumnya) - Pengeluaran</span>
@@ -277,10 +326,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 type="button"
                 onClick={handleOpenBalanceModal}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 border border-stone-700 text-stone-200 text-xs font-semibold shadow-sm transition active:scale-95"
-                title="Atur Sisa Periode Sebelumnya untuk kalkulasi kapasitas real-time"
+                title="Atur Sisa Periode Sebelumnya & Kapasitas Manual Tangki Solar untuk kalkulasi real-time"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-                <span>Kalibrasi Saldo Periode Lalu</span>
+                <span>Kalibrasi Saldo & Kapasitas Tangki</span>
               </button>
             </div>
           </div>
@@ -307,11 +356,23 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 <div className="mt-3">
                   <div className="flex items-baseline justify-between">
                     <div className="text-xl sm:text-2xl font-black font-mono text-stone-100">
-                      {computation.tangkiUtama.stokAkhir.toLocaleString('id-ID')}
+                      {(computation?.tangkiUtama?.stokAkhir ?? 0).toLocaleString('id-ID')}
                       <span className="text-xs font-normal text-stone-400 ml-1">Ltr</span>
                     </div>
-                    <div className="text-[11px] font-mono text-stone-500">
-                      Kapasitas: {computation.tangkiUtama.kapasitasMaksimal.toLocaleString('id-ID')} Ltr
+                    <div className="text-[11px] font-mono text-stone-400 flex items-center gap-1.5">
+                      <span>Kapasitas: <strong className="text-stone-200 font-bold">{(computation?.tangkiUtama?.kapasitasMaksimal ?? 20000).toLocaleString('id-ID')}</strong> Ltr</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickCapacityVal(computation?.tangkiUtama?.kapasitasMaksimal || 20000);
+                          setShowQuickCapacityModal(true);
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-stone-800/90 hover:bg-amber-500/20 text-stone-400 hover:text-amber-300 border border-stone-700/60 transition inline-flex items-center gap-1 text-[10px] font-sans"
+                        title="Ubah Kapasitas Tangki Solar Utama Manual (karena rencana penggantian tangki baru)"
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                        <span>Ubah Manual</span>
+                      </button>
                     </div>
                   </div>
 
@@ -319,13 +380,13 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <div className="w-full bg-stone-800 h-2.5 rounded-full mt-2 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        computation.tangkiUtama.persentase > 60
+                        (computation?.tangkiUtama?.persentase ?? 0) > 60
                           ? 'bg-gradient-to-r from-amber-500 to-emerald-400'
-                          : computation.tangkiUtama.persentase > 25
+                          : (computation?.tangkiUtama?.persentase ?? 0) > 25
                           ? 'bg-amber-500'
                           : 'bg-rose-500 animate-pulse'
                       }`}
-                      style={{ width: `${computation.tangkiUtama.persentase}%` }}
+                      style={{ width: `${computation?.tangkiUtama?.persentase ?? 0}%` }}
                     />
                   </div>
                 </div>
@@ -335,15 +396,15 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
                 <div className="flex justify-between">
                   <span>Sisa Periode Lalu:</span>
-                  <span className="text-stone-300 font-semibold">{computation.tangkiUtama.sisaPeriodeLalu.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-stone-300 font-semibold">{(computation?.tangkiUtama?.sisaPeriodeLalu ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
                 <div className="flex justify-between">
                   <span>+ Data Input Masuk:</span>
-                  <span className="text-emerald-400 font-semibold">+{computation.tangkiUtama.totalMasuk.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-emerald-400 font-semibold">+{(computation?.tangkiUtama?.totalMasuk ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
                 <div className="flex justify-between">
                   <span>- Transfer ke FT:</span>
-                  <span className="text-rose-400 font-semibold">-{computation.tangkiUtama.totalKeluarKeFT.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-rose-400 font-semibold">-{(computation?.tangkiUtama?.totalKeluarKeFT ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
               </div>
             </div>
@@ -361,18 +422,18 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                     </span>
                   </div>
                   <span className="text-[11px] font-mono font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                    {computation.fuelTruck.persentase}%
+                    {computation?.fuelTruck?.persentase ?? 0}%
                   </span>
                 </div>
 
                 <div className="mt-3">
                   <div className="flex items-baseline justify-between">
                     <div className="text-xl sm:text-2xl font-black font-mono text-stone-100">
-                      {computation.fuelTruck.stokAkhir.toLocaleString('id-ID')}
+                      {(computation?.fuelTruck?.stokAkhir ?? 0).toLocaleString('id-ID')}
                       <span className="text-xs font-normal text-stone-400 ml-1">Ltr</span>
                     </div>
                     <div className="text-[11px] font-mono text-stone-500">
-                      Kapasitas: {computation.fuelTruck.kapasitasMaksimal.toLocaleString('id-ID')} Ltr
+                      Kapasitas: {(computation?.fuelTruck?.kapasitasMaksimal ?? 0).toLocaleString('id-ID')} Ltr
                     </div>
                   </div>
 
@@ -380,13 +441,13 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <div className="w-full bg-stone-800 h-2.5 rounded-full mt-2 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        computation.fuelTruck.persentase > 50
+                        (computation?.fuelTruck?.persentase ?? 0) > 50
                           ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
-                          : computation.fuelTruck.persentase > 20
+                          : (computation?.fuelTruck?.persentase ?? 0) > 20
                           ? 'bg-blue-500'
                           : 'bg-rose-500 animate-pulse'
                       }`}
-                      style={{ width: `${computation.fuelTruck.persentase}%` }}
+                      style={{ width: `${computation?.fuelTruck?.persentase ?? 0}%` }}
                     />
                   </div>
                 </div>
@@ -396,15 +457,15 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
                 <div className="flex justify-between">
                   <span>Sisa Periode Lalu FT:</span>
-                  <span className="text-stone-300 font-semibold">{computation.fuelTruck.sisaPeriodeLalu.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-stone-300 font-semibold">{(computation?.fuelTruck?.sisaPeriodeLalu ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
                 <div className="flex justify-between">
                   <span>+ Transfer Masuk Tangki:</span>
-                  <span className="text-cyan-400 font-semibold">+{computation.fuelTruck.totalTransferMasuk.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-cyan-400 font-semibold">+{(computation?.fuelTruck?.totalTransferMasuk ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
                 <div className="flex justify-between">
                   <span>- Distribusi Bon Unit:</span>
-                  <span className="text-orange-400 font-semibold">-{computation.fuelTruck.totalDistribusiUnit.toLocaleString('id-ID')} Ltr</span>
+                  <span className="text-orange-400 font-semibold">-{(computation?.fuelTruck?.totalDistribusiUnit ?? 0).toLocaleString('id-ID')} Ltr</span>
                 </div>
               </div>
             </div>
@@ -422,7 +483,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                     </span>
                   </div>
                   <span className="text-[11px] font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {computation.totalOliLiters.toLocaleString('id-ID')} Ltr
+                    {(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr
                   </span>
                 </div>
 
@@ -433,11 +494,11 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
                   {/* List mini stok per jenis oli */}
                   <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-                    {Object.entries(computation.oliPerJenis).slice(0, 4).map(([oilName, data]: [string, any]) => (
+                    {computation?.oliPerJenis && Object.entries(computation.oliPerJenis).slice(0, 4).map(([oilName, data]: [string, any]) => (
                       <div key={oilName} className="flex items-center justify-between text-[11px] font-mono">
                         <span className="text-stone-400 truncate max-w-[150px]">{oilName}:</span>
-                        <span className={`font-bold ${data.stokAkhir > 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {data.stokAkhir.toLocaleString('id-ID')} Ltr
+                        <span className={`font-bold ${(data?.stokAkhir ?? 0) > 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {(data?.stokAkhir ?? 0).toLocaleString('id-ID')} Ltr
                         </span>
                       </div>
                     ))}
@@ -448,7 +509,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               {/* Rincian Rumus */}
               <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 flex justify-between items-center">
                 <span>Total Pelumas Siap Pakai:</span>
-                <span className="text-emerald-400 font-bold text-xs">{computation.totalOliLiters.toLocaleString('id-ID')} Ltr</span>
+                <span className="text-emerald-400 font-bold text-xs">{(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr</span>
               </div>
             </div>
           </div>
@@ -564,8 +625,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL: KALIBRASI SISA PERIODE SEBELUMNYA */}
-      {/* Rumus: Kapasitas dihitung dari (Data Input + Sisa Periode Sebelumnya) */}
+      {/* MODAL: KALIBRASI SISA PERIODE & KONFIGURASI MANUAL KAPASITAS TANGKI */}
       {/* ========================================================================= */}
       {showBalanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
@@ -574,7 +634,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-amber-400" />
                 <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
-                  Kalibrasi Sisa Periode Sebelumnya (Saldo Awal)
+                  Kalibrasi Saldo Periode Lalu & Kapasitas Tangki
                 </h3>
               </div>
               <button
@@ -594,87 +654,160 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </div>
               )}
 
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-stone-300 text-xs flex items-start gap-2">
-                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-amber-400">Aturan Perhitungan Kapasitas:</span>
-                  <p className="mt-0.5 text-stone-400">
-                    Sesuai instruksi, kapasitas & level stok Fuel dan Oli ditentukan dari formula:
-                    <br />
-                    <span className="font-mono text-stone-200 font-semibold">
-                      Level Stok = (Data Input Baru + Sisa Periode Sebelumnya) - Pengeluaran
+              {/* ========================================================= */}
+              {/* BAGIAN A: KONFIGURASI MANUAL KAPASITAS TANGKI UTAMA & FT */}
+              {/* ========================================================= */}
+              <div className="p-4 bg-amber-500/10 rounded-2xl border border-amber-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-amber-400 font-black font-mono text-xs">
+                    <Fuel className="w-4 h-4" />
+                    <span>A. KAPASITAS MANUAL TANGKI SOLAR UTAMA</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                    Bisa Diubah Manual
+                  </span>
+                </div>
+                <p className="text-[11px] text-stone-300 leading-relaxed">
+                  Kapasitas ini dibuat manual agar fleksibel disesuaikan saat <strong>penggantian unit tangki solar baru</strong> di lapangan. Persentase gauge level stok otomatis menyesuaikan dengan kapasitas baru ini.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="block text-stone-200 font-bold font-mono text-[11px]">
+                    Kapasitas Maksimal Tangki Solar Utama (Liter):
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={editKapasitasTangkiUtama}
+                      onChange={(e) => setEditKapasitasTangkiUtama(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-stone-950 border border-amber-500/50 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      placeholder="Contoh: 15000, 20000, 30000"
+                    />
+                    <span className="absolute right-3 top-2 text-stone-500 font-mono">
+                      Liter
                     </span>
-                  </p>
+                  </div>
+                  {/* Preset Buttons */}
+                  <div className="flex items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-stone-400 mr-1">Pilihan Cepat:</span>
+                    {[10000, 15000, 20000, 25000, 30000, 50000].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setEditKapasitasTangkiUtama(preset)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono border transition ${
+                          editKapasitasTangkiUtama === preset
+                            ? 'bg-amber-500 text-stone-950 border-amber-400 font-bold'
+                            : 'bg-stone-800 text-stone-300 border-stone-700 hover:border-stone-500'
+                        }`}
+                      >
+                        {(preset / 1000)}k L
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Kapasitas Fuel Truck */}
+                <div className="pt-2 border-t border-amber-500/20 space-y-1.5">
+                  <label className="block text-stone-200 font-bold font-mono text-[11px] text-blue-400">
+                    Kapasitas Armada Fuel Truck FT-01 (Liter):
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={editKapasitasFT}
+                      onChange={(e) => setEditKapasitasFT(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-stone-950 border border-blue-500/40 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      placeholder="Contoh: 5000"
+                    />
+                    <span className="absolute right-3 top-2 text-stone-500 font-mono">
+                      Liter
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Input Sisa Periode Tangki Utama */}
-              <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
-                <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-amber-400">
-                  1. Sisa Periode Lalu Fuel Tangki Utama (Liter)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  value={editFuelTangki}
-                  onChange={(e) => setEditFuelTangki(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-amber-500/60"
-                  placeholder="Contoh: 12000"
-                />
-                <span className="text-[10px] text-stone-500">
-                  Saldo fisik solar di tangki timbun utama dari penutupan buku periode lalu.
-                </span>
-              </div>
+              {/* ========================================================= */}
+              {/* BAGIAN B: SISA PERIODE SEBELUMNYA (SALDO AWAL) */}
+              {/* ========================================================= */}
+              <div className="pt-2 space-y-3">
+                <div className="flex items-center gap-2 text-stone-300 font-mono font-bold text-xs uppercase">
+                  <Warehouse className="w-4 h-4 text-emerald-400" />
+                  <span>B. Sisa Periode Sebelumnya (Saldo Awal)</span>
+                </div>
 
-              {/* Input Sisa Periode Fuel Truck FT-01 */}
-              <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
-                <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-blue-400">
-                  2. Sisa Periode Lalu Fuel Truck FT-01 (Liter)
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  value={editFuelFT}
-                  onChange={(e) => setEditFuelFT(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-blue-500/60"
-                  placeholder="Contoh: 2500"
-                />
-                <span className="text-[10px] text-stone-500">
-                  Saldo solar yang masih tersisa di dalam tangki Fuel Truck dari shift/periode sebelumnya.
-                </span>
-              </div>
+                {/* Input Sisa Periode Tangki Utama */}
+                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
+                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-amber-400">
+                    1. Sisa Periode Lalu Fuel Tangki Utama (Liter)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={editFuelTangki}
+                    onChange={(e) => setEditFuelTangki(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-amber-500/60"
+                    placeholder="Contoh: 0 atau 12000"
+                  />
+                  <span className="text-[10px] text-stone-500">
+                    Saldo fisik solar di tangki timbun utama dari penutupan buku periode sebelumnya.
+                  </span>
+                </div>
 
-              {/* Input Sisa Periode Oli per Varian */}
-              <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-3">
-                <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-emerald-400">
-                  3. Sisa Periode Lalu Oli & Pelumas Gudang (Liter)
-                </label>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {availableOilTypes.map((oilName) => (
-                    <div key={oilName} className="flex items-center justify-between gap-3 bg-stone-900/60 p-2 rounded-lg border border-stone-800/80">
-                      <span className="text-xs font-mono font-semibold text-stone-300 truncate max-w-[200px]">
-                        {oilName}
-                      </span>
-                      <div className="flex items-center gap-1.5 w-32">
-                        <input
-                          type="number"
-                          min={0}
-                          value={editOliBalance[oilName] ?? 0}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            setEditOliBalance((prev) => ({
-                              ...prev,
-                              [oilName]: val,
-                            }));
-                          }}
-                          className="w-full px-2 py-1 bg-stone-950 border border-stone-800 rounded-lg text-stone-100 font-mono font-bold text-xs text-right focus:outline-none focus:border-emerald-500/60"
-                        />
-                        <span className="text-[10px] text-stone-500 font-mono">Ltr</span>
+                {/* Input Sisa Periode Fuel Truck FT-01 */}
+                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
+                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-blue-400">
+                    2. Sisa Periode Lalu Fuel Truck FT-01 (Liter)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={editFuelFT}
+                    onChange={(e) => setEditFuelFT(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-blue-500/60"
+                    placeholder="Contoh: 0 atau 2500"
+                  />
+                  <span className="text-[10px] text-stone-500">
+                    Saldo solar yang masih tersisa di dalam tangki armada Fuel Truck dari shift/periode sebelumnya.
+                  </span>
+                </div>
+
+                {/* Input Sisa Periode Oli per Varian */}
+                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-3">
+                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-emerald-400">
+                    3. Sisa Periode Lalu Oli & Pelumas Gudang (Liter)
+                  </label>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {availableOilTypes.map((oilName) => (
+                      <div key={oilName} className="flex items-center justify-between gap-3 bg-stone-900/60 p-2 rounded-lg border border-stone-800/80">
+                        <span className="text-xs font-mono font-semibold text-stone-300 truncate max-w-[200px]">
+                          {oilName}
+                        </span>
+                        <div className="flex items-center gap-1.5 w-32">
+                          <input
+                            type="number"
+                            min={0}
+                            value={editOliBalance[oilName] ?? 0}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setEditOliBalance((prev) => ({
+                                ...prev,
+                                [oilName]: val,
+                              }));
+                            }}
+                            className="w-full px-2 py-1 bg-stone-950 border border-stone-800 rounded-lg text-stone-100 font-mono font-bold text-xs text-right focus:outline-none focus:border-emerald-500/60"
+                          />
+                          <span className="text-[10px] text-stone-500 font-mono">Ltr</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -688,9 +821,100 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs shadow-lg shadow-amber-500/20"
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
                 >
-                  Simpan Kalibrasi Saldo
+                  Simpan Konfigurasi & Saldo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* QUICK MODAL: UBAH MANUAL KAPASITAS TANGKI SOLAR UTAMA (LANGSUNG DARI CARD) */}
+      {/* ========================================================================= */}
+      {showQuickCapacityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-stone-900 border border-amber-500/40 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2">
+                <Fuel className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
+                  Ubah Kapasitas Tangki Solar Utama
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickCapacityModal(false)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickCapacity} className="p-5 space-y-4 text-xs">
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-stone-300 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-400 font-bold font-mono text-[11px]">
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span>KAPASITAS MANUAL (PENGGANTIAN TANGKI)</span>
+                </div>
+                <p className="text-[11px] text-stone-400 leading-relaxed">
+                  Masukkan volume total kapasitas maksimal tangki solar baru Anda. Sistem akan langsung memperbarui kalkulasi persentase (%) dan batas daya tampung solar utama.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-stone-200 font-bold font-mono text-[11px]">
+                  Kapasitas Maksimal Tangki Baru (Liter)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={quickCapacityVal}
+                    onChange={(e) => setQuickCapacityVal(Number(e.target.value))}
+                    className="w-full px-3 py-2.5 bg-stone-950 border border-amber-500/50 rounded-xl text-stone-100 font-mono font-black text-base focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    placeholder="Contoh: 15000, 20000, 30000"
+                    autoFocus
+                  />
+                  <span className="absolute right-3 top-3 text-stone-500 font-mono font-semibold">
+                    Liter
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  <span className="text-[10px] text-stone-400 py-0.5">Pilihan:</span>
+                  {[10000, 15000, 20000, 25000, 30000, 50000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setQuickCapacityVal(preset)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono border transition ${
+                        quickCapacityVal === preset
+                          ? 'bg-amber-500 text-stone-950 border-amber-400 font-bold'
+                          : 'bg-stone-800 text-stone-300 border-stone-700 hover:border-stone-500'
+                      }`}
+                    >
+                      {(preset / 1000)}k L
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickCapacityModal(false)}
+                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
+                >
+                  Simpan Kapasitas Baru
                 </button>
               </div>
             </form>

@@ -270,7 +270,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
           <div>
             <div className="text-[11px] font-mono uppercase text-stone-400">Total Oli Masuk Tercatat</div>
             <div className="text-lg font-black font-mono text-emerald-400">
-              {totalOliMasuk.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
+              {(totalOliMasuk ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
             </div>
           </div>
         </div>
@@ -340,7 +340,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                     </span>
                   </td>
                   <td className="py-3 px-3 font-mono font-bold text-emerald-400 text-right text-sm">
-                    {item.qty.toLocaleString('id-ID')} <span className="text-[11px] font-normal text-stone-400">{item.satuan || 'Ltr'}</span>
+                    {(item.qty ?? 0).toLocaleString('id-ID')} <span className="text-[11px] font-normal text-stone-400">{item.satuan || 'Ltr'}</span>
                   </td>
                   <td className="py-3 px-3">
                     <div className="text-stone-200 font-semibold">{item.picGudangMaterial}</div>

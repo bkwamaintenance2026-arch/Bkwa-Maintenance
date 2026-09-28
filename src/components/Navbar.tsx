@@ -1,13 +1,15 @@
 import React from 'react';
 import { UserAccount } from '../types';
 import { BkwaLogo } from './BkwaLogo';
-import { Home, LogOut, MapPin, ShieldCheck, Eye, Edit3, ArrowLeft } from 'lucide-react';
+import { Home, LogOut, MapPin, ShieldCheck, Eye, Edit3, ArrowLeft, FileSpreadsheet } from 'lucide-react';
+import { getSavedSpreadsheetId } from '../services/googleSheets';
 
 interface NavbarProps {
   currentUser: UserAccount;
   onLogout: () => void;
   onGoHome?: () => void;
   onOpenAccessControl?: () => void;
+  onOpenGoogleSheetsSync?: () => void;
   isSimulating?: boolean;
   onExitSimulation?: () => void;
 }
@@ -17,6 +19,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   onGoHome,
   onOpenAccessControl,
+  onOpenGoogleSheetsSync,
   isSimulating,
   onExitSimulation,
 }) => {
@@ -88,6 +91,33 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* Tombol Sinkronisasi Google Sheets */}
+            {onOpenGoogleSheetsSync && (() => {
+              const hasSpreadsheet = !!getSavedSpreadsheetId();
+              return (
+                <button
+                  id="btn-nav-google-sheets"
+                  type="button"
+                  onClick={onOpenGoogleSheetsSync}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition active:scale-95 shadow-lg group relative ${
+                    hasSpreadsheet
+                      ? 'text-emerald-300 bg-emerald-950/70 hover:bg-emerald-500 hover:text-stone-950 border border-emerald-600/70 shadow-emerald-950/40'
+                      : 'text-amber-300 bg-amber-950/80 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/80 shadow-amber-950/50'
+                  }`}
+                  title={hasSpreadsheet ? "Google Sheets Terhubung: Sinkronkan & Buka File" : "Klik untuk Hubungkan & Buat File di Google Drive"}
+                >
+                  <FileSpreadsheet className={`w-4 h-4 ${hasSpreadsheet ? 'text-emerald-400 group-hover:text-stone-950' : 'text-amber-400 group-hover:text-stone-950'}`} />
+                  <span className="hidden md:inline">Google Sheets</span>
+                  <span className="md:hidden">Sheets</span>
+                  {!hasSpreadsheet && (
+                    <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-amber-500 text-stone-950 ml-0.5">
+                      Klik Disini
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
+
             {/* KHUSUS AKUN DEVELOPER: MENU TAMBAHAN PENGATURAN HAK AKSES USER */}
             {isAdmin && onOpenAccessControl && (
               <button
@@ -112,22 +142,36 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="text-[11px] text-stone-400 font-medium hidden sm:inline">
                   Selamat Datang,
                 </span>
-                {/* Badge Hak Akses */}
-                {isAdmin ? (
-                  <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    Developer
-                  </span>
-                ) : isViewer ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800">
-                    <Eye className="w-2.5 h-2.5" />
-                    Hanya View
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
-                    <Edit3 className="w-2.5 h-2.5" />
-                    Bisa Mengisi
-                  </span>
-                )}
+                {/* Badge Hak Akses Berdasarkan 4 Tingkatan Akun */}
+                {(() => {
+                  const tier = currentUser.accountTier || (currentUser.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+                  if (tier === 'DEVELOPER') {
+                    return (
+                      <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        Developer
+                      </span>
+                    );
+                  }
+                  if (tier === 'ADMIN') {
+                    return (
+                      <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                        Admin
+                      </span>
+                    );
+                  }
+                  if (tier === 'KHUSUS') {
+                    return (
+                      <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                        Akun Khusus
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
+                      Member
+                    </span>
+                  );
+                })()}
               </div>
               <p className="text-xs sm:text-sm font-bold text-stone-100 font-mono leading-tight">
                 {displayName}
