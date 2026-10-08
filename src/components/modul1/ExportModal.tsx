@@ -81,7 +81,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     link.setAttribute('href', url);
     link.setAttribute(
       'download',
-      `Laporan_Asset_Unit_BKWA_${new Date().toISOString().split('T')[0]}.csv`
+      `Laporan_Asset_Unit_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`
     );
     document.body.appendChild(link);
     link.click();

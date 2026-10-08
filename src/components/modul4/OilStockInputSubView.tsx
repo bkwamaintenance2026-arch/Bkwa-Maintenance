@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   OilStockInputRecord, 
   SupplierRecord, 
@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   Package,
   Layers,
-  Lock
+  Lock,
+  Download
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
@@ -83,6 +84,30 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   );
   const effectiveSuppliers = oilSuppliers.length > 0 ? oilSuppliers : suppliers;
 
+  // Filter PIC Gudang: HANYA jabatan Administrasi dan Kabag Workshop
+  // Diurutkan berdasarkan Jabatan terlebih dahulu, lalu sesuai Abjad Nama
+  const warehouseStaff = useMemo(() => {
+    const list = manpowerList.filter((m) => {
+      const jab = (m.jabatan || '').toUpperCase();
+      return jab === 'ADMINISTRASI' || 
+             jab === 'KABAG WORKSHOP' || 
+             jab.includes('ADMINISTRASI') || 
+             jab.includes('ADMIN') || 
+             jab.includes('KABAG');
+    });
+    return list.sort((a, b) => {
+      const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+      if (cmpJabatan !== 0) return cmpJabatan;
+      return (a.nama || '').localeCompare(b.nama || '');
+    });
+  }, [manpowerList]);
+
+  const effectiveWarehouse = warehouseStaff.length > 0 ? warehouseStaff : [...manpowerList].sort((a, b) => {
+    const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+    if (cmpJabatan !== 0) return cmpJabatan;
+    return (a.nama || '').localeCompare(b.nama || '');
+  });
+
   const handleOpenAdd = () => {
     if (!canEdit) return;
     setEditingId(null);
@@ -90,18 +115,15 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
     const now = new Date();
     setTanggal(now.toISOString().split('T')[0]);
     setJam(now.toTimeString().substring(0, 5));
-    setNamaOli(availableOilTypes[0] || 'TURALIK 52 PERTAMINA');
+    // Input manual bebas nama oli
+    setNamaOli('');
     setQty('');
     setSatuan('Ltr');
 
-    const defaultPic = manpowerList.find((m) => 
-      m.jabatan.toLowerCase().includes('logistik') || 
-      m.jabatan.toLowerCase().includes('admin') || 
-      m.jabatan.toLowerCase().includes('gudang')
-    ) || manpowerList[0];
+    const defaultPic = effectiveWarehouse[0];
 
     setPicGudangMaterial(defaultPic?.nama || currentUser.fullName || currentUser.username);
-    setPicGudangJabatan(defaultPic?.jabatan || 'Staff Gudang Material');
+    setPicGudangJabatan(defaultPic?.jabatan || 'ADMINISTRASI');
     setRemark('');
     setErrorMsg('');
     setShowModal(true);
@@ -204,6 +226,40 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
   const totalOliMasuk = oilStockInputs.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
 
+  // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
+  const handleExportCSV = () => {
+    if (filteredList.length === 0) {
+      alert('Tidak ada data stok oli untuk diexport.');
+      return;
+    }
+    const headers = ['TANGGAL', 'JAM', 'DISTRIBUTOR / SUPPLIER', 'NAMA / JENIS OLI', 'QTY', 'SATUAN', 'PIC GUDANG', 'JABATAN', 'REMARK'];
+    const rows = filteredList.map((item) => [
+      `"${item.tanggal}"`,
+      `"${item.jam || ''}"`,
+      `"${(item.distributor || '').replace(/"/g, '""')}"`,
+      `"${item.namaOli}"`,
+      `"${item.qty}"`,
+      `"${item.satuan || 'Ltr'}"`,
+      `"${item.picGudangMaterial}"`,
+      `"${item.picGudangJabatan || 'ADMINISTRASI'}"`,
+      `"${(item.remark || '').replace(/"/g, '""')}"`,
+    ]);
+    const csv = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN PENERIMAAN STOK OLI GUDANG"`,
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Catatan: ${filteredList.length} | Dicetak oleh: ${currentUser.fullName || currentUser.username}"`,
+      '',
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Laporan_Penerimaan_Stok_Oli_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
@@ -235,6 +291,16 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
               className="pl-9 pr-3 py-2 bg-stone-950/80 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-emerald-500/50 w-56 sm:w-64"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+            title="Export CSV Penerimaan Stok Oli (PT BATU KALI WELANG AMPUH)"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>Export CSV</span>
+          </button>
 
           {canEdit ? (
             <button
@@ -469,32 +535,36 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                 </div>
               </div>
 
-              {/* c. Nama Oli */}
+              {/* c. Nama / Jenis Oli (Input Manual) */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-stone-300 font-semibold">
-                    c. Nama Oli <span className="text-amber-400">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddOilModal(true)}
-                    className="text-[11px] text-amber-400 hover:text-amber-300 font-mono font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>+ Add Jenis Oli Lain</span>
-                  </button>
-                </div>
-                <select
+                <label className="block text-stone-300 font-semibold mb-1">
+                  c. Nama / Jenis Oli (Input Manual) <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  list="stock-oil-types-list"
+                  placeholder="Ketik jenis atau spesifikasi oli (contoh: TURALIK 52 PERTAMINA, SAE 15W-40, dll.)"
                   value={namaOli}
                   onChange={(e) => setNamaOli(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-emerald-500/60 font-mono font-bold"
-                >
+                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-emerald-400 focus:outline-none focus:border-emerald-500/60 font-mono font-bold text-xs"
+                />
+                <datalist id="stock-oil-types-list">
                   {availableOilTypes.map((oil) => (
-                    <option key={oil} value={oil}>
-                      {oil}
-                    </option>
+                    <option key={oil} value={oil} />
                   ))}
-                </select>
+                  <option value="TURALIK 52 PERTAMINA" />
+                  <option value="RORED HDA SAE 90" />
+                  <option value="MEDITRAN S SAE 40" />
+                  <option value="MEDITRAN SX SAE 15W-40" />
+                  <option value="RORED HDA SAE 140" />
+                  <option value="TELLUS S2 M 68" />
+                  <option value="RIMULA R4X 15W-40" />
+                  <option value="ATF DEXRON III" />
+                </datalist>
+                <span className="text-[10px] text-stone-500 block mt-1">
+                  Bebas diketik manual atau pilih saran dari daftar oli
+                </span>
               </div>
 
               {/* d. Qty & Satuan */}
@@ -531,24 +601,28 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                 </div>
               </div>
 
-              {/* e. PIC Gudang Material */}
+              {/* e. PIC Gudang Material (Hanya Administrasi & Kabag) */}
               <div>
-                <label className="block text-stone-300 font-semibold mb-1">
-                  e. PIC Gudang Material (Reff: Manpower Modul 2) <span className="text-amber-400">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-stone-300 font-semibold">
+                    e. PIC Gudang Material (Penerima) <span className="text-amber-400">*</span>
+                  </label>
+                  <span className="text-[10px] text-blue-400 font-mono">Khusus Administrasi &amp; Kabag</span>
+                </div>
                 <select
                   value={picGudangMaterial}
                   onChange={(e) => handlePicChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-emerald-500/60"
+                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-emerald-500/60 font-mono text-xs"
                 >
-                  {manpowerList.map((m) => (
+                  <option value="">-- Pilih PIC Gudang (Hanya Administrasi &amp; Kabag - Urut Abjad) --</option>
+                  {effectiveWarehouse.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      {m.nama} — {m.jabatan}
+                      [{m.jabatan}] {m.nama}
                     </option>
                   ))}
                 </select>
                 {picGudangJabatan && (
-                  <span className="text-[10px] text-stone-400 font-mono mt-1 block">
+                  <span className="text-[10px] text-blue-400 font-mono mt-1 block">
                     Jabatan Terpilih: {picGudangJabatan}
                   </span>
                 )}

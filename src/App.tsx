@@ -13,6 +13,9 @@ import {
   OilDistributionRecord,
   InventoryPeriodBalance,
   P2HRecord,
+  OutFieldFuelRecord,
+  GreaseStockRecord,
+  GreaseDistributionRecord,
 } from './types';
 import { 
   getCurrentUser, 
@@ -47,6 +50,17 @@ import {
   getAllOilDistributions,
   addOrUpdateOilDistribution,
   deleteOilDistribution,
+  getAllOutFieldFuelRecords,
+  addOrUpdateOutFieldFuelRecord,
+  deleteOutFieldFuelRecord,
+  getStandardSolarPrice,
+  setStandardSolarPrice,
+  getAllGreaseStockRecords,
+  addOrUpdateGreaseStockRecord,
+  deleteGreaseStockRecord,
+  getAllGreaseDistributionRecords,
+  addOrUpdateGreaseDistributionRecord,
+  deleteGreaseDistributionRecord,
   getInventoryPeriodBalance,
   saveInventoryPeriodBalance,
   getAvailableOilTypes,
@@ -97,6 +111,10 @@ export default function App() {
   const [oilDistributions, setOilDistributions] = useState<OilDistributionRecord[]>([]);
   const [periodBalance, setPeriodBalance] = useState<InventoryPeriodBalance>(() => getInventoryPeriodBalance());
   const [availableOilTypes, setAvailableOilTypes] = useState<string[]>([]);
+  const [outFieldFuelRecords, setOutFieldFuelRecords] = useState<OutFieldFuelRecord[]>([]);
+  const [standardSolarPrice, setStandardSolarPriceState] = useState<number>(() => getStandardSolarPrice());
+  const [greaseStocks, setGreaseStocks] = useState<GreaseStockRecord[]>([]);
+  const [greaseDistributions, setGreaseDistributions] = useState<GreaseDistributionRecord[]>([]);
   
   // Modul 5: P2H Records State
   const [p2hRecords, setP2HRecords] = useState<P2HRecord[]>([]);
@@ -135,6 +153,10 @@ export default function App() {
     setOilStockInputs(getAllOilStockInputs());
     setFuelDistributions(getAllFuelDistributions());
     setOilDistributions(getAllOilDistributions());
+    setOutFieldFuelRecords(getAllOutFieldFuelRecords());
+    setStandardSolarPriceState(getStandardSolarPrice());
+    setGreaseStocks(getAllGreaseStockRecords());
+    setGreaseDistributions(getAllGreaseDistributionRecords());
     setPeriodBalance(getInventoryPeriodBalance());
     setAvailableOilTypes(getAvailableOilTypes());
     setP2HRecords(getAllP2HRecords());
@@ -473,6 +495,89 @@ export default function App() {
     }
   };
 
+  // 7. Out Field Fuel Used (SPBU Luar)
+  const handleSaveOutFieldFuelRecord = (
+    data: Omit<OutFieldFuelRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => {
+    const res = addOrUpdateOutFieldFuelRecord(data, idToEdit);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleDeleteOutFieldFuelRecord = (id: string) => {
+    const res = deleteOutFieldFuelRecord(id);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleUpdateSolarPrice = (newPrice: number) => {
+    setStandardSolarPrice(newPrice);
+    setStandardSolarPriceState(newPrice);
+    showToast(`Harga standar solar berhasil diperbarui: Rp ${newPrice.toLocaleString('id-ID')}/Ltr`, 'success');
+  };
+
+  // 8. Grease Stock & Distribution
+  const handleSaveGreaseStock = (
+    data: Omit<GreaseStockRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => {
+    const res = addOrUpdateGreaseStockRecord(data, idToEdit);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleDeleteGreaseStock = (id: string) => {
+    const res = deleteGreaseStockRecord(id);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleSaveGreaseDistribution = (
+    data: Omit<GreaseDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => {
+    const res = addOrUpdateGreaseDistributionRecord(data, idToEdit);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleDeleteGreaseDistribution = (id: string) => {
+    const res = deleteGreaseDistributionRecord(id);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
   // =================== MODUL 5: INPUT FORM P2H UNIT ===================
   const handleSaveP2H = (
     data: Omit<P2HRecord, 'id' | 'noP2H' | 'createdAt' | 'updatedAt'>,
@@ -590,7 +695,7 @@ export default function App() {
             onNavigateToP2H={() => setActiveModuleId(5)}
           />
         ) : activeModuleId === 4 ? (
-          /* Modul 4: FOG (6 Sub-Modul: Data Suplier, Input Stock Fuel + Top 5, Transfer Fuel Tangki-FT, Input Stock Oli, Distribution Fuel, Distribution Oli) */
+          /* Modul 4: FOG (Kolom Fuel, Oil, Grease, & Data Suplier termasuk Out Field Fuel SPBU Luar) */
           <FOGInventoryView
             units={units}
             manpowerList={manpowerList}
@@ -603,6 +708,17 @@ export default function App() {
             periodBalance={periodBalance}
             availableOilTypes={availableOilTypes}
             currentUser={currentUser}
+            outFieldFuelRecords={outFieldFuelRecords}
+            onSaveOutFieldFuelRecord={handleSaveOutFieldFuelRecord}
+            onDeleteOutFieldFuelRecord={handleDeleteOutFieldFuelRecord}
+            standardSolarPrice={standardSolarPrice}
+            onUpdateSolarPrice={handleUpdateSolarPrice}
+            greaseStocks={greaseStocks}
+            greaseDistributions={greaseDistributions}
+            onSaveGreaseStock={handleSaveGreaseStock}
+            onDeleteGreaseStock={handleDeleteGreaseStock}
+            onSaveGreaseDistribution={handleSaveGreaseDistribution}
+            onDeleteGreaseDistribution={handleDeleteGreaseDistribution}
             onSaveSupplier={handleSaveSupplier}
             onDeleteSupplier={handleDeleteSupplier}
             onSaveFuelStockInput={handleSaveFuelStockInput}
@@ -654,7 +770,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <BkwaLogo size="sm" variant="card" />
             <div>
-              <p className="font-bold text-stone-200">PT Batu Kaliwelang Ampuh</p>
+              <p className="font-bold text-stone-200">PT BATU KALI WELANG AMPUH</p>
               <p className="text-[11px] text-stone-500">
                 Alamat Quarry: Purwosari • Divisi Maintenance & Alat Berat
               </p>

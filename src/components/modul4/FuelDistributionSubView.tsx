@@ -26,7 +26,8 @@ import {
   Layers,
   MapPin,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Download
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 
@@ -118,6 +119,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   }, [equipmentList, selectedJenis]);
 
   // 3. DropDown Nama Operator dari SEMUA Jabatan di Modul 2
+  // Diurutkan berdasarkan Jabatan baru sesuai Abjad Nama agar mudah mencarinya
   const allOperatorsList = useMemo(() => {
     if (!manpowerList || manpowerList.length === 0) {
       return [
@@ -127,8 +129,15 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
         { id: 'mp-demo-4', nama: 'Rudi Hartono', jabatan: 'HELPER MEKANIK' },
       ];
     }
-    return [...manpowerList].sort((a, b) => a.nama.localeCompare(b.nama));
+    return [...manpowerList].sort((a, b) => {
+      const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
+      if (cmpJabatan !== 0) return cmpJabatan;
+      return (a.nama || '').localeCompare(b.nama || '', 'id');
+    });
   }, [manpowerList]);
+
+  // Daftar manpower terurut Jabatan & Nama untuk PIC dan Driver FT
+  const sortedManpowerByJabatan = allOperatorsList;
 
   // Helper memformat tanggal ala Google Form (e.g. "Senin, 28 September 2026")
   const formatGformDate = (dStr: string) => {
@@ -368,6 +377,46 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
 
   const totalFuelDistributed = fuelDistributions.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
 
+  // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
+  const handleExportCSV = () => {
+    if (filteredList.length === 0) {
+      alert('Tidak ada data distribusi fuel untuk diexport.');
+      return;
+    }
+    const headers = ['NO BON', 'TANGGAL', 'JAM', 'JENIS ALAT', 'CN ALAT', 'NAMA ALAT', 'HM/KM', 'QTY SOLAR', 'SATUAN', 'LOKASI', 'OPERATOR', 'JABATAN OPERATOR', 'FLOWMETER AWAL', 'FLOWMETER AKHIR', 'STATUS'];
+    const rows = filteredList.map((item) => [
+      `"${item.noBon}"`,
+      `"${item.tanggal}"`,
+      `"${item.jam || ''}"`,
+      `"${item.jenisAlat || '-'}"`,
+      `"${item.cnAlat}"`,
+      `"${(item.namaAlat || '').replace(/"/g, '""')}"`,
+      `"${item.hmKm ?? ''}"`,
+      `"${item.qty}"`,
+      `"${item.satuan || 'Ltr'}"`,
+      `"${(item.lokasi || '').replace(/"/g, '""')}"`,
+      `"${item.operatorName}"`,
+      `"${item.operatorJabatan || '-'}"`,
+      `"${item.flowmeterAwal ?? ''}"`,
+      `"${item.flowmeterAkhir ?? ''}"`,
+      `"${item.status || 'SELESAI'}"`,
+    ]);
+    const csv = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN DISTRIBUSI BBM SOLAR"`,
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Catatan: ${filteredList.length} | Dicetak oleh: ${currentUser.fullName || currentUser.username}"`,
+      '',
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Distribusi_Solar_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Action Bar */}
@@ -399,6 +448,16 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
               className="pl-9 pr-3 py-2 bg-stone-950/80 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-orange-500/50 w-56 sm:w-64"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+            title="Export CSV Distribusi Solar (PT BATU KALI WELANG AMPUH)"
+          >
+            <Download className="w-4 h-4 text-orange-400" />
+            <span>Export CSV</span>
+          </button>
 
           <button
             id="btn-add-fuel-distribution"
@@ -889,11 +948,11 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                   <select
                     value={driverFtName}
                     onChange={(e) => setDriverFtName(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-orange-500/60"
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-orange-500/60 font-mono text-xs"
                   >
-                    {manpowerList.map((m) => (
+                    {sortedManpowerByJabatan.map((m) => (
                       <option key={m.id} value={m.nama}>
-                        {m.nama} — [{m.jabatan}]
+                        [{m.jabatan}] {m.nama}
                       </option>
                     ))}
                   </select>
@@ -906,11 +965,11 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                   <select
                     value={picFogName}
                     onChange={(e) => setPicFogName(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-orange-500/60"
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-orange-500/60 font-mono text-xs"
                   >
-                    {manpowerList.map((m) => (
+                    {sortedManpowerByJabatan.map((m) => (
                       <option key={m.id} value={m.nama}>
-                        {m.nama} — [{m.jabatan}]
+                        [{m.jabatan}] {m.nama}
                       </option>
                     ))}
                   </select>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { UserAccount, AccountTier } from '../types';
+import { UserAccount } from '../types';
 import { BkwaLogo } from './BkwaLogo';
 import { getAllUsers, setCurrentUser } from '../utils/storage';
 import crusherBg from '../assets/images/quarry_crusher_bg_1789456202821.jpg';
@@ -7,12 +7,7 @@ import {
   KeyRound, 
   Mail, 
   AlertCircle, 
-  ArrowRight,
-  ShieldCheck,
-  UserCheck,
-  Award,
-  Sparkles,
-  Smartphone
+  ArrowRight
 } from 'lucide-react';
 
 interface LoginModalProps {
@@ -24,13 +19,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Helper Preset untuk testing cepat di HP karyawan
-  const handleSelectPreset = (email: string, pass: string) => {
-    setEmailOrUsername(email);
-    setPassword(pass);
-    setError(null);
-  };
-
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -39,39 +27,42 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
     const cleanPassword = password.trim();
 
     if (!cleanInput || !cleanPassword) {
-      setError('Silakan masukkan email dan kata sandi Anda.');
+      setError('Silakan masukkan Username / No WA dan Kata Sandi / NIK Anda.');
       return;
     }
 
     const users = getAllUsers();
 
-    // 1. Cek Developer Account (Full access)
-    if (
-      (cleanInput === 'developer@bkwa.co.id' ||
-        cleanInput === 'adminbkwa09@bkwa.co.id' ||
-        cleanInput === 'adminbkwa09' ||
-        cleanInput === 'developer' ||
-        cleanInput === 'bkwa.maintenance2026@gmail.com') &&
-      cleanPassword === 'bkwa09'
-    ) {
-      const devUser = users.find((u) => u.accountTier === 'DEVELOPER' || u.username === 'adminbkwa09');
-      if (devUser) {
-        devUser.lastLogin = new Date().toISOString();
-        setCurrentUser(devUser);
-        onLoginSuccess(devUser);
-        return;
-      }
+    // 1. Cek Developer Account (Username "Admin BKWA", Password "Etika09")
+    const isDevUserMatch =
+      cleanInput === 'admin bkwa' ||
+      cleanInput === 'adminbkwa' ||
+      cleanInput === 'adminbkwa09' ||
+      cleanInput === 'developer' ||
+      cleanInput === 'developer@bkwa.co.id' ||
+      cleanInput === 'bkwa.maintenance2026@gmail.com';
+    const isDevPassMatch = cleanPassword === 'Etika09' || cleanPassword === 'bkwa09';
+
+    if (isDevUserMatch && isDevPassMatch) {
+      const devUser = users.find((u) => u.accountTier === 'DEVELOPER' || u.username === 'Admin BKWA') || users[0];
+      devUser.lastLogin = new Date().toISOString();
+      setCurrentUser(devUser);
+      onLoginSuccess(devUser);
+      return;
     }
 
-    // 2. Cek Berdasarkan Email atau Username
+    // 2. Cek Akun Karyawan (Username = No WA, Password = NIK) atau Email / Username
     const matched = users.find((u) => {
-      const emailMatch = u.email && u.email.toLowerCase().trim() === cleanInput;
       const userMatch = u.username && u.username.toLowerCase().trim() === cleanInput;
-      return (emailMatch || userMatch) && u.password === cleanPassword;
+      const emailMatch = u.email && u.email.toLowerCase().trim() === cleanInput;
+      const phoneClean = (u.phone || '').replace(/[^0-9]/g, '');
+      const inputClean = cleanInput.replace(/[^0-9]/g, '');
+      const phoneMatch = phoneClean && inputClean && phoneClean === inputClean;
+      return (userMatch || emailMatch || phoneMatch) && u.password === cleanPassword;
     });
 
     if (!matched) {
-      setError('Email atau kata sandi tidak sesuai. Silakan periksa kembali.');
+      setError('Username / No WA atau Kata Sandi / NIK tidak sesuai. Hubungi Akun Developer untuk mendaftarkan akun Anda di Modul 2.');
       return;
     }
 
@@ -101,88 +92,27 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
       {/* Main Login Card */}
       <div className="relative z-10 w-full max-w-lg bg-stone-900/95 border border-stone-700/90 rounded-3xl shadow-2xl shadow-stone-950/95 overflow-hidden backdrop-blur-xl my-4">
         {/* Dominant Company Logo Section */}
-        <div className="pt-6 sm:pt-8 pb-5 px-5 sm:px-6 flex flex-col items-center text-center border-b border-stone-800/80 bg-stone-900/80">
+        <div className="pt-8 pb-6 px-6 flex flex-col items-center text-center border-b border-stone-800/80 bg-stone-900/80">
           <div className="relative mb-3 group">
-            <div className="absolute -inset-2.5 bg-gradient-to-r from-amber-600/40 via-amber-500/30 to-amber-700/40 rounded-3xl blur-lg opacity-80 group-hover:opacity-100 transition duration-500" />
+            <div className="absolute -inset-2 bg-gradient-to-r from-amber-600/30 via-amber-500/20 to-amber-700/30 rounded-3xl blur-md opacity-80" />
             <BkwaLogo size="dominant" variant="card" className="relative shadow-2xl" />
           </div>
 
           <div>
-            <div className="flex items-center justify-center gap-1.5 mb-1.5">
-              <span className="text-[10px] sm:text-[11px] font-mono font-bold uppercase tracking-widest text-amber-400 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center gap-1.5 shadow-sm">
-                <Smartphone className="w-3 h-3 text-amber-400" />
-                Login Email Mobile Karyawan
-              </span>
-            </div>
             <h1 className="text-xl sm:text-2xl font-black text-stone-100 font-mono tracking-wide mt-1">
               PT BATU KALI WELANG AMPUH
             </h1>
-            <p className="text-xs text-stone-300 mt-1 max-w-sm mx-auto font-medium">
+            <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto font-medium">
               Maintenance Fleet, Manpower, Inventory & P2H Alat Berat Quarry Purwosari
             </p>
           </div>
         </div>
 
         {/* Clean Form Section */}
-        <div className="p-5 sm:p-7">
-          {/* Quick Account Selector for Mobile Device Ease */}
-          <div className="mb-5 bg-stone-950/80 p-3 rounded-2xl border border-stone-800">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400 font-semibold flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-amber-400" />
-                Pilih Akun Cepat (4 Hak Akses):
-              </span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('developer@bkwa.co.id', 'bkwa09')}
-                className="px-2 py-1.5 rounded-xl bg-purple-950/50 hover:bg-purple-900/60 border border-purple-700/50 text-purple-300 text-[11px] font-bold text-left transition flex flex-col"
-              >
-                <span className="flex items-center gap-1 text-[10px] text-purple-400">
-                  <ShieldCheck className="w-3 h-3" /> Developer
-                </span>
-                <span className="truncate text-stone-200">Full Access</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('admin@bkwa.co.id', 'user123')}
-                className="px-2 py-1.5 rounded-xl bg-blue-950/50 hover:bg-blue-900/60 border border-blue-700/50 text-blue-300 text-[11px] font-bold text-left transition flex flex-col"
-              >
-                <span className="flex items-center gap-1 text-[10px] text-blue-400">
-                  <Award className="w-3 h-3" /> Admin
-                </span>
-                <span className="truncate text-stone-200">Input/Export 3,4,5</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('khusus@bkwa.co.id', 'user123')}
-                className="px-2 py-1.5 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-700/50 text-emerald-300 text-[11px] font-bold text-left transition flex flex-col"
-              >
-                <span className="flex items-center gap-1 text-[10px] text-emerald-400">
-                  <UserCheck className="w-3 h-3" /> Khusus
-                </span>
-                <span className="truncate text-stone-200">Export 1,2,3,4,5</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectPreset('operator@bkwa.co.id', 'user123')}
-                className="px-2 py-1.5 rounded-xl bg-amber-950/50 hover:bg-amber-900/60 border border-amber-700/50 text-amber-300 text-[11px] font-bold text-left transition flex flex-col"
-              >
-                <span className="flex items-center gap-1 text-[10px] text-amber-400">
-                  <UserCheck className="w-3 h-3" /> Member
-                </span>
-                <span className="truncate text-stone-200">Viewer 3 & Form P2H</span>
-              </button>
-            </div>
-          </div>
-
+        <div className="p-6 sm:p-8">
           {/* Error Notification */}
           {error && (
-            <div className="mb-4 flex items-center gap-2 p-3 bg-red-950/70 border border-red-800 rounded-xl text-xs text-red-200">
+            <div className="mb-5 flex items-center gap-2.5 p-3.5 bg-red-950/70 border border-red-800 rounded-xl text-xs text-red-200">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
               <span>{error}</span>
             </div>
@@ -192,16 +122,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             <div>
               <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center gap-1.5">
                 <Mail className="w-3.5 h-3.5 text-amber-400" />
-                <span>Email Karyawan di HP / Username</span>
+                <span>Username</span>
               </label>
               <input
                 id="input-login-email"
                 type="text"
                 required
-                autoComplete="email"
+                autoComplete="username"
                 value={emailOrUsername}
                 onChange={(e) => setEmailOrUsername(e.target.value)}
-                placeholder="Contoh: operator@bkwa.co.id atau admin@bkwa.co.id"
+                placeholder="Username"
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
               />
             </div>
@@ -209,7 +139,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             <div>
               <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>Kata Sandi (Password)</span>
+                <span>Kata Sandi</span>
               </label>
               <input
                 id="input-login-password"
@@ -218,7 +148,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Masukkan kata sandi"
+                placeholder="Kata Sandi"
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
               />
             </div>
@@ -226,7 +156,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             <button
               id="btn-submit-login"
               type="submit"
-              className="w-full mt-2 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-lg shadow-amber-500/25 active:scale-[0.99]"
+              className="w-full mt-3 flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-lg shadow-amber-500/25 active:scale-[0.99]"
             >
               <span>Masuk Aplikasi</span>
               <ArrowRight className="w-4 h-4" />

@@ -201,16 +201,24 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
     ]);
 
     const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      '\uFEFF' +
+      [
+        `"PT BATU KALI WELANG AMPUH - LAPORAN MONITORING TYRE & BAN ARMADA"`,
+        `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Unit Terpasang: ${filteredMonitoringList.length}"`,
+        '',
+        headers.join(','), 
+        ...rows.map((r) => r.join(','))
+      ].join('\n');
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `MONITORING_TYRE_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `MONITORING_TYRE_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Visual Wheel Position Map untuk Unit Terpilih

@@ -26,10 +26,12 @@ import {
   Sparkles,
   Package,
   Wrench,
-  Archive
+  Archive,
+  ExternalLink
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { isDeveloper } from '../../utils/storage';
+import { PartRequirementModal } from './PartRequirementModal';
 
 interface UpdateBreakdownSubViewProps {
   breakdowns: BreakdownRecord[];
@@ -123,6 +125,13 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
     type: 'success' | 'error' | null;
     message: string;
   } | null>(null);
+
+  // Modal Kebutuhan Spare Part (Popup saat No Notif / MO diklik)
+  const [selectedModalBreakdown, setSelectedModalBreakdown] = useState<BreakdownRecord | null>(null);
+  const [showPartModal, setShowPartModal] = useState<boolean>(false);
+
+  // Modal Konfirmasi Hapus Laporan Breakdown
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<BreakdownRecord | null>(null);
 
   // Helper hitung durasi jam kerja perbaikan (format 24 jam)
   const calculateWorkDuration = (start: string, finish: string): string | null => {
@@ -410,7 +419,18 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
             <div className="mb-6 p-4 rounded-xl bg-stone-950/70 border border-stone-800 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
               <div>
                 <span className="text-stone-500 block text-[10px]">NO MAINTENANCE ORDER:</span>
-                <span className="text-amber-400 font-black">{currentActiveRecord.noMaintenanceOrder || currentActiveRecord.noNotifikasi}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedModalBreakdown(currentActiveRecord);
+                    setShowPartModal(true);
+                  }}
+                  className="text-amber-400 hover:text-amber-300 font-black inline-flex items-center gap-1.5 underline decoration-amber-500/50 hover:decoration-amber-300 group cursor-pointer text-left"
+                  title="Klik untuk melihat kebutuhan spare part unit & export PDF ke Malang"
+                >
+                  <span>{currentActiveRecord.noMaintenanceOrder || currentActiveRecord.noNotifikasi}</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition shrink-0" />
+                </button>
               </div>
               <div>
                 <span className="text-stone-500 block text-[10px]">UNIT &amp; JENIS:</span>
@@ -424,9 +444,22 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                 <span className="text-stone-500 block text-[10px]">KOMPONEN RUSAK:</span>
                 <span className="text-rose-400 font-bold">{currentActiveRecord.component || '-'}</span>
               </div>
-              <div className="col-span-2 sm:col-span-4 pt-2 border-t border-stone-800/80">
+              <div className="col-span-2 sm:col-span-3 pt-2 border-t border-stone-800/80">
                 <span className="text-stone-500 block text-[10px]">PROBLEM AWAL (READ-ONLY):</span>
                 <span className="text-stone-300 font-sans italic">{currentActiveRecord.detailProblem}</span>
+              </div>
+              <div className="col-span-2 sm:col-span-1 pt-2 border-t border-stone-800/80 flex sm:justify-end items-end">
+                {onDeleteBreakdown && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmTarget(currentActiveRecord)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/50 text-[11px] font-bold transition shadow"
+                    title="Hapus Laporan Breakdown ini"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Hapus Laporan</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -861,20 +894,19 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
           {/* TOMBOL SIMPAN DI PALING BAWAH */}
           <div className="pt-4 border-t border-stone-800 flex items-center justify-between gap-3">
             <div>
-              {isDev && onDeleteBreakdown && selectedBreakdownToUpdate && (
+              {onDeleteBreakdown && (currentActiveRecord || selectedBreakdownToUpdate) && (
                 <button
+                  id="btn-hapus-laporan-breakdown"
                   type="button"
                   onClick={() => {
-                    if (confirm(`Hapus laporan breakdown ${selectedBreakdownToUpdate.noNotifikasi} (Unit ${selectedBreakdownToUpdate.noUnit})?`)) {
-                      onDeleteBreakdown(selectedBreakdownToUpdate.id);
-                      onSelectBreakdown(null);
-                    }
+                    const target = currentActiveRecord || selectedBreakdownToUpdate;
+                    if (target) setDeleteConfirmTarget(target);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition"
-                  title="Hapus Laporan Breakdown (Developer Only)"
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-800 text-xs font-bold transition shadow hover:shadow-rose-900/30 active:scale-95 cursor-pointer"
+                  title="Hapus Laporan Breakdown yang Sedang Terpilih"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Hapus Laporan</span>
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Hapus Laporan Breakdown</span>
                 </button>
               )}
             </div>
@@ -918,7 +950,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
               <span>Unit yang Sedang Breakdown (Existing)</span>
             </h3>
             <p className="text-xs text-stone-400 mt-0.5">
-              Menampilkan hanya unit dengan status BREAKDOWN aktif ({activeExistingBreakdowns.length} unit)
+              Menampilkan hanya unit dengan status BREAKDOWN aktif ({activeExistingBreakdowns.length} unit) • Klik No. MO untuk melihat spare part &amp; export PDF
             </p>
           </div>
         </div>
@@ -945,7 +977,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">Update Progress</th>
                   <th className="px-3 py-3">Part/Jasa</th>
-                  <th className="px-3 py-3 text-center">Pilih Edit</th>
+                  <th className="px-3 py-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
@@ -956,8 +988,24 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                       selectedId === b.id ? 'bg-amber-500/10 border-l-2 border-amber-500' : ''
                     }`}
                   >
-                    <td className="px-3 py-3 font-bold text-amber-400">
-                      {b.noMaintenanceOrder || b.noNotifikasi}
+                    <td className="px-3 py-3 font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedModalBreakdown(b);
+                          setShowPartModal(true);
+                        }}
+                        className="text-left group/btn"
+                        title="Klik untuk melihat kebutuhan spare part & export PDF ke Malang"
+                      >
+                        <span className="text-amber-400 group-hover/btn:text-amber-300 group-hover/btn:underline flex items-center gap-1 font-mono">
+                          {b.noMaintenanceOrder || b.noNotifikasi}
+                          <ExternalLink className="w-3 h-3 text-amber-400/70" />
+                        </span>
+                        {b.noMaintenanceOrder && b.noMaintenanceOrder !== b.noNotifikasi && (
+                          <span className="text-[10px] text-stone-500 font-normal block font-mono">Notif: {b.noNotifikasi}</span>
+                        )}
+                      </button>
                     </td>
                     <td className="px-3 py-3 font-bold text-stone-100">{b.noUnit}</td>
                     <td className="px-3 py-3 text-stone-300">
@@ -983,22 +1031,45 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <span className="text-stone-400 text-[11px]">
-                        {b.partsJasa && b.partsJasa.length > 0 ? `${b.partsJasa.length} item` : '-'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-center">
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedId(b.id);
-                          onSelectBreakdown(b);
-                          loadBreakdownToForm(b);
+                          setSelectedModalBreakdown(b);
+                          setShowPartModal(true);
                         }}
-                        className="px-2.5 py-1 rounded bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-sans font-bold text-[11px] transition"
+                        className="text-left group/part"
+                        title="Lihat rincian part & export PDF"
                       >
-                        Buka di Form
+                        <span className="text-stone-300 group-hover/part:text-amber-400 font-bold text-[11px] underline">
+                          {b.partsJasa && b.partsJasa.length > 0 ? `${b.partsJasa.length} item part` : 'Cek part'}
+                        </span>
                       </button>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(b.id);
+                            onSelectBreakdown(b);
+                            loadBreakdownToForm(b);
+                          }}
+                          className="px-2.5 py-1 rounded bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-sans font-bold text-[11px] transition"
+                          title="Buka data di form update"
+                        >
+                          Buka di Form
+                        </button>
+                        {onDeleteBreakdown && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTarget(b)}
+                            className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/40 text-[11px] transition cursor-pointer"
+                            title="Hapus Laporan Breakdown Ini"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1007,6 +1078,97 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Modal Kebutuhan Spare Part (Popup & Export PDF ke Malang) */}
+      <PartRequirementModal
+        breakdown={selectedModalBreakdown}
+        isOpen={showPartModal}
+        onClose={() => {
+          setShowPartModal(false);
+          setSelectedModalBreakdown(null);
+        }}
+        currentUser={currentUser}
+      />
+
+      {/* Modal Konfirmasi Hapus Laporan Breakdown */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-100 font-mono text-base">Hapus Laporan Breakdown?</h3>
+                <p className="text-xs text-stone-400">Tindakan ini permanen dan tidak dapat dibatalkan.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-stone-950 rounded-xl border border-stone-800 text-xs font-mono space-y-2">
+              <div className="flex justify-between">
+                <span className="text-stone-500">No. MO / Notif:</span>
+                <span className="text-amber-400 font-bold">
+                  {deleteConfirmTarget.noMaintenanceOrder || deleteConfirmTarget.noNotifikasi}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Unit:</span>
+                <span className="text-stone-200 font-bold">
+                  {deleteConfirmTarget.noUnit} {deleteConfirmTarget.namaAlat ? `(${deleteConfirmTarget.namaAlat})` : ''}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Komponen:</span>
+                <span className="text-rose-400 font-bold">{deleteConfirmTarget.component || '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500">Tanggal:</span>
+                <span className="text-stone-300">{deleteConfirmTarget.tanggal}</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/50 text-[11px] text-rose-300/90 leading-relaxed font-sans">
+              ⚠️ <strong>Peringatan:</strong> Laporan breakdown ini dan seluruh data riwayat update pekerjaannya akan dihapus permanen dari Database Maintenance.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono text-xs font-semibold transition cursor-pointer"
+              >
+                Batalkan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteBreakdown) {
+                    const res = onDeleteBreakdown(deleteConfirmTarget.id);
+                    if (res && res.message) {
+                      setFeedback({ type: 'success', message: res.message });
+                    } else {
+                      setFeedback({
+                        type: 'success',
+                        message: `Laporan breakdown ${deleteConfirmTarget.noMaintenanceOrder || deleteConfirmTarget.noNotifikasi} berhasil dihapus.`,
+                      });
+                    }
+                  }
+                  if (selectedId === deleteConfirmTarget.id) {
+                    setSelectedId('');
+                    onSelectBreakdown(null);
+                    resetForm();
+                  }
+                  setDeleteConfirmTarget(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs font-bold transition shadow-lg shadow-rose-600/30 flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Hapus Sekarang</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

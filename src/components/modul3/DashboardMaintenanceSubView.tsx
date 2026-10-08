@@ -273,7 +273,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
     ]);
 
     const summary = [
-      ['PT. BUMI KARYA WIRA AGUNG (BKWA)'],
+      ['PT BATU KALI WELANG AMPUH'],
       ['LAPORAN REKAPITULASI MAINTENANCE & PHYSICAL AVAILABILITY (PA)'],
       [`Periode Filter:`, `${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Kini'} | Bulan: ${filterBulan || 'Semua'} | Tahun: ${filterTahun || 'Semua'}`],
       [`Tanggal Export:`, `${new Date().toLocaleString('id-ID')}`],
@@ -298,7 +298,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Laporan_Dashboard_Maintenance_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Laporan_Dashboard_Maintenance_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -315,7 +315,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
-        <title>Laporan Dashboard Maintenance - PT BKWA</title>
+        <title>Laporan Dashboard Maintenance - PT BATU KALI WELANG AMPUH</title>
         <style>
           body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #222; margin: 20px; }
           h1 { font-size: 16pt; color: #b45309; text-align: center; margin-bottom: 2px; }
@@ -328,7 +328,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
         </style>
       </head>
       <body>
-        <h1>PT. BUMI KARYA WIRA AGUNG (BKWA)</h1>
+        <h1>PT BATU KALI WELANG AMPUH</h1>
         <p class="subtitle"><strong>DIVISI ALAT BERAT & PERAWATAN ARMADA (MAINTENANCE)</strong><br>Laporan Eksekutif Dashboard Maintenance & Physical Availability (PA) Unit<br>Tanggal Cetak: ${dateStr}</p>
         
         <div class="kpi-card">
@@ -401,7 +401,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
             <td style="border: none; width: 50%; text-align: center;">
               Mengetahui & Menyetujui,<br><br><br><br>
               <strong>( Kepala Workshop / Developer )</strong><br>
-              PT. BKWA Quarry Purwosari
+              PT BATU KALI WELANG AMPUH Quarry Purwosari
             </td>
           </tr>
         </table>
@@ -412,7 +412,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Laporan_Dashboard_Maintenance_BKWA_${new Date().toISOString().split('T')[0]}.doc`);
+    link.setAttribute('download', `Laporan_Dashboard_Maintenance_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.doc`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

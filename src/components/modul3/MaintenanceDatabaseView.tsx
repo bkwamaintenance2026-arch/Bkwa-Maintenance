@@ -240,6 +240,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
           units={units}
           breakdowns={breakdowns}
           currentUser={currentUser}
+          manpowerList={manpowerList}
           onNavigateToUpdate={handleNavigateToUpdate}
           onDeleteBreakdown={onDeleteBreakdown}
         />
@@ -250,6 +251,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
           units={units}
           breakdowns={breakdowns}
           p2hRecords={p2hRecords}
+          manpowerList={manpowerList}
           currentUser={currentUser}
           onNavigateToUpdate={handleNavigateToUpdate}
           onNavigateToP2H={onNavigateToP2H}

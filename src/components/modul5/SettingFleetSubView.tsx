@@ -446,12 +446,18 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       `"${f.p2hNo || '-'}"`,
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN SETTING FLEET OPERASI TAMBANG & QUARRY"`,
+      `"Tanggal Filter: ${filterDate || 'Semua Tanggal'} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Armada: ${filteredFleetList.length}"`,
+      '',
+      headers.join(','), 
+      ...rows.map((r) => r.join(','))
+    ].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Setting_Fleet_Operasi_${filterDate || 'Semua'}.csv`;
+    link.download = `Setting_Fleet_Operasi_PT_BATU_KALI_WELANG_AMPUH_${filterDate || 'Semua'}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };

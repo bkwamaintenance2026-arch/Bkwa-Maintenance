@@ -489,15 +489,22 @@ export const P2HView: React.FC<P2HViewProps> = ({
       ].join(',');
     });
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+    const csvContent = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN PEMERIKSAAN HARIAN PRA-OPERASI (P2H)"`,
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Riwayat: ${filteredRiwayat.length}"`,
+      '',
+      headers.join(','),
+      ...rows
+    ].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Laporan_P2H_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Laporan_P2H_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Cetak Dokumen P2H via Print Browser

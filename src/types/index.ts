@@ -10,6 +10,25 @@ export type AccountTier = 'DEVELOPER' | 'ADMIN' | 'KHUSUS' | 'MEMBER';
 // Otorisasi Hak Akses: Bisa Mengisi (Input & Edit) vs Hanya View (Lihat Saja)
 export type UserAccessLevel = 'BISA_MENGISI' | 'HANYA_VIEW';
 
+// Matriks Izin Granular per Modul (Viewer, Input, Edit, Delete, Export)
+export interface ModulePermissionSet {
+  viewer: boolean; // Jika false: HIDE modul dari navigasi & launcher
+  input: boolean;  // Izin input / create data baru
+  edit: boolean;   // Izin edit data yang sudah ada
+  delete: boolean; // Izin hapus data
+  export: boolean; // Izin export CSV/print
+}
+
+export interface GranularUserPermissions {
+  modul1?: ModulePermissionSet; // Modul 1: Asset Registration
+  modul2?: ModulePermissionSet; // Modul 2: Manpower Management
+  modul3?: ModulePermissionSet; // Modul 3: Maintenance Database
+  modul4?: ModulePermissionSet; // Modul 4: FOG (Inventory Fuel & Oil)
+  modul5?: ModulePermissionSet; // Modul 5: Divisi Operation & P2H
+  modul6?: ModulePermissionSet; // Modul 6: Spare Part Inventory
+  modul7?: ModulePermissionSet; // Modul 7: Tyre Management System
+}
+
 export interface UserModulePermissions {
   modul1Asset?: boolean;        // Hak input Modul 1: Registrasi Asset (Hanya Developer)
   modul2Manpower?: boolean;     // Hak input Modul 2: Data Manpower
@@ -42,6 +61,7 @@ export interface UserAccount {
   status: 'AKTIF' | 'NONAKTIF';
   accessLevel?: UserAccessLevel; // 'BISA_MENGISI' (Editor) | 'HANYA_VIEW' (Viewer)
   modulePermissions?: UserModulePermissions;
+  permissions?: GranularUserPermissions; // Izin granular per modul 1 s/d 7 (Viewer, Input, Edit, Delete, Export)
   createdAt: string;
   lastLogin?: string;
 }
@@ -69,7 +89,7 @@ export type UnitCategory = string;
 export interface ActivityLog {
   id: string;
   tanggal: string;
-  aksi: 'REGISTRASI' | 'UPDATE' | 'HAPUS' | 'STATUS_CHANGE';
+  aksi: 'REGISTRASI' | 'CREATE' | 'UPDATE' | 'HAPUS' | 'DELETE' | 'STATUS_CHANGE';
   user: string;
   role: UserRole;
   keterangan: string;
@@ -130,6 +150,7 @@ export const MANPOWER_JABATAN_OPTIONS: ManpowerJabatan[] = [
 ];
 
 export type StatusKaryawan = 
+  | 'Etika 05 Sby'
   | 'TETAP'
   | 'KONTRAK'
   | 'HARIAN LEPAS'
@@ -137,6 +158,7 @@ export type StatusKaryawan =
   | 'MAGANG';
 
 export const STATUS_KARYAWAN_OPTIONS: StatusKaryawan[] = [
+  'Etika 05 Sby',
   'TETAP',
   'KONTRAK',
   'HARIAN LEPAS',
@@ -146,13 +168,16 @@ export const STATUS_KARYAWAN_OPTIONS: StatusKaryawan[] = [
 
 export interface ManpowerData {
   id: string;
-  nik: string;               // NIK (Tidak wajib saat ini, opsional)
-  nama: string;              // NAMA (Opsional)
+  nik: string;               // NIK (Digunakan sebagai Password login akun karyawan)
+  nama: string;              // NAMA Karyawan
   jabatan: ManpowerJabatan | string; // JABATAN (Pilihan dropdown)
-  noWa: string;              // NO WA (Opsional)
+  noWa: string;              // NO WA (Digunakan sebagai Username login akun karyawan)
   statusKaryawan: StatusKaryawan | string; // STATUS KARYAWAN (TETAP, KONTRAK, HARIAN LEPAS, KEMITRAAN, MAGANG)
   tglMasukKerja: string;     // TGL. MASUK KERJA (Opsional, format YYYY-MM-DD atau DD/MM/YYYY)
   keterangan: string;        // KETERANGAN (Opsional)
+  // Otorisasi Akses Sistem (Didaftarkan oleh Akun Developer di Modul 2):
+  isUserAccountActive?: boolean;        // Aktifkan login sistem untuk karyawan ini
+  permissions?: GranularUserPermissions; // Pilihan centang izin per modul (Viewer, Input, Edit, Delete, Export)
   createdAt: string;
   updatedAt: string;
 }
@@ -456,8 +481,53 @@ export interface InventoryPeriodBalance {
   sisaPeriodeLaluFuelTangki: number; // Ltr
   sisaPeriodeLaluFuelFT: number;     // Ltr
   sisaPeriodeLaluOli: Record<string, number>; // per varian oli (Ltr)
+  sisaPeriodeLaluGrease?: Record<string, number>; // per varian grease (Kg)
   kapasitasTangkiUtama?: number;     // Kapasitas Tangki Solar Utama Manual (Ltr) - dapat diganti manual jika tangki diganti
   kapasitasFuelTruck?: number;       // Kapasitas Fuel Truck FT-01 Manual (Ltr)
+}
+
+// ==========================================
+// MODUL 4: SUB MODUL GREASE (GEMUK PELUMAS)
+// ==========================================
+export const DEFAULT_GREASE_TYPES: string[] = [
+  'GREASE CHASSIS EP-2',
+  'GREASE MP-3 MULTIPURPOSE',
+  'GREASE HEAVY DUTY HT COMPLEX',
+  'GREASE MOLY EP-2 (CAT/KOMATSU)',
+];
+
+export interface GreaseStockRecord {
+  id: string;
+  distributor: string;
+  tanggal: string;
+  jam: string;
+  namaGrease: string;
+  qty: number;
+  satuan: 'Kg' | 'Pail' | 'Drum';
+  picGudang: string;
+  picGudangJabatan?: string;
+  remark?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GreaseDistributionRecord {
+  id: string;
+  noBon?: string;
+  tanggal: string;
+  jam: string;
+  noUnit: string;
+  namaAlat: string;
+  hmUnit: number;
+  namaGrease: string;
+  qty: number;
+  satuan: 'Kg' | 'Pail' | 'Tube';
+  lokasiPelumasan: string; // Pin & Bushing, Chassis, Wheel Hub, Swing Bearing, dll
+  picMekanik: string;
+  picMekanikJabatan?: string;
+  remark?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Legacy FOG Types for compatibility
@@ -702,7 +772,7 @@ export interface PurchaseRequest {
 // MODUL 7: TYRE MANAGEMENT SYSTEM
 // ============================================================
 
-export type TyreStatus = 'AVAILABLE' | 'INSTALLED' | 'SCRAP' | 'USED_READY' | 'VULKANISIR';
+export type TyreStatus = 'AVAILABLE' | 'INSTALLED' | 'SCRAP' | 'USED_READY' | 'VULKANISIR' | 'SEND_VULKANISIR';
 export type TyreJenis = 'New' | 'Used' | 'Vulkanisir';
 
 // 1. Sub Modul 1: Registrasi Tyre
@@ -776,4 +846,60 @@ export const TYRE_POSITION_OPTIONS = [
 ];
 
 export const TYRE_JENIS_OPTIONS: TyreJenis[] = ['New', 'Used', 'Vulkanisir'];
+
+// ============================================================
+// MODUL 4: SUB MODUL OUT FIELD FUEL USED (SPBU LUAR)
+// ============================================================
+
+export type OutFieldFuelJobType = 
+  | 'Batu Baik'
+  | 'Batu Pecelan'
+  | 'Imbal Tanah'
+  | 'Imbal Plant'
+  | 'Lokasian';
+
+export const OUT_FIELD_FUEL_JOBS: OutFieldFuelJobType[] = [
+  'Batu Baik',
+  'Batu Pecelan',
+  'Imbal Tanah',
+  'Imbal Plant',
+  'Lokasian',
+];
+
+export interface OutFieldFuelRecord {
+  id: string;
+  noTransaksi: string;       // Otomatis generate (OFF-xxxx)
+  tanggal: string;           // Tanggal pengisian (YYYY-MM-DD)
+  jam: string;               // Jam pengisian (format 24 jam HH:mm)
+  jenisAlat: string;         // Berdasarkan JENIS di Modul 1
+  kodeSpbu: string;          // Kode SPBU
+  cnNew: string;             // CN_NEW dikelompokkan sesuai Jenis
+  namaAlat: string;          // Otomatis muncul ketika CN_NEW dipilih
+  jmlLtr: number;            // Jumlah (Ltr)
+  // Job & Ritase:
+  job: OutFieldFuelJobType | string; // Pilihan Job utama
+  ritaseBatuBaik: number;
+  ritaseBatuPecelan: number;
+  ritaseImbalTanah: number;
+  ritaseImbalPlant: number;
+  ritaseLokasian: number;
+  ritaseTotal: number;       // Hasil penjumlahan ritase di kolom Job
+  // Nominal Keuangan:
+  hargaSolarPerLiter: number;// Harga solar (Manual-Akun Developer yg merubah harga solar)
+  nominalPembelianFuel: number; // Subtotal kalkulasi: Jml Ltr x Harga Solar
+  angkaPembulatan: number;   // Angka pembulatan dari pembelian solar di SPBU (+/- Rp)
+  nominalFuelSetelahPembulatan: number; // Nominal pembelian solar setelah pembulatan
+  lainLain?: string;         // Catatan / pengeluaran lain-lain (Text)
+  nominalLainLain: number;   // Nominal Lain lain (currency Rp)
+  totalNominal: number;      // Total Pengeluaran = (Nominal Fuel Setelah Pembulatan + Nominal Lain-lain)
+  // Pembayaran Cash ke Sopir & Rekonsiliasi:
+  nominalCashSopir: number;  // Nominal uang cash yang diberikan ke sopir (Rp)
+  sisaSelisihCash: number;   // Sisa cash = (Nominal cash yg diberikan sopir - Pengeluaran total)
+  // Operator / Driver:
+  namaOperator?: string;
+  jabatanOperator?: string;
+  catatan?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
 

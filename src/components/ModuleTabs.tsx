@@ -60,7 +60,7 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
       case 3:
         return { label: 'DASHBOARD MAINTENANCE', statusText: 'Modul 3 (Aktif)', sub: 'Breakdown & Analisis PA Unit' };
       case 4:
-        return { label: 'FOG', statusText: 'Modul 4 (Aktif)', sub: 'Logistik Fuel, Oil & Grease' };
+        return { label: 'FOG (FUEL, OIL & GREASE)', statusText: 'Modul 4 (Aktif)', sub: 'Kolom Fuel (SPBU Luar), Oil & Grease' };
       case 5:
         return { label: 'DIVISI OPERATION', statusText: 'Modul 5 (Aktif)', sub: 'P2H Harian & Setting Fleet' };
       case 6:

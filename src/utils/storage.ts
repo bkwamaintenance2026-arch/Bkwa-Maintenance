@@ -35,7 +35,13 @@ import {
   TyreInstallRecord,
   TyreRemoveRecord,
   TyreStatus,
-  TyreJenis
+  TyreJenis,
+  OutFieldFuelRecord,
+  OutFieldFuelJobType,
+  GranularUserPermissions,
+  ModulePermissionSet,
+  GreaseStockRecord,
+  GreaseDistributionRecord
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -46,7 +52,7 @@ import {
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'bkwa_current_user',
-  USERS: 'bkwa_users_list_v3', // updated to ensure clean migration to 4 tiers
+  USERS: 'bkwa_users_list_v4', // updated to ensure clean migration to Admin BKWA and Manpower logins
   UNITS: 'bkwa_asset_units_v2', // updated version key to guarantee clean state
   MANPOWER: 'bkwa_manpower_list_v1', // storage key for Modul 2 Manpower
   BREAKDOWN: 'bkwa_breakdown_records_v1', // storage key for Modul 3 Breakdown records
@@ -55,13 +61,17 @@ const STORAGE_KEYS = {
   FOG_DISTRIBUTION: 'bkwa_fog_distribution_v1', // storage key for Modul 4 FOG Fuel Distribution
   FOG_OIL_DISTRIBUTION: 'bkwa_fog_oil_distribution_v1', // storage key for Modul 4 FOG Oil Distribution
   FOG_CUSTOM_OIL_ITEMS: 'bkwa_fog_custom_oil_items_v1', // storage key for custom oil types
-  // Modul 4 Refined 6 Sub-Modules:
+  // Modul 4 Refined Sub-Modules & Out Field Fuel:
   SUPPLIERS: 'bkwa_inventory_suppliers_v2',
   FUEL_STOCK: 'bkwa_inventory_fuel_stock_v2',
   FUEL_TRANSFER: 'bkwa_inventory_fuel_transfer_v2',
   OIL_STOCK: 'bkwa_inventory_oil_stock_v2',
   FUEL_DISTRIBUTION: 'bkwa_inventory_fuel_dist_v2',
   OIL_DISTRIBUTION: 'bkwa_inventory_oil_dist_v2',
+  GREASE_STOCKS: 'bkwa_inventory_grease_stocks_v1',
+  GREASE_DISTRIBUTIONS: 'bkwa_inventory_grease_dist_v1',
+  OUT_FIELD_FUEL: 'bkwa_inventory_out_field_fuel_v1',
+  STANDARD_SOLAR_PRICE: 'bkwa_standard_solar_price_v1',
   PERIOD_BALANCE: 'bkwa_inventory_period_balance_v2',
   KAPASITAS_TANGKI_UTAMA: 'bkwa_kapasitas_tangki_utama_v1', // storage key kapasitas tangki timbun solar utama
   KAPASITAS_FUEL_TRUCK: 'bkwa_kapasitas_fuel_truck_v1', // storage key kapasitas armada fuel truck
@@ -128,71 +138,90 @@ export function setCurrentUser(user: UserAccount | null): void {
 export function getAllUsers(): UserAccount[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (!data) {
-      const initialUsers = [INITIAL_ADMIN_USER, ...INITIAL_KARYAWAN_USERS];
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(initialUsers));
-      return initialUsers;
-    }
-    const parsed: UserAccount[] = JSON.parse(data);
+    let parsed: UserAccount[] = [];
     let modified = false;
 
-    // Pastikan developer selalu ada dengan akun tier DEVELOPER
-    const devIdx = parsed.findIndex((u) => u.username === 'adminbkwa09' || u.accountTier === 'DEVELOPER');
+    if (!data) {
+      parsed = [INITIAL_ADMIN_USER, ...INITIAL_KARYAWAN_USERS];
+      modified = true;
+    } else {
+      parsed = JSON.parse(data);
+    }
+
+    // Pastikan akun Developer selalu ada dengan username Admin BKWA, password Etika09, tier DEVELOPER
+    const devIdx = parsed.findIndex(
+      (u) =>
+        u.accountTier === 'DEVELOPER' ||
+        (u.username && u.username.toLowerCase().includes('admin'))
+    );
     if (devIdx !== -1) {
-      if (parsed[devIdx].accountTier !== 'DEVELOPER' || parsed[devIdx].email !== 'developer@bkwa.co.id') {
-        parsed[devIdx].accountTier = 'DEVELOPER';
-        parsed[devIdx].email = parsed[devIdx].email || 'developer@bkwa.co.id';
-        parsed[devIdx].accessLevel = 'BISA_MENGISI';
-        modified = true;
-      }
+      parsed[devIdx].accountTier = 'DEVELOPER';
+      parsed[devIdx].username = 'Admin BKWA';
+      parsed[devIdx].password = 'Etika09';
+      parsed[devIdx].fullName = 'Developer BKWA';
+      parsed[devIdx].role = 'ADMIN';
+      parsed[devIdx].status = 'AKTIF';
+      parsed[devIdx].accessLevel = 'BISA_MENGISI';
+      parsed[devIdx].permissions = {
+        modul1: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul2: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul3: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul4: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul5: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul6: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul7: { viewer: true, input: true, edit: true, delete: true, export: true },
+      };
+      modified = true;
     } else {
       parsed.unshift(INITIAL_ADMIN_USER);
       modified = true;
     }
 
-    // Pastikan akun default (Admin, Khusus, Member) juga tersedia jika belum ada
-    INITIAL_KARYAWAN_USERS.forEach((defaultUser) => {
-      const exists = parsed.some((u) => u.username === defaultUser.username || u.email === defaultUser.email);
-      if (!exists) {
-        parsed.push(defaultUser);
-        modified = true;
+    // Sinkronisasi akun karyawan yang didaftarkan akun developer di Modul 2 Manpower
+    try {
+      const mpData = localStorage.getItem(STORAGE_KEYS.MANPOWER);
+      if (mpData) {
+        const mpList: ManpowerData[] = JSON.parse(mpData);
+        mpList.forEach((mp) => {
+          if (mp.isUserAccountActive && mp.noWa && mp.nik) {
+            const cleanWa = mp.noWa.trim();
+            const cleanNik = mp.nik.trim();
+            const existingIdx = parsed.findIndex(
+              (u) => u.manpowerId === mp.id || (u.username && u.username.trim() === cleanWa)
+            );
+            if (existingIdx !== -1) {
+              parsed[existingIdx].username = cleanWa;
+              parsed[existingIdx].password = cleanNik;
+              parsed[existingIdx].fullName = mp.nama || cleanWa;
+              parsed[existingIdx].phone = cleanWa;
+              parsed[existingIdx].manpowerId = mp.id;
+              parsed[existingIdx].permissions = mp.permissions;
+              parsed[existingIdx].status = 'AKTIF';
+              modified = true;
+            } else {
+              parsed.push({
+                id: `usr-mp-${mp.id}`,
+                username: cleanWa,
+                fullName: mp.nama || cleanWa,
+                role: 'KARYAWAN',
+                accountTier: 'MEMBER',
+                password: cleanNik,
+                department: typeof mp.jabatan === 'string' ? mp.jabatan : 'Manpower',
+                phone: cleanWa,
+                status: 'AKTIF',
+                accessLevel: 'BISA_MENGISI',
+                manpowerId: mp.id,
+                permissions: mp.permissions,
+                createdAt: mp.createdAt || new Date().toISOString(),
+              });
+              modified = true;
+            }
+          }
+        });
       }
-    });
-
-    // Pastikan setiap user memiliki accountTier, email, dan permissions lengkap
-    parsed.forEach((user) => {
-      if (!user.accountTier) {
-        if (user.role === 'ADMIN') {
-          user.accountTier = user.username === 'adminbkwa09' ? 'DEVELOPER' : 'ADMIN';
-        } else if (user.username === 'khusus') {
-          user.accountTier = 'KHUSUS';
-        } else {
-          user.accountTier = 'MEMBER';
-        }
-        modified = true;
-      }
-
-      if (!user.email) {
-        user.email = `${user.username || 'user'}@bkwa.co.id`;
-        modified = true;
-      }
-
-      if (!user.modulePermissions) {
-        user.modulePermissions = {
-          modul1Asset: user.accountTier === 'DEVELOPER',
-          modul2Manpower: user.accountTier === 'DEVELOPER',
-          modul3Maintenance: user.accountTier === 'DEVELOPER' || user.accountTier === 'ADMIN',
-          modul4Inventory: user.accountTier === 'DEVELOPER' || user.accountTier === 'ADMIN',
-          modul5P2H: user.accountTier !== 'KHUSUS',
-          canExportModul1: user.accountTier === 'DEVELOPER' || user.accountTier === 'KHUSUS',
-          canExportModul2: user.accountTier === 'DEVELOPER' || user.accountTier === 'KHUSUS',
-          canExportModul3: user.accountTier !== 'MEMBER',
-          canExportModul4: user.accountTier !== 'MEMBER',
-          canExportModul5: user.accountTier !== 'MEMBER',
-        };
-        modified = true;
-      }
-    });
+    } catch (e) {
+      console.error('Error syncing manpower accounts', e);
+    }
 
     if (modified) {
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(parsed));
@@ -209,18 +238,26 @@ export function saveUsers(users: UserAccount[]): void {
 }
 
 // ============================================================
-// ATURAN OTORISASI 4 TINGKATAN AKUN RESMI BKWA:
-// 1. Akun Developer: Full access ke semua fitur & form registrasi
-// 2. Akun Admin: Bisa Input & Export modul 3, 4, & 5 (Modul 1 & 2 view only)
-// 3. Akun Khusus: Bisa Export modul 1 (Daftar Aset), modul 2 (Manpower), export modul 3, 4, 5
-// 4. Akun Biasa/Member: Hanya Viewer modul 3 dan Input modul 5 (P2H)
-// 9. Modul 1 Form Registrasi di hide seluruh akun KECUALI Developer
+// ATURAN OTORISASI AKUN RESMI BKWA:
+// 1. Akun Developer: Full access ke semua fitur, database, edit, delete, export.
+//    Username: "Admin BKWA", Password: "Etika09"
+// 2. Akun Karyawan: Didaftarkan oleh Akun Developer di Modul 2.
+//    Username: No WA, Password: NIK.
+//    Pilihan centang per modul: Viewer (Hide jika tidak dicentang), Input, Edit, Delete, Export.
 // ============================================================
 
-// Helper universal: Cek apakah user adalah Akun Developer (Memiliki semua akses Edit & Delete semua data)
+// Helper universal: Cek apakah user adalah Akun Developer
 export function isDeveloper(user: UserAccount | null | undefined): boolean {
   if (!user) return false;
-  return user.accountTier === 'DEVELOPER' || user.username === 'adminbkwa09' || user.role === 'ADMIN';
+  const username = (user.username || '').toLowerCase().trim();
+  const email = (user.email || '').toLowerCase().trim();
+  return (
+    user.accountTier === 'DEVELOPER' ||
+    username === 'admin bkwa' ||
+    username === 'adminbkwa' ||
+    username === 'adminbkwa09' ||
+    email === 'developer@bkwa.co.id'
+  );
 }
 
 // Poin 9: Cek apakah user boleh mengakses Form Registrasi Unit (Hanya Developer)
@@ -229,42 +266,55 @@ export function canAccessRegistrationForm(user: UserAccount | null): boolean {
   return isDeveloper(user);
 }
 
-// Cek apakah user berhak melihat/membuka modul tertentu
-export function canUserViewModule(user: UserAccount | null, moduleId: number): boolean {
+// Cek apakah user berhak melihat/membuka modul tertentu (Jika false -> HIDE MODUL dari menu & launcher!)
+export function canUserViewModule(user: UserAccount | null | undefined, moduleId: number): boolean {
   if (!user) return false;
+  if (isDeveloper(user)) return true; // Akun Developer melihat semua modul 1-7
+
+  // Cek matriks izin granular per modul
+  const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
+  if (user.permissions && user.permissions[modKey]) {
+    return Boolean(user.permissions[modKey]?.viewer); // Jika false -> HIDE modul!
+  }
+
+  // Fallback backwards-compatibility
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
   if (tier === 'DEVELOPER' || tier === 'ADMIN' || tier === 'KHUSUS') return true;
   if (tier === 'MEMBER') {
-    // Member hanya Viewer modul 3 dan Input modul 5
     return moduleId === 3 || moduleId === 5;
   }
   return true;
 }
 
-// Cek apakah user berhak menginput/mengedit di modul tertentu
-export function canUserEditModule(user: UserAccount | null, moduleId?: number): boolean {
+// Cek apakah user berhak menginput/menambah data di modul tertentu
+export function canUserInsertModule(user: UserAccount | null | undefined, moduleId: number): boolean {
   if (!user || user.status === 'NONAKTIF') return false;
+  if (isDeveloper(user)) return true; // Developer full access
+
+  const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
+  if (user.permissions && user.permissions[modKey]) {
+    return Boolean(user.permissions[modKey]?.input);
+  }
+
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
+  if (tier === 'MEMBER') return moduleId === 5;
+  return false;
+}
 
-  // 1. Developer: Full Access ke semua fitur, edit, delete
-  if (isDeveloper(user)) return true;
+// Cek apakah user berhak mengedit data di modul tertentu
+export function canUserEditModule(user: UserAccount | null | undefined, moduleId?: number): boolean {
+  if (!user || user.status === 'NONAKTIF') return false;
+  if (isDeveloper(user)) return true; // Developer full access edit semua data
 
-  // 2. Admin: Bisa Input modul 3, 4, 5, 6, & 7
-  if (tier === 'ADMIN') {
-    if (!moduleId) return true;
-    return moduleId === 3 || moduleId === 4 || moduleId === 5 || moduleId === 6 || moduleId === 7;
+  if (!moduleId) return false;
+  const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
+  if (user.permissions && user.permissions[modKey]) {
+    return Boolean(user.permissions[modKey]?.edit);
   }
 
-  // 3. Akun Khusus: Hanya View & Export (Tidak bisa input/edit)
-  if (tier === 'KHUSUS') {
-    return false;
-  }
-
-  // 4. Akun Biasa/Member: Hanya Input modul 5 (P2H)
-  if (tier === 'MEMBER') {
-    return moduleId === 5;
-  }
-
+  const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
   return false;
 }
 
@@ -273,29 +323,32 @@ export function canUserEdit(user: UserAccount | null, moduleId?: number): boolea
   return canUserEditModule(user, moduleId);
 }
 
-// Poin 2, 3, 4: Cek apakah user berhak melakukan Export data pada modul tertentu
-export function canUserExportModule(user: UserAccount | null, moduleId: number): boolean {
+// Cek apakah user berhak menghapus data di modul tertentu
+export function canUserDeleteModule(user: UserAccount | null | undefined, moduleId: number): boolean {
   if (!user || user.status === 'NONAKTIF') return false;
+  if (isDeveloper(user)) return true; // Developer full access delete semua data
+
+  const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
+  if (user.permissions && user.permissions[modKey]) {
+    return Boolean(user.permissions[modKey]?.delete);
+  }
+
+  return false;
+}
+
+// Cek apakah user berhak melakukan Export data pada modul tertentu
+export function canUserExportModule(user: UserAccount | null | undefined, moduleId: number): boolean {
+  if (!user || user.status === 'NONAKTIF') return false;
+  if (isDeveloper(user)) return true; // Developer full export semua data
+
+  const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
+  if (user.permissions && user.permissions[modKey]) {
+    return Boolean(user.permissions[modKey]?.export);
+  }
+
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
-
-  // 1. Developer: Full Export semua modul
-  if (isDeveloper(user)) return true;
-
-  // 2. Admin: Bisa Export modul 3, 4, 5, 6, & 7
-  if (tier === 'ADMIN') {
-    return moduleId === 3 || moduleId === 4 || moduleId === 5 || moduleId === 6 || moduleId === 7;
-  }
-
-  // 3. Akun Khusus: Bisa Export modul 1 (Daftar Aset), modul 2 (Manpower), export modul 3, 4, 5, 6, 7
-  if (tier === 'KHUSUS') {
-    return [1, 2, 3, 4, 5, 6, 7].includes(moduleId);
-  }
-
-  // 4. Member: Tidak memiliki hak export
-  if (tier === 'MEMBER') {
-    return false;
-  }
-
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
+  if (tier === 'KHUSUS') return [1, 2, 3, 4, 5, 6, 7].includes(moduleId);
   return false;
 }
 
@@ -3719,6 +3772,450 @@ export function deleteTyreRemove(id: string): { success: boolean; message: strin
   });
 
   return { success: true, message: `Catatan pelepasan tyre ${target.kodeTyre} berhasil dihapus!` };
+}
+
+// ============================================================
+// MODUL 4: SUB MODUL OUT FIELD FUEL USED (SPBU LUAR)
+// ============================================================
+
+export function getStandardSolarPrice(): number {
+  try {
+    const val = localStorage.getItem(STORAGE_KEYS.STANDARD_SOLAR_PRICE);
+    if (!val) return 6800; // Harga default Solar Subsidi / Biosolar B35
+    const num = Number(val);
+    return isNaN(num) || num <= 0 ? 6800 : num;
+  } catch {
+    return 6800;
+  }
+}
+
+export function setStandardSolarPrice(price: number): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.STANDARD_SOLAR_PRICE, String(price));
+  } catch (e) {
+    console.error('Error saving solar price', e);
+  }
+}
+
+export const INITIAL_OUT_FIELD_RECORDS: OutFieldFuelRecord[] = [
+  {
+    id: 'off-demo-01',
+    noTransaksi: 'OFF-0001',
+    tanggal: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+    jam: '08:15',
+    jenisAlat: 'Dump Truck',
+    kodeSpbu: 'SPBU 44.571.01 (Purwosari)',
+    cnNew: 'DT-08',
+    namaAlat: 'Hino 500 FM 260 JD',
+    jmlLtr: 85,
+    job: 'Batu Baik',
+    ritaseBatuBaik: 6,
+    ritaseBatuPecelan: 0,
+    ritaseImbalTanah: 0,
+    ritaseImbalPlant: 0,
+    ritaseLokasian: 0,
+    ritaseTotal: 6,
+    hargaSolarPerLiter: 6800,
+    nominalPembelianFuel: 578000,
+    angkaPembulatan: 0,
+    nominalFuelSetelahPembulatan: 578000,
+    lainLain: 'Tol & Parkir SPBU',
+    nominalLainLain: 15000,
+    totalNominal: 593000,
+    nominalCashSopir: 600000,
+    sisaSelisihCash: 7000,
+    namaOperator: 'Slamet Riyadi',
+    jabatanOperator: 'SOPIR LOKASI',
+    catatan: 'Pengisian solar ritase batu baik ke crusher',
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    updatedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'off-demo-02',
+    noTransaksi: 'OFF-0002',
+    tanggal: new Date().toISOString().split('T')[0],
+    jam: '10:30',
+    jenisAlat: 'Dump Truck',
+    kodeSpbu: 'SPBU 44.571.08 (Jl. Raya Quarry)',
+    cnNew: 'DT-12',
+    namaAlat: 'Mitsubishi Fuso FN527ML',
+    jmlLtr: 112.5,
+    job: 'Imbal Tanah',
+    ritaseBatuBaik: 0,
+    ritaseBatuPecelan: 0,
+    ritaseImbalTanah: 7,
+    ritaseImbalPlant: 0,
+    ritaseLokasian: 0,
+    ritaseTotal: 7,
+    hargaSolarPerLiter: 6800,
+    nominalPembelianFuel: 765000,
+    angkaPembulatan: 1000,
+    nominalFuelSetelahPembulatan: 766000,
+    lainLain: 'Tambah Angin Ban',
+    nominalLainLain: 10000,
+    totalNominal: 776000,
+    nominalCashSopir: 800000,
+    sisaSelisihCash: 24000,
+    namaOperator: 'Budi Santoso',
+    jabatanOperator: 'SOPIR LOKASI',
+    catatan: 'Ada pembulatan struk SPBU +Rp 1.000, sisa cash sopir Rp 24.000 disetor kasir',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'off-demo-03',
+    noTransaksi: 'OFF-0003',
+    tanggal: new Date().toISOString().split('T')[0],
+    jam: '13:45',
+    jenisAlat: 'Dump Truck',
+    kodeSpbu: 'SPBU Pertamina Simpang',
+    cnNew: 'DT-05',
+    namaAlat: 'Nissan Quester CWE 280',
+    jmlLtr: 147,
+    job: 'Batu Pecelan',
+    ritaseBatuBaik: 0,
+    ritaseBatuPecelan: 5,
+    ritaseImbalTanah: 0,
+    ritaseImbalPlant: 0,
+    ritaseLokasian: 0,
+    ritaseTotal: 5,
+    hargaSolarPerLiter: 6800,
+    nominalPembelianFuel: 999600,
+    angkaPembulatan: 400,
+    nominalFuelSetelahPembulatan: 1000000,
+    lainLain: '',
+    nominalLainLain: 0,
+    totalNominal: 1000000,
+    nominalCashSopir: 1000000,
+    sisaSelisihCash: 0,
+    namaOperator: 'Joko Susilo',
+    jabatanOperator: 'SOPIR LOKASI',
+    catatan: 'Pembulatan struk SPBU Rp 400 sehingga total pas Rp 1.000.000 klop dengan kasbon sopir',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+];
+
+export function getAllOutFieldFuelRecords(): OutFieldFuelRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.OUT_FIELD_FUEL);
+    if (!data) {
+      saveAllOutFieldFuelRecords(INITIAL_OUT_FIELD_RECORDS);
+      return INITIAL_OUT_FIELD_RECORDS;
+    }
+    const parsed: OutFieldFuelRecord[] = JSON.parse(data);
+    return parsed.map((item) => {
+      const jmlLtr = Number(item.jmlLtr) || 0;
+      const hargaSolar = Number(item.hargaSolarPerLiter) || 6800;
+      const subtotalFuel = Number(item.nominalPembelianFuel) !== undefined && Number(item.nominalPembelianFuel) > 0
+        ? Number(item.nominalPembelianFuel)
+        : (jmlLtr * hargaSolar);
+      const pembulatan = Number(item.angkaPembulatan) || 0;
+      const fuelNet = Number(item.nominalFuelSetelahPembulatan) !== undefined && !isNaN(Number(item.nominalFuelSetelahPembulatan))
+        ? Number(item.nominalFuelSetelahPembulatan)
+        : (subtotalFuel + pembulatan);
+      const lain = Number(item.nominalLainLain) || 0;
+      const totNominal = Number(item.totalNominal) !== undefined && Number(item.totalNominal) > 0
+        ? Number(item.totalNominal)
+        : (fuelNet + lain);
+      const cashSopir = Number(item.nominalCashSopir) || 0;
+      const selisih = Number(item.sisaSelisihCash) !== undefined && !isNaN(Number(item.sisaSelisihCash))
+        ? Number(item.sisaSelisihCash)
+        : (cashSopir - totNominal);
+
+      return {
+        ...item,
+        jmlLtr,
+        ritaseBatuBaik: Number(item.ritaseBatuBaik) || 0,
+        ritaseBatuPecelan: Number(item.ritaseBatuPecelan) || 0,
+        ritaseImbalTanah: Number(item.ritaseImbalTanah) || 0,
+        ritaseImbalPlant: Number(item.ritaseImbalPlant) || 0,
+        ritaseLokasian: Number(item.ritaseLokasian) || 0,
+        ritaseTotal: Number(item.ritaseTotal) || 0,
+        hargaSolarPerLiter: hargaSolar,
+        nominalPembelianFuel: subtotalFuel,
+        angkaPembulatan: pembulatan,
+        nominalFuelSetelahPembulatan: fuelNet,
+        nominalLainLain: lain,
+        totalNominal: totNominal,
+        nominalCashSopir: cashSopir,
+        sisaSelisihCash: selisih,
+      };
+    });
+  } catch (e) {
+    console.error('Error loading out field fuel records', e);
+    return [];
+  }
+}
+
+export function saveAllOutFieldFuelRecords(records: OutFieldFuelRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.OUT_FIELD_FUEL, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving out field fuel records', e);
+  }
+}
+
+export function generateNextOutFieldFuelNo(): string {
+  const list = getAllOutFieldFuelRecords();
+  let maxNum = 0;
+  list.forEach((item) => {
+    const match = item.noTransaksi.match(/^OFF-(\d+)$/i);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  });
+  return `OFF-${String(maxNum + 1).padStart(4, '0')}`;
+}
+
+export function addOrUpdateOutFieldFuelRecord(
+  data: Omit<OutFieldFuelRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: OutFieldFuelRecord } {
+  const currentList = getAllOutFieldFuelRecords();
+  const now = new Date().toISOString();
+
+  if (idToEdit) {
+    const idx = currentList.findIndex((item) => item.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data Out Field Fuel tidak ditemukan!' };
+    }
+    const updated: OutFieldFuelRecord = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = updated;
+    saveAllOutFieldFuelRecords(currentList);
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Out Field Fuel: ${updated.noTransaksi} Unit ${updated.cnNew} ${updated.jmlLtr} Ltr (SPBU ${updated.kodeSpbu})`,
+      detailUnit: updated.cnNew,
+    });
+    return {
+      success: true,
+      message: `Data Out Field Fuel ${updated.noTransaksi} berhasil diperbarui!`,
+      record: updated,
+    };
+  }
+
+  const newRecord: OutFieldFuelRecord = {
+    ...data,
+    id: `off-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  currentList.unshift(newRecord);
+  saveAllOutFieldFuelRecords(currentList);
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Input Out Field Fuel Baru: ${newRecord.noTransaksi} Unit ${newRecord.cnNew} ${newRecord.jmlLtr} Ltr Total Rp ${newRecord.totalNominal.toLocaleString('id-ID')}`,
+    detailUnit: newRecord.cnNew,
+  });
+  return {
+    success: true,
+    message: `Data Out Field Fuel ${newRecord.noTransaksi} berhasil disimpan!`,
+    record: newRecord,
+  };
+}
+
+export function deleteOutFieldFuelRecord(id: string): { success: boolean; message: string } {
+  const currentList = getAllOutFieldFuelRecords();
+  const target = currentList.find((item) => item.id === id);
+  if (!target) {
+    return { success: false, message: 'Data Out Field Fuel tidak ditemukan!' };
+  }
+  const filtered = currentList.filter((item) => item.id !== id);
+  saveAllOutFieldFuelRecords(filtered);
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Out Field Fuel: ${target.noTransaksi} Unit ${target.cnNew}`,
+    detailUnit: target.cnNew,
+  });
+  return {
+    success: true,
+    message: `Data Out Field Fuel ${target.noTransaksi} berhasil dihapus!`,
+  };
+}
+
+// ==========================================
+// MODUL 4: SUB MODUL GREASE (GEMUK PELUMAS)
+// ==========================================
+export function getAllGreaseStockRecords(): GreaseStockRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.GREASE_STOCKS);
+    if (!data) return [];
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error reading grease stock records', e);
+    return [];
+  }
+}
+
+export function saveAllGreaseStockRecords(records: GreaseStockRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.GREASE_STOCKS, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving grease stock records', e);
+  }
+}
+
+export function addOrUpdateGreaseStockRecord(
+  data: Omit<GreaseStockRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: GreaseStockRecord } {
+  const currentList = getAllGreaseStockRecords();
+  const now = new Date().toISOString();
+
+  if (idToEdit) {
+    const idx = currentList.findIndex((item) => item.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data stok grease tidak ditemukan!' };
+    }
+    const updated: GreaseStockRecord = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = updated;
+    saveAllGreaseStockRecords(currentList);
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Stok Grease: ${updated.namaGrease} ${updated.qty} ${updated.satuan}`,
+    });
+    return {
+      success: true,
+      message: `Data stok grease [${updated.namaGrease}] berhasil diperbarui!`,
+      record: updated,
+    };
+  }
+
+  const newRecord: GreaseStockRecord = {
+    ...data,
+    id: `GRS-IN-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  currentList.unshift(newRecord);
+  saveAllGreaseStockRecords(currentList);
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Input Stok Grease: ${newRecord.namaGrease} ${newRecord.qty} ${newRecord.satuan} dari ${newRecord.distributor}`,
+  });
+  return {
+    success: true,
+    message: `Penerimaan stok grease [${newRecord.namaGrease}] berhasil disimpan!`,
+    record: newRecord,
+  };
+}
+
+export function deleteGreaseStockRecord(id: string): { success: boolean; message: string } {
+  const currentList = getAllGreaseStockRecords();
+  const target = currentList.find((item) => item.id === id);
+  if (!target) {
+    return { success: false, message: 'Data stok grease tidak ditemukan!' };
+  }
+  const filtered = currentList.filter((item) => item.id !== id);
+  saveAllGreaseStockRecords(filtered);
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Stok Grease: ${target.namaGrease} ${target.qty} ${target.satuan}`,
+  });
+  return {
+    success: true,
+    message: `Data stok grease [${target.namaGrease}] berhasil dihapus!`,
+  };
+}
+
+export function getAllGreaseDistributionRecords(): GreaseDistributionRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.GREASE_DISTRIBUTIONS);
+    if (!data) return [];
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error reading grease distribution records', e);
+    return [];
+  }
+}
+
+export function saveAllGreaseDistributionRecords(records: GreaseDistributionRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.GREASE_DISTRIBUTIONS, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving grease distribution records', e);
+  }
+}
+
+export function addOrUpdateGreaseDistributionRecord(
+  data: Omit<GreaseDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: GreaseDistributionRecord } {
+  const currentList = getAllGreaseDistributionRecords();
+  const now = new Date().toISOString();
+
+  if (idToEdit) {
+    const idx = currentList.findIndex((item) => item.id === idToEdit);
+    if (idx === -1) {
+      return { success: false, message: 'Data distribusi grease tidak ditemukan!' };
+    }
+    const updated: GreaseDistributionRecord = {
+      ...currentList[idx],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[idx] = updated;
+    saveAllGreaseDistributionRecords(currentList);
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Bon Pemakaian Grease: ${updated.noUnit} ${updated.namaGrease} ${updated.qty} ${updated.satuan}`,
+      detailUnit: updated.noUnit,
+    });
+    return {
+      success: true,
+      message: `Data bon pemakaian grease unit [${updated.noUnit}] berhasil diperbarui!`,
+      record: updated,
+    };
+  }
+
+  const newRecord: GreaseDistributionRecord = {
+    ...data,
+    id: `GRS-OUT-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    noBon: data.noBon || `BON-GRS-${String(currentList.length + 1).padStart(4, '0')}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+  currentList.unshift(newRecord);
+  saveAllGreaseDistributionRecords(currentList);
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Bon Pemakaian Grease: Unit ${newRecord.noUnit} ${newRecord.namaGrease} ${newRecord.qty} ${newRecord.satuan} (${newRecord.lokasiPelumasan})`,
+    detailUnit: newRecord.noUnit,
+  });
+  return {
+    success: true,
+    message: `Bon pemakaian grease unit [${newRecord.noUnit}] berhasil disimpan!`,
+    record: newRecord,
+  };
+}
+
+export function deleteGreaseDistributionRecord(id: string): { success: boolean; message: string } {
+  const currentList = getAllGreaseDistributionRecords();
+  const target = currentList.find((item) => item.id === id);
+  if (!target) {
+    return { success: false, message: 'Data bon grease tidak ditemukan!' };
+  }
+  const filtered = currentList.filter((item) => item.id !== id);
+  saveAllGreaseDistributionRecords(filtered);
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Bon Pemakaian Grease: ${target.noUnit} ${target.namaGrease}`,
+    detailUnit: target.noUnit,
+  });
+  return {
+    success: true,
+    message: `Bon pemakaian grease unit [${target.noUnit}] berhasil dihapus!`,
+  };
 }
 
 

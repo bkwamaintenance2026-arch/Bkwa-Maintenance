@@ -10,7 +10,10 @@ import {
   FuelDistributionRecord,
   OilDistributionRecord,
   InventoryPeriodBalance,
-  DEFAULT_FOG_NAMA_BARANG
+  DEFAULT_FOG_NAMA_BARANG,
+  OutFieldFuelRecord,
+  GreaseStockRecord,
+  GreaseDistributionRecord
 } from '../../types';
 import { SupplierSubView } from './SupplierSubView';
 import { FuelStockInputSubView } from './FuelStockInputSubView';
@@ -18,6 +21,8 @@ import { FuelTransferSubView } from './FuelTransferSubView';
 import { OilStockInputSubView } from './OilStockInputSubView';
 import { FuelDistributionSubView } from './FuelDistributionSubView';
 import { OilDistributionSubView } from './OilDistributionSubView';
+import { OutFieldFuelSubView } from './OutFieldFuelSubView';
+import { GreaseSubView } from './GreaseSubView';
 import { calculateInventoryStockLevels } from '../../utils/storage';
 import { 
   Fuel, 
@@ -39,8 +44,22 @@ import {
   TrendingUp,
   Warehouse,
   ArrowLeft,
-  Pencil
+  ArrowRight,
+  Pencil,
+  Package,
+  Sparkles
 } from 'lucide-react';
+
+export type FogCategoryColumn = 'ALL' | 'FUEL' | 'OIL' | 'GREASE' | 'SUPPLIER';
+export type FogSubModuleTab = 
+  | 'out_field_fuel'
+  | 'fuel_stock'
+  | 'fuel_transfer'
+  | 'fuel_dist'
+  | 'oil_stock'
+  | 'oil_dist'
+  | 'grease'
+  | 'supplier';
 
 interface InventoryManagementViewProps {
   units: HeavyEquipment[];
@@ -54,6 +73,29 @@ interface InventoryManagementViewProps {
   periodBalance: InventoryPeriodBalance;
   availableOilTypes: string[];
   currentUser: UserAccount;
+  // Out Field Fuel (SPBU Luar)
+  outFieldFuelRecords?: OutFieldFuelRecord[];
+  onSaveOutFieldFuelRecord?: (
+    data: Omit<OutFieldFuelRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => { success: boolean; message: string; record?: OutFieldFuelRecord };
+  onDeleteOutFieldFuelRecord?: (id: string) => { success: boolean; message: string };
+  standardSolarPrice?: number;
+  onUpdateSolarPrice?: (newPrice: number) => void;
+  // Grease
+  greaseStocks?: GreaseStockRecord[];
+  greaseDistributions?: GreaseDistributionRecord[];
+  onSaveGreaseStock?: (
+    data: Omit<GreaseStockRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => { success: boolean; message: string; record?: GreaseStockRecord };
+  onDeleteGreaseStock?: (id: string) => { success: boolean; message: string };
+  onSaveGreaseDistribution?: (
+    data: Omit<GreaseDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => { success: boolean; message: string; record?: GreaseDistributionRecord };
+  onDeleteGreaseDistribution?: (id: string) => { success: boolean; message: string };
+  // Standar CRUD
   onSaveSupplier: (
     data: Omit<SupplierRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -101,6 +143,17 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   periodBalance,
   availableOilTypes,
   currentUser,
+  outFieldFuelRecords = [],
+  onSaveOutFieldFuelRecord = () => ({ success: false, message: 'Tidak didukung' }),
+  onDeleteOutFieldFuelRecord = () => ({ success: false, message: 'Tidak didukung' }),
+  standardSolarPrice = 6800,
+  onUpdateSolarPrice = () => {},
+  greaseStocks = [],
+  greaseDistributions = [],
+  onSaveGreaseStock = () => ({ success: false, message: 'Tidak didukung' }),
+  onDeleteGreaseStock = () => ({ success: false, message: 'Tidak didukung' }),
+  onSaveGreaseDistribution = () => ({ success: false, message: 'Tidak didukung' }),
+  onDeleteGreaseDistribution = () => ({ success: false, message: 'Tidak didukung' }),
   onSaveSupplier,
   onDeleteSupplier,
   onSaveFuelStockInput,
@@ -117,14 +170,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   onAddCustomOilType,
   onBackToMainMenu,
 }) => {
-  // 6 Sub-Modul Navigasi:
-  // 1 = Data Suplier
-  // 2 = Input Stock (FUEL)
-  // 3 = Data Transfer Fuel (Tangki-FT)
-  // 4 = Input Stock Oli
-  // 5 = Distribution Fuel
-  // 6 = Distribution Oli
-  const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5 | 6>(2);
+  // Category Filter & Active Sub-Modul
+  const [selectedCategory, setSelectedCategory] = useState<FogCategoryColumn>('ALL');
+  const [activeSubModule, setActiveSubModule] = useState<FogSubModuleTab>('out_field_fuel');
+
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [showQuickCapacityModal, setShowQuickCapacityModal] = useState(false);
   const [quickCapacityVal, setQuickCapacityVal] = useState<number>(20000);
@@ -153,7 +202,6 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   }, [periodBalance]);
 
   // Kalkulasi Stok & Kapasitas Real-Time
-  // Logic: "nah untuk menentukan kapasitas (Fuel & Oli) ambil dari Data Input ditambah sisa periode sebelum nya."
   const computation = useMemo(() => {
     return calculateInventoryStockLevels(
       periodBalance,
@@ -173,6 +221,32 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
     oilDistributions,
     availableOilTypes,
   ]);
+
+  // Ringkasan Out Field Fuel
+  const totalOutFieldLiter = useMemo(() => {
+    return outFieldFuelRecords.reduce((acc, r) => acc + (Number(r.jmlLtr) || 0), 0);
+  }, [outFieldFuelRecords]);
+
+  const totalOutFieldNominal = useMemo(() => {
+    return outFieldFuelRecords.reduce((acc, r) => acc + (Number(r.totalNominal) || 0), 0);
+  }, [outFieldFuelRecords]);
+
+  const totalOutFieldCashSopir = useMemo(() => {
+    return outFieldFuelRecords.reduce((acc, r) => acc + (Number(r.nominalCashSopir) || 0), 0);
+  }, [outFieldFuelRecords]);
+
+  const totalOutFieldSisaCash = useMemo(() => {
+    return outFieldFuelRecords.reduce((acc, r) => acc + (Number(r.sisaSelisihCash) || 0), 0);
+  }, [outFieldFuelRecords]);
+
+  // Ringkasan Grease
+  const totalGreaseStockKg = useMemo(() => {
+    return greaseStocks.reduce((acc, r) => acc + (Number(r.qty) || 0), 0);
+  }, [greaseStocks]);
+
+  const totalGreaseDistKg = useMemo(() => {
+    return greaseDistributions.reduce((acc, r) => acc + (Number(r.qty) || 0), 0);
+  }, [greaseDistributions]);
 
   const handleOpenBalanceModal = () => {
     setEditFuelTangki(periodBalance.sisaPeriodeLaluFuelTangki || 0);
@@ -216,62 +290,119 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
     }
   };
 
-  const subModuleTabs = [
+  // Definisi Lengkap Sub-Modul yang dikelompokkan dalam Kolom Fuel, Oil, Grease, dan Suplier
+  const allSubModuleTabs = [
+    // KOLOM FUEL (Bahan Bakar Solar)
     {
-      id: 1 as const,
-      label: '1. Data Suplier',
-      sublabel: 'Mitra & Vendor',
-      icon: Building2,
-      count: suppliers.length,
+      id: 'out_field_fuel' as const,
+      category: 'FUEL' as const,
+      label: 'Out Field Fuel Used (SPBU Luar)',
+      sublabel: 'Pengisian SPBU Luar & Ritase Job',
+      categoryLabel: 'KOLOM FUEL',
+      icon: Fuel,
+      count: outFieldFuelRecords.length,
+      isPrimary: true,
       color: 'hover:text-amber-400',
-      activeColor: 'bg-amber-500 text-stone-950 shadow-amber-500/20',
+      activeColor: 'bg-amber-500 text-stone-950 shadow-amber-500/30',
+      badge: 'SPBU Luar',
     },
     {
-      id: 2 as const,
-      label: '2. Input Stock (Fuel)',
-      sublabel: 'Tangki Utama Solar',
+      id: 'fuel_stock' as const,
+      category: 'FUEL' as const,
+      label: 'Input Stock (Fuel)',
+      sublabel: 'Penerimaan Tangki Utama Solar',
+      categoryLabel: 'KOLOM FUEL',
       icon: Fuel,
       count: fuelStockInputs.length,
       color: 'hover:text-amber-400',
       activeColor: 'bg-amber-500 text-stone-950 shadow-amber-500/20',
+      badge: 'Tangki Utama',
     },
     {
-      id: 3 as const,
-      label: '3. Transfer Fuel (Tangki-FT)',
+      id: 'fuel_transfer' as const,
+      category: 'FUEL' as const,
+      label: 'Transfer Fuel (Tangki-FT)',
       sublabel: 'Penyaluran ke FT-01',
+      categoryLabel: 'KOLOM FUEL',
       icon: ArrowRightLeft,
       count: fuelTransfers.length,
       color: 'hover:text-blue-400',
       activeColor: 'bg-blue-500 text-stone-950 shadow-blue-500/20',
+      badge: 'Transfer FT',
     },
     {
-      id: 4 as const,
-      label: '4. Input Stock Oli',
-      sublabel: 'Penerimaan Gudang',
-      icon: Droplet,
-      count: oilStockInputs.length,
-      color: 'hover:text-emerald-400',
-      activeColor: 'bg-emerald-500 text-stone-950 shadow-emerald-500/20',
-    },
-    {
-      id: 5 as const,
-      label: '5. Distribution Fuel',
-      sublabel: 'Dispensing Unit Alat',
+      id: 'fuel_dist' as const,
+      category: 'FUEL' as const,
+      label: 'Distribution Fuel',
+      sublabel: 'Dispensing Unit Alat Quarry',
+      categoryLabel: 'KOLOM FUEL',
       icon: Flame,
       count: fuelDistributions.length,
       color: 'hover:text-orange-400',
       activeColor: 'bg-orange-500 text-stone-950 shadow-orange-500/20',
+      badge: 'Dispensing Unit',
+    },
+
+    // KOLOM OIL (Pelumas & Oli)
+    {
+      id: 'oil_stock' as const,
+      category: 'OIL' as const,
+      label: 'Input Stock Oli',
+      sublabel: 'Penerimaan Gudang Pelumas',
+      categoryLabel: 'KOLOM OIL',
+      icon: Droplet,
+      count: oilStockInputs.length,
+      color: 'hover:text-emerald-400',
+      activeColor: 'bg-emerald-500 text-stone-950 shadow-emerald-500/20',
+      badge: 'Stok Gudang',
     },
     {
-      id: 6 as const,
-      label: '6. Distribution Oli',
-      sublabel: 'Perbaikan & Mekanik',
+      id: 'oil_dist' as const,
+      category: 'OIL' as const,
+      label: 'Distribution Oli',
+      sublabel: 'Perbaikan & Servis Mekanik',
+      categoryLabel: 'KOLOM OIL',
       icon: Wrench,
       count: oilDistributions.length,
-      color: 'hover:text-amber-400',
-      activeColor: 'bg-amber-500 text-stone-950 shadow-amber-500/20',
+      color: 'hover:text-emerald-400',
+      activeColor: 'bg-emerald-500 text-stone-950 shadow-emerald-500/20',
+      badge: 'Pemakaian Unit',
+    },
+
+    // KOLOM GREASE (Gemuk Pelumas Padat)
+    {
+      id: 'grease' as const,
+      category: 'GREASE' as const,
+      label: 'Manajemen Grease (Gemuk)',
+      sublabel: 'Stok Drum & Bon Pelumasan',
+      categoryLabel: 'KOLOM GREASE',
+      icon: Package,
+      count: greaseDistributions.length + greaseStocks.length,
+      color: 'hover:text-yellow-400',
+      activeColor: 'bg-yellow-500 text-stone-950 shadow-yellow-500/20',
+      badge: 'Greasing Fleet',
+    },
+
+    // KOLOM SUPLIER / VENDOR
+    {
+      id: 'supplier' as const,
+      category: 'SUPPLIER' as const,
+      label: 'Data Suplier & Vendor',
+      sublabel: 'Mitra Pengadaan FOG',
+      categoryLabel: 'DATA SUPLIER',
+      icon: Building2,
+      count: suppliers.length,
+      color: 'hover:text-purple-400',
+      activeColor: 'bg-purple-500 text-stone-950 shadow-purple-500/20',
+      badge: 'Mitra Vendor',
     },
   ];
+
+  // Filter Sub-Modul sesuai Kategori / Kolom yang dipilih
+  const filteredSubModules = useMemo(() => {
+    if (selectedCategory === 'ALL') return allSubModuleTabs;
+    return allSubModuleTabs.filter((t) => t.category === selectedCategory);
+  }, [allSubModuleTabs, selectedCategory]);
 
   return (
     <div className="space-y-6">
@@ -288,14 +419,13 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             <span>← Kembali ke Menu Utama</span>
           </button>
           <span className="text-[11px] font-mono text-stone-500">
-            Modul 4: Inventory Management (FOG & Workshop)
+            Modul 4: FOG (Fuel, Oil & Grease) • Terorganisir Sesuai Kolom
           </span>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TOP HEADER: REAL-TIME INVENTORY GAUGES & STOCK CAPACITY CALCULATION */}
-      {/* Rule: Kapasitas dihitung dari (Data Input + Sisa Periode Sebelumnya) */}
+      {/* 3 REAL-TIME CATEGORY COLUMNS OVERVIEW CARDS: FUEL, OIL & GREASE */}
       {/* ========================================================================= */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden backdrop-blur-md">
         {/* Background Ambient Glow */}
@@ -311,11 +441,11 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <Gauge className="w-5 h-5" />
                 </div>
                 <div>
-                  <h1 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide uppercase">
-                    MODUL 4: FOG (FUEL, OIL & GREASE)
+                  <h1 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide uppercase flex items-center gap-2">
+                    <span>MODUL 4: FOG (FUEL, OIL & GREASE)</span>
                   </h1>
                   <p className="text-xs text-stone-400 mt-0.5">
-                    Monitoring Stok Real-Time Fuel (Solar) & Oli Pelumas Quarry Purwosari • Rumus: <span className="text-amber-400 font-mono font-semibold">Stok = (Data Input + Sisa Periode Sebelumnya) - Pengeluaran</span>
+                    Monitoring Stok Real-Time & Pengeluaran Bahan Bakar, Pelumas, Gemuk serta SPBU Luar Quarry Purwosari.
                   </p>
                 </div>
               </div>
@@ -326,7 +456,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 type="button"
                 onClick={handleOpenBalanceModal}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 border border-stone-700 text-stone-200 text-xs font-semibold shadow-sm transition active:scale-95"
-                title="Atur Sisa Periode Sebelumnya & Kapasitas Manual Tangki Solar untuk kalkulasi real-time"
+                title="Atur Sisa Periode Sebelumnya & Kapasitas Manual Tangki Solar"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
                 <span>Kalibrasi Saldo & Kapasitas Tangki</span>
@@ -334,22 +464,26 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             </div>
           </div>
 
-          {/* 3 Real-time Inventory Gauge Cards */}
+          {/* 3 Real-time Inventory Gauge Cards: FUEL, OIL, GREASE */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 1: Tangki Utama (Fuel Solar) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between">
+            {/* Card 1: KOLOM FUEL (Solar: Tangki Utama + FT-01 + SPBU Luar) */}
+            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600" />
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
                       <Fuel className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                      Tangki Utama Solar
-                    </span>
+                    <div>
+                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
+                        KOLOM FUEL (SOLAR)
+                      </span>
+                      <span className="block text-[10px] text-amber-400 font-mono">Tangki & SPBU Luar</span>
+                    </div>
                   </div>
                   <span className="text-[11px] font-mono font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                    {computation.tangkiUtama.persentase}%
+                    {computation.tangkiUtama.persentase}% Level
                   </span>
                 </div>
 
@@ -368,10 +502,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                           setShowQuickCapacityModal(true);
                         }}
                         className="px-1.5 py-0.5 rounded bg-stone-800/90 hover:bg-amber-500/20 text-stone-400 hover:text-amber-300 border border-stone-700/60 transition inline-flex items-center gap-1 text-[10px] font-sans"
-                        title="Ubah Kapasitas Tangki Solar Utama Manual (karena rencana penggantian tangki baru)"
+                        title="Ubah Kapasitas Tangki Solar Utama Manual"
                       >
                         <Pencil className="w-2.5 h-2.5" />
-                        <span>Ubah Manual</span>
+                        <span>Ubah</span>
                       </button>
                     </div>
                   </div>
@@ -390,97 +524,62 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Rincian Rumus */}
-              <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
-                <div className="flex justify-between">
-                  <span>Sisa Periode Lalu:</span>
-                  <span className="text-stone-300 font-semibold">{(computation?.tangkiUtama?.sisaPeriodeLalu ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>+ Data Input Masuk:</span>
-                  <span className="text-emerald-400 font-semibold">+{(computation?.tangkiUtama?.totalMasuk ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>- Transfer ke FT:</span>
-                  <span className="text-rose-400 font-semibold">-{(computation?.tangkiUtama?.totalKeluarKeFT ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2: Fuel Truck (FT-01) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      <Truck className="w-4 h-4" />
-                    </div>
-                    <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                      Fuel Truck (FT-01)
+                {/* Sub info FT & Out Field Fuel */}
+                <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Fuel Truck (FT-01):</span>
+                    <span className="text-blue-400 font-semibold">{(computation?.fuelTruck?.stokAkhir ?? 0).toLocaleString('id-ID')} Ltr</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1 border-t border-stone-800/50">
+                    <span className="text-amber-300 font-bold flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-amber-400" />
+                      SPBU Luar:
+                    </span>
+                    <span className="text-amber-400 font-bold">
+                      {totalOutFieldLiter.toLocaleString('id-ID')} Ltr (Rp {totalOutFieldNominal.toLocaleString('id-ID')})
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono font-black text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-                    {computation?.fuelTruck?.persentase ?? 0}%
-                  </span>
-                </div>
-
-                <div className="mt-3">
-                  <div className="flex items-baseline justify-between">
-                    <div className="text-xl sm:text-2xl font-black font-mono text-stone-100">
-                      {(computation?.fuelTruck?.stokAkhir ?? 0).toLocaleString('id-ID')}
-                      <span className="text-xs font-normal text-stone-400 ml-1">Ltr</span>
+                  {outFieldFuelRecords.length > 0 && (
+                    <div className="flex justify-between text-[10px] text-stone-400 pt-0.5">
+                      <span>Cash Sopir / Sisa:</span>
+                      <span className={totalOutFieldSisaCash >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        Rp {totalOutFieldCashSopir.toLocaleString('id-ID')} / {totalOutFieldSisaCash >= 0 ? '+' : ''}Rp {totalOutFieldSisaCash.toLocaleString('id-ID')}
+                      </span>
                     </div>
-                    <div className="text-[11px] font-mono text-stone-500">
-                      Kapasitas: {(computation?.fuelTruck?.kapasitasMaksimal ?? 0).toLocaleString('id-ID')} Ltr
-                    </div>
-                  </div>
-
-                  {/* Visual Bar Gauge */}
-                  <div className="w-full bg-stone-800 h-2.5 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        (computation?.fuelTruck?.persentase ?? 0) > 50
-                          ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
-                          : (computation?.fuelTruck?.persentase ?? 0) > 20
-                          ? 'bg-blue-500'
-                          : 'bg-rose-500 animate-pulse'
-                      }`}
-                      style={{ width: `${computation?.fuelTruck?.persentase ?? 0}%` }}
-                    />
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Rincian Rumus */}
-              <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
-                <div className="flex justify-between">
-                  <span>Sisa Periode Lalu FT:</span>
-                  <span className="text-stone-300 font-semibold">{(computation?.fuelTruck?.sisaPeriodeLalu ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>+ Transfer Masuk Tangki:</span>
-                  <span className="text-cyan-400 font-semibold">+{(computation?.fuelTruck?.totalTransferMasuk ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>- Distribusi Bon Unit:</span>
-                  <span className="text-orange-400 font-semibold">-{(computation?.fuelTruck?.totalDistribusiUnit ?? 0).toLocaleString('id-ID')} Ltr</span>
-                </div>
-              </div>
+              {/* Quick Jump Button to Out Field Fuel */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('FUEL');
+                  setActiveSubModule('out_field_fuel');
+                }}
+                className="mt-3 w-full py-1.5 px-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition active:scale-98"
+              >
+                <span>⛽ Buka Sub Modul Out Field Fuel (SPBU Luar)</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
 
-            {/* Card 3: Gudang Oli & Pelumas (Semua Varian) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between">
+            {/* Card 2: KOLOM OIL (Pelumas & Oli Mesin/Hydraulic) */}
+            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
               <div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       <Droplet className="w-4 h-4" />
                     </div>
-                    <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                      Gudang Oli & Pelumas
-                    </span>
+                    <div>
+                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
+                        KOLOM OIL (PELUMAS)
+                      </span>
+                      <span className="block text-[10px] text-emerald-400 font-mono">Gudang & Pemakaian</span>
+                    </div>
                   </div>
                   <span className="text-[11px] font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                     {(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr
@@ -506,27 +605,152 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </div>
               </div>
 
-              {/* Rincian Rumus */}
-              <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 flex justify-between items-center">
-                <span>Total Pelumas Siap Pakai:</span>
-                <span className="text-emerald-400 font-bold text-xs">{(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr</span>
+              <div className="mt-3 pt-2.5 border-t border-stone-800/80 flex items-center justify-between">
+                <span className="text-[11px] text-stone-400 font-mono">Total Bon Oli:</span>
+                <span className="text-xs font-bold text-emerald-400 font-mono">{oilDistributions.length} Bon Terbit</span>
               </div>
+            </div>
+
+            {/* Card 3: KOLOM GREASE (Gemuk Pelumas Padat) */}
+            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-yellow-500 via-amber-400 to-orange-400" />
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
+                        KOLOM GREASE (GEMUK)
+                      </span>
+                      <span className="block text-[10px] text-yellow-400 font-mono">Chassis & Bucket Pin</span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono font-black text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
+                    {totalGreaseStockKg} Kg Total
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-mono space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-stone-400">Total Stok Masuk:</span>
+                      <span className="text-stone-200 font-bold">{totalGreaseStockKg} Kg ({greaseStocks.length} Batch)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-stone-400">Pemakaian Greasing:</span>
+                      <span className="text-amber-400 font-bold">{totalGreaseDistKg} Kg ({greaseDistributions.length} Bon)</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-stone-400">
+                    Mencakup varian Chassis EP-2, MP-3, Lithium Complex untuk link arm excavator & loader.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('GREASE');
+                  setActiveSubModule('grease');
+                }}
+                className="mt-3 w-full py-1.5 px-2 rounded-xl bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/30 text-yellow-300 text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition active:scale-98"
+              >
+                <span>🧈 Buka Manajemen Grease</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
           </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 6 SUB MODUL TABS NAVIGATION */}
-      {/* 1. Data Suplier */}
-      {/* 2. Input Stock (FUEL) */}
-      {/* 3. Data Transfer Fuel (Tangki-FT) */}
-      {/* 4. Input STock Oli */}
-      {/* 5. Distribution Fuel */}
-      {/* 6. Distribution Oli */}
+      {/* FILTER KOLOM UTAMA: FUEL, OIL, GREASE & DATA SUPLIER */}
+      {/* ========================================================================= */}
+      <div className="bg-stone-950/80 border border-stone-800 rounded-2xl p-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400 font-bold px-2 flex items-center gap-1">
+            <Layers className="w-3.5 h-3.5 text-amber-400" />
+            <span>PILIH KOLOM:</span>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('ALL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+              selectedCategory === 'ALL'
+                ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
+                : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
+            }`}
+          >
+            Semua Sub-Modul (8)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('FUEL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+              selectedCategory === 'FUEL'
+                ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
+                : 'bg-stone-900 text-amber-400 hover:text-amber-300 border border-stone-800'
+            }`}
+          >
+            <Fuel className="w-3.5 h-3.5" />
+            <span>KOLOM FUEL (4)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('OIL')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+              selectedCategory === 'OIL'
+                ? 'bg-emerald-500 text-stone-950 shadow-md shadow-emerald-500/20'
+                : 'bg-stone-900 text-emerald-400 hover:text-emerald-300 border border-stone-800'
+            }`}
+          >
+            <Droplet className="w-3.5 h-3.5" />
+            <span>KOLOM OIL (2)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('GREASE')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+              selectedCategory === 'GREASE'
+                ? 'bg-yellow-500 text-stone-950 shadow-md shadow-yellow-500/20'
+                : 'bg-stone-900 text-yellow-400 hover:text-yellow-300 border border-stone-800'
+            }`}
+          >
+            <Package className="w-3.5 h-3.5" />
+            <span>KOLOM GREASE (1)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('SUPPLIER')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+              selectedCategory === 'SUPPLIER'
+                ? 'bg-purple-500 text-stone-950 shadow-md shadow-purple-500/20'
+                : 'bg-stone-900 text-purple-400 hover:text-purple-300 border border-stone-800'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>DATA SUPLIER (1)</span>
+          </button>
+        </div>
+
+        <div className="text-[11px] font-mono text-stone-500 px-2">
+          Aktif: <strong className="text-amber-400">{allSubModuleTabs.find(t => t.id === activeSubModule)?.label}</strong>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SUB MODUL NAVIGATION TABS SESUAI KOLOM */}
+      {/* Termasuk Out Field Fuel Used (SPBU Luar) & Grease */}
       {/* ========================================================================= */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
-        {subModuleTabs.map((tab) => {
+        {filteredSubModules.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSubModule === tab.id;
           return (
@@ -535,16 +759,23 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               key={tab.id}
               type="button"
               onClick={() => setActiveSubModule(tab.id)}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-bold font-mono tracking-tight transition-all duration-200 shrink-0 border ${
+              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-bold font-mono tracking-tight transition-all duration-200 shrink-0 border relative ${
                 isActive
-                  ? `${tab.activeColor} border-transparent shadow-lg scale-105`
-                  : 'bg-stone-900/80 hover:bg-stone-800/90 text-stone-300 border-stone-800/90 hover:border-stone-700'
+                  ? `${tab.activeColor} border-transparent shadow-xl scale-105 z-10`
+                  : 'bg-stone-900/90 hover:bg-stone-800/90 text-stone-300 border-stone-800 hover:border-stone-700'
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-4 h-4 shrink-0" />
               <div className="text-left">
-                <div className="leading-tight">{tab.label}</div>
-                <div className={`text-[10px] font-normal ${isActive ? 'text-stone-900 font-medium' : 'text-stone-500'}`}>
+                <div className="flex items-center gap-1.5">
+                  <span className="leading-tight">{tab.label}</span>
+                  {tab.isPrimary && (
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.2 bg-amber-400 text-stone-950 rounded">
+                      SPBU Luar
+                    </span>
+                  )}
+                </div>
+                <div className={`text-[10px] font-normal ${isActive ? 'text-stone-900 font-semibold' : 'text-stone-500'}`}>
                   {tab.sublabel} ({tab.count})
                 </div>
               </div>
@@ -557,16 +788,22 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       {/* SUB MODUL CONTENT SWITCHER */}
       {/* ========================================================================= */}
       <div className="min-h-[500px]">
-        {activeSubModule === 1 && (
-          <SupplierSubView
-            suppliers={suppliers}
+        {/* 1. OUT FIELD FUEL USED (SPBU LUAR) */}
+        {activeSubModule === 'out_field_fuel' && (
+          <OutFieldFuelSubView
+            units={units}
+            manpowerList={manpowerList}
+            outFieldFuelRecords={outFieldFuelRecords}
             currentUser={currentUser}
-            onSave={onSaveSupplier}
-            onDelete={onDeleteSupplier}
+            onSaveRecord={onSaveOutFieldFuelRecord}
+            onDeleteRecord={onDeleteOutFieldFuelRecord}
+            standardSolarPrice={standardSolarPrice}
+            onUpdateSolarPrice={onUpdateSolarPrice}
           />
         )}
 
-        {activeSubModule === 2 && (
+        {/* 2. INPUT STOCK (FUEL TANGKI UTAMA) */}
+        {activeSubModule === 'fuel_stock' && (
           <FuelStockInputSubView
             fuelStockInputs={fuelStockInputs}
             suppliers={suppliers}
@@ -577,7 +814,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           />
         )}
 
-        {activeSubModule === 3 && (
+        {/* 3. TRANSFER FUEL (TANGKI KE FT-01) */}
+        {activeSubModule === 'fuel_transfer' && (
           <FuelTransferSubView
             fuelTransfers={fuelTransfers}
             manpowerList={manpowerList}
@@ -587,7 +825,20 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           />
         )}
 
-        {activeSubModule === 4 && (
+        {/* 4. DISTRIBUTION FUEL (DISPENSING UNIT ALAT) */}
+        {activeSubModule === 'fuel_dist' && (
+          <FuelDistributionSubView
+            fuelDistributions={fuelDistributions}
+            equipmentList={units}
+            manpowerList={manpowerList}
+            currentUser={currentUser}
+            onSave={onSaveFuelDistribution}
+            onDelete={onDeleteFuelDistribution}
+          />
+        )}
+
+        {/* 5. INPUT STOCK OLI (GUDANG) */}
+        {activeSubModule === 'oil_stock' && (
           <OilStockInputSubView
             oilStockInputs={oilStockInputs}
             suppliers={suppliers}
@@ -600,18 +851,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           />
         )}
 
-        {activeSubModule === 5 && (
-          <FuelDistributionSubView
-            fuelDistributions={fuelDistributions}
-            equipmentList={units}
-            manpowerList={manpowerList}
-            currentUser={currentUser}
-            onSave={onSaveFuelDistribution}
-            onDelete={onDeleteFuelDistribution}
-          />
-        )}
-
-        {activeSubModule === 6 && (
+        {/* 6. DISTRIBUTION OLI (MEKANIK & SERVIS) */}
+        {activeSubModule === 'oil_dist' && (
           <OilDistributionSubView
             oilDistributions={oilDistributions}
             equipmentList={units}
@@ -620,6 +861,32 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             currentUser={currentUser}
             onSave={onSaveOilDistribution}
             onDelete={onDeleteOilDistribution}
+          />
+        )}
+
+        {/* 7. MANAJEMEN GREASE (GEMUK PELUMAS) */}
+        {activeSubModule === 'grease' && (
+          <GreaseSubView
+            units={units}
+            manpowerList={manpowerList}
+            suppliers={suppliers}
+            greaseStocks={greaseStocks}
+            greaseDistributions={greaseDistributions}
+            currentUser={currentUser}
+            onSaveStock={onSaveGreaseStock}
+            onDeleteStock={onDeleteGreaseStock}
+            onSaveDistribution={onSaveGreaseDistribution}
+            onDeleteDistribution={onDeleteGreaseDistribution}
+          />
+        )}
+
+        {/* 8. DATA SUPLIER & VENDOR MITRA */}
+        {activeSubModule === 'supplier' && (
+          <SupplierSubView
+            suppliers={suppliers}
+            currentUser={currentUser}
+            onSave={onSaveSupplier}
+            onDelete={onDeleteSupplier}
           />
         )}
       </div>
@@ -678,152 +945,111 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <div className="relative">
                     <input
                       type="number"
-                      required
-                      min={1}
+                      min="100"
+                      step="100"
                       value={editKapasitasTangkiUtama}
                       onChange={(e) => setEditKapasitasTangkiUtama(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-stone-950 border border-amber-500/50 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      placeholder="Contoh: 15000, 20000, 30000"
+                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
-                    <span className="absolute right-3 top-2 text-stone-500 font-mono">
-                      Liter
-                    </span>
-                  </div>
-                  {/* Preset Buttons */}
-                  <div className="flex items-center gap-1.5 pt-1">
-                    <span className="text-[10px] text-stone-400 mr-1">Pilihan Cepat:</span>
-                    {[10000, 15000, 20000, 25000, 30000, 50000].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setEditKapasitasTangkiUtama(preset)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono border transition ${
-                          editKapasitasTangkiUtama === preset
-                            ? 'bg-amber-500 text-stone-950 border-amber-400 font-bold'
-                            : 'bg-stone-800 text-stone-300 border-stone-700 hover:border-stone-500'
-                        }`}
-                      >
-                        {(preset / 1000)}k L
-                      </button>
-                    ))}
+                    <span className="absolute right-3 top-2 text-stone-400 font-mono text-xs">Liter</span>
                   </div>
                 </div>
 
-                {/* Kapasitas Fuel Truck */}
-                <div className="pt-2 border-t border-amber-500/20 space-y-1.5">
-                  <label className="block text-stone-200 font-bold font-mono text-[11px] text-blue-400">
-                    Kapasitas Armada Fuel Truck FT-01 (Liter):
+                <div className="space-y-1.5">
+                  <label className="block text-stone-200 font-bold font-mono text-[11px]">
+                    Kapasitas Maksimal Armada Fuel Truck (FT-01) (Liter):
                   </label>
                   <div className="relative">
                     <input
                       type="number"
-                      required
-                      min={1}
+                      min="100"
+                      step="100"
                       value={editKapasitasFT}
                       onChange={(e) => setEditKapasitasFT(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-stone-950 border border-blue-500/40 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      placeholder="Contoh: 5000"
+                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
-                    <span className="absolute right-3 top-2 text-stone-500 font-mono">
-                      Liter
-                    </span>
+                    <span className="absolute right-3 top-2 text-stone-400 font-mono text-xs">Liter</span>
                   </div>
                 </div>
               </div>
 
               {/* ========================================================= */}
-              {/* BAGIAN B: SISA PERIODE SEBELUMNYA (SALDO AWAL) */}
+              {/* BAGIAN B: SISA PERIODE SEBELUMNYA (FUEL) */}
               {/* ========================================================= */}
-              <div className="pt-2 space-y-3">
-                <div className="flex items-center gap-2 text-stone-300 font-mono font-bold text-xs uppercase">
-                  <Warehouse className="w-4 h-4 text-emerald-400" />
-                  <span>B. Sisa Periode Sebelumnya (Saldo Awal)</span>
+              <div className="p-4 bg-stone-950/60 rounded-2xl border border-stone-800 space-y-3">
+                <div className="text-amber-400 font-black font-mono text-xs flex items-center gap-2">
+                  <Fuel className="w-4 h-4" />
+                  <span>B. SISA PERIODE SEBELUMNYA (FUEL SOLAR)</span>
                 </div>
-
-                {/* Input Sisa Periode Tangki Utama */}
-                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
-                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-amber-400">
-                    1. Sisa Periode Lalu Fuel Tangki Utama (Liter)
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    value={editFuelTangki}
-                    onChange={(e) => setEditFuelTangki(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-amber-500/60"
-                    placeholder="Contoh: 0 atau 12000"
-                  />
-                  <span className="text-[10px] text-stone-500">
-                    Saldo fisik solar di tangki timbun utama dari penutupan buku periode sebelumnya.
-                  </span>
-                </div>
-
-                {/* Input Sisa Periode Fuel Truck FT-01 */}
-                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-2">
-                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-blue-400">
-                    2. Sisa Periode Lalu Fuel Truck FT-01 (Liter)
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    value={editFuelFT}
-                    onChange={(e) => setEditFuelFT(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-sm focus:outline-none focus:border-blue-500/60"
-                    placeholder="Contoh: 0 atau 2500"
-                  />
-                  <span className="text-[10px] text-stone-500">
-                    Saldo solar yang masih tersisa di dalam tangki armada Fuel Truck dari shift/periode sebelumnya.
-                  </span>
-                </div>
-
-                {/* Input Sisa Periode Oli per Varian */}
-                <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-3">
-                  <label className="block text-stone-200 font-bold font-mono uppercase text-[11px] text-emerald-400">
-                    3. Sisa Periode Lalu Oli & Pelumas Gudang (Liter)
-                  </label>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {availableOilTypes.map((oilName) => (
-                      <div key={oilName} className="flex items-center justify-between gap-3 bg-stone-900/60 p-2 rounded-lg border border-stone-800/80">
-                        <span className="text-xs font-mono font-semibold text-stone-300 truncate max-w-[200px]">
-                          {oilName}
-                        </span>
-                        <div className="flex items-center gap-1.5 w-32">
-                          <input
-                            type="number"
-                            min={0}
-                            value={editOliBalance[oilName] ?? 0}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setEditOliBalance((prev) => ({
-                                ...prev,
-                                [oilName]: val,
-                              }));
-                            }}
-                            className="w-full px-2 py-1 bg-stone-950 border border-stone-800 rounded-lg text-stone-100 font-mono font-bold text-xs text-right focus:outline-none focus:border-emerald-500/60"
-                          />
-                          <span className="text-[10px] text-stone-500 font-mono">Ltr</span>
-                        </div>
-                      </div>
-                    ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-stone-400 text-[11px] mb-1">
+                      Tangki Utama Solar (Ltr)
+                    </label>
+                    <input
+                      type="number"
+                      value={editFuelTangki}
+                      onChange={(e) => setEditFuelTangki(Number(e.target.value))}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-400 text-[11px] mb-1">
+                      Fuel Truck FT-01 (Ltr)
+                    </label>
+                    <input
+                      type="number"
+                      value={editFuelFT}
+                      onChange={(e) => setEditFuelFT(Number(e.target.value))}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono"
+                    />
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-stone-800">
+              {/* ========================================================= */}
+              {/* BAGIAN C: SISA PERIODE SEBELUMNYA (OLI & PELUMAS) */}
+              {/* ========================================================= */}
+              <div className="p-4 bg-stone-950/60 rounded-2xl border border-stone-800 space-y-3">
+                <div className="text-emerald-400 font-black font-mono text-xs flex items-center gap-2">
+                  <Droplet className="w-4 h-4" />
+                  <span>C. SISA PERIODE SEBELUMNYA (OLI & PELUMAS)</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1">
+                  {Array.from(new Set([...DEFAULT_FOG_NAMA_BARANG, ...availableOilTypes])).map((oilName) => (
+                    <div key={oilName}>
+                      <label className="block text-stone-400 text-[10px] mb-1 truncate" title={oilName}>
+                        {oilName} (Ltr)
+                      </label>
+                      <input
+                        type="number"
+                        value={editOliBalance[oilName] ?? 0}
+                        onChange={(e) =>
+                          setEditOliBalance({
+                            ...editOliBalance,
+                            [oilName]: Number(e.target.value) || 0,
+                          })
+                        }
+                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-800">
                 <button
                   type="button"
                   onClick={() => setShowBalanceModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+                  className="px-4 py-2 rounded-xl text-stone-400 hover:text-stone-200 bg-stone-800"
                 >
-                  Batal
+                  Tutup
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold font-mono transition shadow-lg shadow-amber-500/20"
                 >
-                  Simpan Konfigurasi & Saldo
+                  Simpan Kalibrasi & Kapasitas
                 </button>
               </div>
             </form>
@@ -831,90 +1057,56 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* QUICK MODAL: UBAH MANUAL KAPASITAS TANGKI SOLAR UTAMA (LANGSUNG DARI CARD) */}
-      {/* ========================================================================= */}
+      {/* QUICK MODAL: Ganti Kapasitas Manual Tangki Utama */}
       {showQuickCapacityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-amber-500/40 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
-              <div className="flex items-center gap-2">
-                <Fuel className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
-                  Ubah Kapasitas Tangki Solar Utama
-                </h3>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <h3 className="text-xs font-bold font-mono text-stone-100 uppercase flex items-center gap-1.5">
+                <Pencil className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ubah Kapasitas Tangki Solar</span>
+              </h3>
               <button
                 type="button"
                 onClick={() => setShowQuickCapacityModal(false)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+                className="text-stone-400 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveQuickCapacity} className="p-5 space-y-4 text-xs">
-              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-stone-300 space-y-1.5">
-                <div className="flex items-center gap-2 text-amber-400 font-bold font-mono text-[11px]">
-                  <Settings2 className="w-3.5 h-3.5" />
-                  <span>KAPASITAS MANUAL (PENGGANTIAN TANGKI)</span>
-                </div>
-                <p className="text-[11px] text-stone-400 leading-relaxed">
-                  Masukkan volume total kapasitas maksimal tangki solar baru Anda. Sistem akan langsung memperbarui kalkulasi persentase (%) dan batas daya tampung solar utama.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-stone-200 font-bold font-mono text-[11px]">
-                  Kapasitas Maksimal Tangki Baru (Liter)
+            <form onSubmit={handleSaveQuickCapacity} className="space-y-3">
+              <p className="text-[11px] text-stone-300">
+                Ubah kapasitas tangki solar utama jika terjadi pergantian unit tangki di quarry:
+              </p>
+              <div>
+                <label className="block text-[11px] font-mono text-stone-400 mb-1">
+                  Kapasitas Baru (Liter):
                 </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={quickCapacityVal}
-                    onChange={(e) => setQuickCapacityVal(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-stone-950 border border-amber-500/50 rounded-xl text-stone-100 font-mono font-black text-base focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                    placeholder="Contoh: 15000, 20000, 30000"
-                    autoFocus
-                  />
-                  <span className="absolute right-3 top-3 text-stone-500 font-mono font-semibold">
-                    Liter
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  <span className="text-[10px] text-stone-400 py-0.5">Pilihan:</span>
-                  {[10000, 15000, 20000, 25000, 30000, 50000].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setQuickCapacityVal(preset)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono border transition ${
-                        quickCapacityVal === preset
-                          ? 'bg-amber-500 text-stone-950 border-amber-400 font-bold'
-                          : 'bg-stone-800 text-stone-300 border-stone-700 hover:border-stone-500'
-                      }`}
-                    >
-                      {(preset / 1000)}k L
-                    </button>
-                  ))}
-                </div>
+                <input
+                  type="number"
+                  min="1000"
+                  step="500"
+                  required
+                  value={quickCapacityVal}
+                  onChange={(e) => setQuickCapacityVal(Number(e.target.value))}
+                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono font-bold"
+                />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-stone-800">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowQuickCapacityModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+                  className="px-3 py-1.5 rounded-lg bg-stone-800 text-stone-300 text-xs"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
+                  className="px-4 py-1.5 rounded-lg bg-amber-500 text-stone-950 font-bold text-xs font-mono"
                 >
-                  Simpan Kapasitas Baru
+                  Simpan Kapasitas
                 </button>
               </div>
             </form>

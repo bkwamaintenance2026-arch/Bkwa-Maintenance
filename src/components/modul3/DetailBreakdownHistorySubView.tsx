@@ -32,13 +32,17 @@ import {
   Truck,
   Hash,
   ArrowRight,
-  Trash2
+  Trash2,
+  FileText
 } from 'lucide-react';
+import { PartRequirementModal } from './PartRequirementModal';
+import { exportDetailHistoryToPDF } from '../../utils/pdfGenerator';
 
 interface DetailBreakdownHistorySubViewProps {
   units: AssetUnit[];
   breakdowns: BreakdownRecord[];
   currentUser: UserAccount;
+  manpowerList?: ManpowerData[];
   onNavigateToUpdate?: (record: BreakdownRecord) => void;
   onDeleteBreakdown?: (id: string) => { success: boolean; message: string };
 }
@@ -47,12 +51,17 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   units,
   breakdowns,
   currentUser,
+  manpowerList = [],
   onNavigateToUpdate,
   onDeleteBreakdown,
 }) => {
   const isDev = isDeveloper(currentUser);
   // Transaksi Spare Part dari Modul 6 (Inventory Management)
   const [sparePartTrxList, setSparePartTrxList] = useState<SparePartTransaction[]>([]);
+
+  // Modal Kebutuhan Spare Part (Popup & Export PDF ke Malang)
+  const [selectedBreakdownForPartReq, setSelectedBreakdownForPartReq] = useState<BreakdownRecord | null>(null);
+  const [showPartReqModal, setShowPartReqModal] = useState<boolean>(false);
 
   useEffect(() => {
     try {
@@ -303,19 +312,38 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
       ];
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN DETAIL RIWAYAT BREAKDOWN"`,
+      `"Unit: ${selectedUnit || 'Semua Unit'} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Kasus: ${filteredBreakdowns.length}"`,
+      '',
+      headers.join(','), 
+      ...rows.map((e) => e.join(','))
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Riwayat_Detail_Breakdown_${selectedUnit || 'Semua_Unit'}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Riwayat_Detail_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${selectedUnit || 'Semua_Unit'}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Cetak Riwayat Modal
   const handlePrintModal = () => {
     window.print();
+  };
+
+  // Ekspor ke PDF
+  const handleExportPDF = () => {
+    if (filteredBreakdowns.length === 0) return;
+    try {
+      exportDetailHistoryToPDF(filteredBreakdowns, selectedUnit, currentUser);
+    } catch (e) {
+      console.error('Error generating Detail Breakdown PDF with jsPDF', e);
+      window.print();
+    }
   };
 
   return (
@@ -346,9 +374,19 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           <div className="flex items-center gap-2 self-start md:self-center">
             <button
               type="button"
+              onClick={handleExportPDF}
+              disabled={filteredBreakdowns.length === 0}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold transition shadow-lg shadow-rose-600/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+              title="Download Laporan Detail Riwayat Breakdown ke Format PDF Resmi"
+            >
+              <FileText className="w-4 h-4 text-white" />
+              <span>Export PDF (Head Office)</span>
+            </button>
+            <button
+              type="button"
               onClick={handleExportCSV}
               disabled={filteredBreakdowns.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               title="Download Data ke Format CSV Excel"
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
@@ -675,13 +713,22 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       onClick={() => setActiveModalRecord(b)}
                     >
                       {/* 1. Reff No. Maintenance Order */}
-                      <td className="px-3.5 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400" />
-                          <span className="font-black text-amber-400 group-hover:underline">
+                      <td className="px-3.5 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedBreakdownForPartReq(b);
+                            setShowPartReqModal(true);
+                          }}
+                          className="flex items-center gap-1.5 text-left group/mo cursor-pointer"
+                          title="Klik untuk melihat daftar part yang dibutuhkan unit & export PDF ke Malang"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400 group-hover/mo:scale-125 transition" />
+                          <span className="font-black text-amber-400 underline decoration-amber-500/50 group-hover/mo:decoration-amber-300 group-hover/mo:text-amber-300 flex items-center gap-1">
                             {moNumber}
+                            <ExternalLink className="w-3 h-3 text-amber-400/80" />
                           </span>
-                        </div>
+                        </button>
                         <span className="text-[9px] text-stone-500 block pl-3.5">
                           Notif: {b.noNotifikasi}
                         </span>
@@ -775,16 +822,31 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         </div>
                       </td>
 
-                      {/* 8. Tombol Detail */}
+                      {/* 8. Tombol Detail & Kebutuhan Part */}
                       <td className="px-3.5 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setActiveModalRecord(b)}
-                          className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[11px] font-bold border border-stone-700 transition flex items-center gap-1 mx-auto"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Detail</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBreakdownForPartReq(b);
+                              setShowPartReqModal(true);
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/40 text-[10.5px] font-bold font-mono transition flex items-center gap-1 cursor-pointer"
+                            title="Lihat Kebutuhan Part & Export PDF ke Malang"
+                          >
+                            <Package className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Part (PDF)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveModalRecord(b)}
+                            className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[10.5px] font-bold border border-stone-700 transition flex items-center gap-1 cursor-pointer"
+                            title="Buka Detail Lengkap Kasus"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Detail</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1188,7 +1250,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
             {/* Modal Footer */}
             <div className="p-4 sm:p-5 border-t border-stone-800 bg-stone-950/80 flex items-center justify-between gap-3">
               <div>
-                {isDev && onDeleteBreakdown && (
+                {onDeleteBreakdown && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1198,7 +1260,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       }
                     }}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition"
-                    title="Hapus Laporan Breakdown (Developer Only)"
+                    title="Hapus Laporan Breakdown"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Hapus Laporan</span>
@@ -1206,6 +1268,19 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBreakdownForPartReq(activeModalRecord);
+                    setShowPartReqModal(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95"
+                  title="Export PDF Kebutuhan Spare Part untuk Dikirim ke Malang"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Export PDF Part (Malang)</span>
+                </button>
+
                 {onNavigateToUpdate && (activeModalRecord.statusUnit || '').toUpperCase().trim() !== 'READY' && (
                   <button
                     type="button"
@@ -1232,6 +1307,17 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           </div>
         </div>
       )}
+
+      {/* Modal Kebutuhan Spare Part (Popup & Export PDF ke Malang) */}
+      <PartRequirementModal
+        breakdown={selectedBreakdownForPartReq}
+        isOpen={showPartReqModal}
+        onClose={() => {
+          setShowPartReqModal(false);
+          setSelectedBreakdownForPartReq(null);
+        }}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

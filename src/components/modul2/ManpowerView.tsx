@@ -250,12 +250,15 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       `"${m.tglMasukKerja || ''}"`,
       `"${(m.keterangan || '').replace(/"/g, '""')}"`,
     ]);
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const csvContent = '\uFEFF' + 
+      `"PT BATU KALI WELANG AMPUH - DATA MANPOWER & PERSONIL WORKSHOP"\r\n` +
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Personil: ${sortedList.length} Orang"\r\n\r\n` +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Data_Manpower_BKWA_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Data_Manpower_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -682,7 +685,9 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   const getStatusBadge = (status?: string) => {
                     if (!status) return '-';
                     let colorClass = 'bg-stone-800 border-stone-700 text-stone-200';
-                    if (status === 'TETAP') {
+                    if (status === 'Etika 05 Sby' || status.includes('Etika 05')) {
+                      colorClass = 'bg-amber-950/70 border-amber-500/70 text-amber-300 shadow-sm';
+                    } else if (status === 'TETAP') {
                       colorClass = 'bg-emerald-950/50 border-emerald-700/60 text-emerald-300';
                     } else if (status === 'KONTRAK') {
                       colorClass = 'bg-blue-950/50 border-blue-700/60 text-blue-300';

@@ -3,9 +3,10 @@ import {
   AssetUnit, 
   BreakdownRecord, 
   P2HRecord, 
-  UserAccount 
+  UserAccount,
+  ManpowerData 
 } from '../../types';
-import { getAllP2HRecords } from '../../utils/storage';
+import { getAllP2HRecords, getAllManpower } from '../../utils/storage';
 import { 
   Calendar, 
   Search, 
@@ -28,13 +29,18 @@ import {
   Check, 
   Sparkles,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Users
 } from 'lucide-react';
+import { PartRequirementModal } from './PartRequirementModal';
+import { exportDailyBreakdownToPDF } from '../../utils/pdfGenerator';
+import { resolveReportSignatories } from '../../utils/reportSignatories';
 
 interface LaporanHarianReadyBreakdownSubViewProps {
   units: AssetUnit[];
   breakdowns: BreakdownRecord[];
   p2hRecords?: P2HRecord[];
+  manpowerList?: ManpowerData[];
   currentUser: UserAccount;
   onNavigateToUpdate?: (record: BreakdownRecord) => void;
   onNavigateToP2H?: () => void;
@@ -44,6 +50,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
   units,
   breakdowns,
   p2hRecords: propP2HRecords,
+  manpowerList: propManpowerList,
   currentUser,
   onNavigateToUpdate,
   onNavigateToP2H,
@@ -63,6 +70,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
   // Modal Print Preview
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
+  // Modal Kebutuhan Spare Part (Popup saat No Notifikasi / MO diklik)
+  const [selectedBreakdownForParts, setSelectedBreakdownForParts] = useState<BreakdownRecord | null>(null);
+  const [showPartsModal, setShowPartsModal] = useState<boolean>(false);
+
   // Data P2H: Kombinasikan props atau baca dari localStorage
   const [localP2HList, setLocalP2HList] = useState<P2HRecord[]>([]);
 
@@ -81,6 +92,85 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     }
     return localP2HList;
   }, [propP2HRecords, localP2HList]);
+
+  // Data Manpower Modul 2
+  const [manpowerData, setManpowerData] = useState<ManpowerData[]>(propManpowerList || []);
+
+  useEffect(() => {
+    if (propManpowerList && propManpowerList.length > 0) {
+      setManpowerData(propManpowerList);
+    } else {
+      try {
+        const stored = getAllManpower();
+        setManpowerData(stored);
+      } catch (e) {
+        console.error('Error loading manpower in Laporan Harian', e);
+      }
+    }
+  }, [propManpowerList]);
+
+  // Resolusi otomatis penandatangan resmi sesuai instruksi:
+  // - Yang Membuat: Admin yang ditunjuk sesuai otoritas di Modul 2 Manpower (Jabatan Administrasi)
+  // - Diperiksa Oleh: SPV, jika tidak ada pilih Kabag Workshop
+  // - Diketahui Oleh: Kabag Workshop
+  const resolvedSig = useMemo(() => {
+    return resolveReportSignatories(manpowerData, currentUser);
+  }, [manpowerData, currentUser]);
+
+  const [signatories, setSignatories] = useState({
+    pembuatName: '',
+    pembuatJabatan: 'Administrasi',
+    diperiksaName: '',
+    diperiksaJabatan: 'Supervisor Maintenance',
+    diketahuiName: '',
+    diketahuiJabatan: 'Kabag Workshop',
+  });
+
+  // Sinkronisasi otomatis saat personil Manpower terdeteksi
+  useEffect(() => {
+    setSignatories((prev) => ({
+      pembuatName: prev.pembuatName || resolvedSig.pembuatName,
+      pembuatJabatan: prev.pembuatJabatan || resolvedSig.pembuatJabatan,
+      diperiksaName: prev.diperiksaName || resolvedSig.diperiksaName,
+      diperiksaJabatan: prev.diperiksaJabatan || resolvedSig.diperiksaJabatan,
+      diketahuiName: prev.diketahuiName || resolvedSig.diketahuiName,
+      diketahuiJabatan: prev.diketahuiJabatan || resolvedSig.diketahuiJabatan,
+    }));
+  }, [resolvedSig]);
+
+  // List kandidat personil dari data Manpower Modul 2
+  const administrasiCandidates = useMemo(() => {
+    return manpowerData.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      return j === 'ADMINISTRASI' || j.includes('ADMIN');
+    });
+  }, [manpowerData]);
+
+  const spvCandidates = useMemo(() => {
+    return manpowerData.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      return j === 'SPV' || j.includes('SPV') || j.includes('SUPERVISOR');
+    });
+  }, [manpowerData]);
+
+  const kabagCandidates = useMemo(() => {
+    return manpowerData.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      return (
+        j === 'KABAG WORKSHOP' ||
+        j.includes('KABAG') ||
+        j.includes('KEPALA BAGIAN') ||
+        j.includes('HEAD WORKSHOP') ||
+        j.includes('KEPALA BENGKEL')
+      );
+    });
+  }, [manpowerData]);
+
+  // Diperiksa Oleh: cari SPV, jika tidak ada fallback ke Kabag Workshop
+  const diperiksaCandidates = useMemo(() => {
+    if (spvCandidates.length > 0) return spvCandidates;
+    return kabagCandidates;
+  }, [spvCandidates, kabagCandidates]);
 
   // Cek otorisasi export
   const canExport = useMemo(() => {
@@ -189,7 +279,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     const exporterName = currentUser?.nama || currentUser?.username || 'User';
 
     const lines: string[] = [
-      `"PT. BUMI KARYA WIRA AGUNG (BKWA)"`,
+      `"PT BATU KALI WELANG AMPUH"`,
       `"LAPORAN HARIAN KESIAPAN UNIT OPERASIONAL (READY & BREAKDOWN)"`,
       `"Tanggal Laporan:","${formattedSelectedDate}"`,
       `"Waktu Export:","${nowStr}"`,
@@ -288,16 +378,16 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
 
     lines.push(`""`);
     lines.push(`"=== LEMBAR PENGESAHAN LAPORAN ==="`);
-    lines.push(`"Dibuat Oleh:","Diperiksa Oleh:","Diketahui Oleh:"`);
-    lines.push(`"Pengawas Mekanik / Admin Workshop","Supervisor Maintenance","Ka. Maintenance / Site Manager"`);
-    lines.push(`"( ...................................... )","( ...................................... )","( ...................................... )"`);
+    lines.push(`"Yang Membuat:","Diperiksa Oleh:","Diketahui Oleh:"`);
+    lines.push(`"${signatories.pembuatJabatan || 'Administrasi'}","${signatories.diperiksaJabatan || 'Supervisor Maintenance'}","${signatories.diketahuiJabatan || 'Kabag Workshop'}"`);
+    lines.push(`"( ${signatories.pembuatName || 'Admin Workshop'} )","( ${signatories.diperiksaName || 'Supervisor Maintenance'} )","( ${signatories.diketahuiName || 'Kabag Workshop'} )"`);
 
     const csvContent = '\uFEFF' + lines.join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Laporan_Harian_Unit_Ready_Breakdown_BKWA_${selectedDate || 'Semua'}.csv`);
+    link.setAttribute('download', `Laporan_Harian_Unit_Ready_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${selectedDate || 'Semua'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -319,7 +409,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
-        <title>Laporan Harian Kesiapan Unit - PT BKWA</title>
+        <title>Laporan Harian Kesiapan Unit - PT BATU KALI WELANG AMPUH</title>
         <style>
           body { font-family: Calibri, Arial, sans-serif; font-size: 10pt; color: #222; margin: 20px; }
           h1 { font-size: 15pt; color: #b45309; text-align: center; margin-bottom: 2px; }
@@ -336,7 +426,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
         </style>
       </head>
       <body>
-        <h1>PT. BUMI KARYA WIRA AGUNG</h1>
+        <h1>PT BATU KALI WELANG AMPUH</h1>
         <p class='subtitle'>LAPORAN HARIAN KESIAPAN UNIT OPERASIONAL (READY &amp; BREAKDOWN)<br>
         Tanggal Laporan: <strong>${formattedSelectedDate}</strong> | Waktu Cetak: ${nowStr} | Oleh: ${exporterName}</p>
         
@@ -418,19 +508,19 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
         <table class="sig-table">
           <tr>
             <td>
-              Dibuat Oleh,<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Pengawas Mekanik / Admin
+              Yang Membuat,<br>
+              <span style="font-size: 8.5pt; color: #64748b;">${signatories.pembuatJabatan || 'Administrasi'}</span><br><br><br><br>
+              <strong>( ${signatories.pembuatName || 'Admin Workshop'} )</strong>
             </td>
             <td>
-              Diperiksa Oleh,<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Supervisor Maintenance
+              Diperiksa Oleh,<br>
+              <span style="font-size: 8.5pt; color: #64748b;">${signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span><br><br><br><br>
+              <strong>( ${signatories.diperiksaName || 'Supervisor Maintenance'} )</strong>
             </td>
             <td>
-              Diketahui Oleh,<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Ka. Maintenance / Site Manager
+              Diketahui Oleh,<br>
+              <span style="font-size: 8.5pt; color: #64748b;">${signatories.diketahuiJabatan || 'Kabag Workshop'}</span><br><br><br><br>
+              <strong>( ${signatories.diketahuiName || 'Kabag Workshop'} )</strong>
             </td>
           </tr>
         </table>
@@ -442,17 +532,49 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Laporan_Harian_Unit_Ready_Breakdown_BKWA_${selectedDate || 'Semua'}.doc`);
+    link.setAttribute('download', `Laporan_Harian_Unit_Ready_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${selectedDate || 'Semua'}.doc`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   // ==========================================
-  // HANDLER PRINT DIRECT / CETAK
+  // HANDLER PRINT DIRECT / CETAK KE PDF
   // ==========================================
   const handlePrint = () => {
+    const originalTitle = document.title;
+    const dateFormatted = selectedDate || todayStr;
+    document.title = `Laporan_Harian_Ready_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${dateFormatted}`;
     window.print();
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+  };
+
+  // Handler Export PDF: Meng-generate file PDF resmi PT BATU KALI WELANG AMPUH untuk dikirim ke Head Office
+  const handleExportPDF = () => {
+    if (!canExport) {
+      alert('Akses Ditolak: Anda tidak memiliki izin ekspor laporan.');
+      return;
+    }
+
+    try {
+      exportDailyBreakdownToPDF({
+        selectedDate,
+        formattedDate: formattedSelectedDate,
+        totalMaster: totalUnitMaster,
+        readyCount: totalReadyCount,
+        breakdownCount: totalBreakdownCount,
+        availabilityRate,
+        breakdownList: breakdownUnitsList,
+        readyList: readyUnitsFromP2H,
+        currentUser,
+        signatories,
+      });
+    } catch (e) {
+      console.error('Error generating PDF with jsPDF, falling back to print modal', e);
+      setShowPrintModal(true);
+    }
   };
 
   return (
@@ -478,6 +600,18 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
         <div className="flex flex-wrap items-center gap-2">
           {canExport ? (
             <>
+              {/* Tombol Export PDF untuk Head Office */}
+              <button
+                id="btn-export-pdf-laporan-harian"
+                type="button"
+                onClick={handleExportPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold font-mono transition shadow-lg shadow-rose-600/25 active:scale-95 cursor-pointer"
+                title="Buka & Cetak/Simpan PDF Laporan Harian Lengkap untuk dikirim ke Head Office"
+              >
+                <FileText className="w-4 h-4 text-white" />
+                <span>Export PDF (Head Office)</span>
+              </button>
+
               {/* Tombol Pratinjau & Cetak */}
               <button
                 id="btn-print-laporan-harian"
@@ -897,10 +1031,23 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                       <tr key={b.id} className="hover:bg-stone-800/30 transition">
                         <td className="py-2.5 px-3 font-mono text-stone-500">{idx + 1}</td>
                         <td className="py-2.5 px-3 font-mono">
-                          <div className="font-bold text-rose-400">{b.noNotifikasi}</div>
-                          {b.noMaintenanceOrder && b.noMaintenanceOrder !== b.noNotifikasi && (
-                            <div className="text-[10px] text-stone-400">MO: {b.noMaintenanceOrder}</div>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBreakdownForParts(b);
+                              setShowPartsModal(true);
+                            }}
+                            className="text-left group/btn"
+                            title="Klik untuk melihat rincian part yang dibutuhkan unit & export PDF ke Malang"
+                          >
+                            <div className="font-bold text-rose-400 group-hover/btn:text-rose-300 group-hover/btn:underline flex items-center gap-1">
+                              <span>{b.noMaintenanceOrder || b.noNotifikasi}</span>
+                              <ExternalLink className="w-3 h-3 text-rose-400/80" />
+                            </div>
+                            {b.noMaintenanceOrder && b.noMaintenanceOrder !== b.noNotifikasi && (
+                              <div className="text-[10px] text-stone-400">Notif: {b.noNotifikasi}</div>
+                            )}
+                          </button>
                         </td>
                         <td className="py-2.5 px-3">
                           <span className="inline-block px-2 py-0.5 rounded font-mono font-bold text-xs bg-rose-500/10 text-rose-400 border border-rose-500/20">
@@ -932,6 +1079,18 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                           <span className="text-[11px] text-stone-300 line-clamp-1">
                             {b.detailKerusakan || b.detailProblem || '-'}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBreakdownForParts(b);
+                              setShowPartsModal(true);
+                            }}
+                            className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-mono underline"
+                            title="Klik untuk melihat daftar part yang dibutuhkan unit ini"
+                          >
+                            <Wrench className="w-2.5 h-2.5" />
+                            <span>{b.partsJasa && b.partsJasa.length > 0 ? `${b.partsJasa.length} Part Dibutuhkan` : 'Cek Kebutuhan Part'}</span>
+                          </button>
                         </td>
                         <td className="py-2.5 px-3">
                           {pics.length > 0 ? (
@@ -956,17 +1115,31 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                           </div>
                         </td>
                         <td className="py-2.5 px-3 text-center">
-                          {onNavigateToUpdate && (
+                          <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => onNavigateToUpdate(b)}
-                              className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 text-xs font-mono font-semibold transition inline-flex items-center gap-1 shadow"
-                              title="Update Progress Breakdown di Sub Modul 2"
+                              onClick={() => {
+                                setSelectedBreakdownForParts(b);
+                                setShowPartsModal(true);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/40 text-[11px] font-mono font-semibold transition inline-flex items-center gap-1 shadow"
+                              title="Lihat Kebutuhan Part & Export PDF ke Malang"
                             >
-                              <Wrench className="w-3 h-3" />
-                              <span>Update</span>
+                              <FileText className="w-3 h-3 text-rose-400" />
+                              <span>Part PDF</span>
                             </button>
-                          )}
+                            {onNavigateToUpdate && (
+                              <button
+                                type="button"
+                                onClick={() => onNavigateToUpdate(b)}
+                                className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 text-xs font-mono font-semibold transition inline-flex items-center gap-1 shadow"
+                                title="Update Progress Breakdown di Sub Modul 2"
+                              >
+                                <Wrench className="w-3 h-3" />
+                                <span>Update</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1140,11 +1313,20 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handlePrint}
-                  className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
+                  onClick={handleExportPDF}
+                  className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
+                  title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak / Save as PDF</span>
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Download PDF Resmi</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold text-xs font-mono transition flex items-center gap-1.5 shadow"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Cetak Browser</span>
                 </button>
                 <button
                   type="button"
@@ -1158,10 +1340,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
 
             {/* Document Print Area */}
             <div className="p-6 overflow-y-auto bg-white text-stone-900 font-sans text-xs space-y-5">
-              {/* Kop Surat Resmi PT BKWA */}
+              {/* Kop Surat Resmi PT BATU KALI WELANG AMPUH */}
               <div className="border-b-2 border-stone-800 pb-3 text-center">
                 <h1 className="text-xl font-black text-amber-700 tracking-wide font-mono uppercase">
-                  PT. BUMI KARYA WIRA AGUNG
+                  PT BATU KALI WELANG AMPUH
                 </h1>
                 <h2 className="text-xs font-bold text-stone-800 font-mono uppercase tracking-widest mt-0.5">
                   LAPORAN HARIAN KESIAPAN UNIT OPERASIONAL (READY &amp; BREAKDOWN)
@@ -1257,7 +1439,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                       <th className="border border-stone-300 p-1.5">No Unit &amp; Alat</th>
                       <th className="border border-stone-300 p-1.5">Waktu BD</th>
                       <th className="border border-stone-300 p-1.5">Jam Kerja (24 Jam)</th>
-                      <th className="border border-stone-300 p-1.5">Kerusakan</th>
+                      <th className="border border-stone-300 p-1.5">Kerusakan &amp; Kebutuhan Part</th>
                       <th className="border border-stone-300 p-1.5">PIC Mekanik</th>
                       <th className="border border-stone-300 p-1.5">Status Unit</th>
                     </tr>
@@ -1286,7 +1468,13 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                             {b.jamStart ? `${b.jamStart} - ${b.jamFinish || 'Proses'}` : '-'}
                           </td>
                           <td className="border border-stone-300 p-1.5">
-                            <strong>[{b.component || 'Komponen'}]</strong> {b.detailKerusakan || b.detailProblem}
+                            <div><strong>[{b.component || 'Komponen'}]</strong> {b.detailKerusakan || b.detailProblem}</div>
+                            {b.partsJasa && b.partsJasa.length > 0 && (
+                              <div className="mt-1 pt-1 border-t border-dotted border-stone-300 text-[10px] text-stone-800">
+                                <strong className="text-amber-800 font-mono">Part Dibutuhkan:</strong>{' '}
+                                {b.partsJasa.map((p) => `${p.namaPart} (${p.partNumber || '-'}) x${p.qty} ${p.satuan}`).join('; ')}
+                              </div>
+                            )}
                           </td>
                           <td className="border border-stone-300 p-1.5">
                             {[b.pic1, b.pic2, b.pic3].filter(Boolean).join(', ') || '-'}
@@ -1304,28 +1492,45 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               {/* Lembar Tanda Tangan */}
               <div className="pt-6 border-t border-stone-300 grid grid-cols-3 gap-4 text-center font-mono text-[11px]">
                 <div>
-                  Dibuat Oleh,<br />
-                  <span className="text-[10px] text-stone-500">Pengawas Mekanik / Admin Workshop</span>
-                  <div className="h-16"></div>
-                  <strong>( ............................................ )</strong>
+                  Yang Membuat,<br />
+                  <span className="text-[10px] text-stone-500">{signatories.pembuatJabatan || 'Administrasi'}</span>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
+                  </div>
+                  <strong className="block border-t border-stone-400 pt-1">( {signatories.pembuatName || 'Admin Workshop'} )</strong>
                 </div>
                 <div>
                   Diperiksa Oleh,<br />
-                  <span className="text-[10px] text-stone-500">Supervisor Maintenance</span>
-                  <div className="h-16"></div>
-                  <strong>( ............................................ )</strong>
+                  <span className="text-[10px] text-stone-500">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
+                  </div>
+                  <strong className="block border-t border-stone-400 pt-1">( {signatories.diperiksaName || 'Supervisor Maintenance'} )</strong>
                 </div>
                 <div>
                   Diketahui Oleh,<br />
-                  <span className="text-[10px] text-stone-500">Ka. Maintenance / Site Manager</span>
-                  <div className="h-16"></div>
-                  <strong>( ............................................ )</strong>
+                  <span className="text-[10px] text-stone-500">{signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
+                  </div>
+                  <strong className="block border-t border-stone-400 pt-1">( {signatories.diketahuiName || 'Kabag Workshop'} )</strong>
                 </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Modal Kebutuhan Spare Part (Popup saat No MO / Notif diklik & Export PDF ke Malang) */}
+      <PartRequirementModal
+        breakdown={selectedBreakdownForParts}
+        isOpen={showPartsModal}
+        onClose={() => {
+          setShowPartsModal(false);
+          setSelectedBreakdownForParts(null);
+        }}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

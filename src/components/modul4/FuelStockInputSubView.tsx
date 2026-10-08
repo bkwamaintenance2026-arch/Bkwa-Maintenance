@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FuelStockInputRecord, 
   SupplierRecord, 
@@ -24,7 +24,8 @@ import {
   TrendingDown,
   Building2,
   Ruler,
-  Lock
+  Lock,
+  Download
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
@@ -91,6 +92,15 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     (s) => s.itemName.toLowerCase().includes('solar') || s.itemName.toLowerCase().includes('bbm') || s.namaDistributor.toLowerCase().includes('pertamina')
   );
   const effectiveSuppliers = fuelSuppliers.length > 0 ? fuelSuppliers : suppliers;
+
+  // Daftar manpower diurutkan berdasarkan Jabatan terlebih dahulu baru sesuai Abjad Nama
+  const sortedManpowerList = useMemo(() => {
+    return [...manpowerList].sort((a, b) => {
+      const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
+      if (cmpJabatan !== 0) return cmpJabatan;
+      return (a.nama || '').localeCompare(b.nama || '', 'id');
+    });
+  }, [manpowerList]);
 
   const handleOpenAdd = () => {
     if (!canEdit) return;
@@ -241,6 +251,48 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     );
   });
 
+  // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
+  const handleExportCSV = () => {
+    if (filteredList.length === 0) {
+      alert('Tidak ada data penerimaan stock fuel untuk diexport.');
+      return;
+    }
+    const headers = ['TANGGAL', 'JAM', 'DISTRIBUTOR', 'NO REFF/PO', 'PLAT NOMOR', 'SUPIR', 'STICK AWAL', 'STICK AKHIR', 'FLOWMETER AWAL', 'FLOWMETER AKHIR', 'QTY SUPPLIER', 'ACTUAL FLOWMETER', 'SELISIH', 'PIC FOG'];
+    const rows = filteredList.map((item) => {
+      const diff = (Number(item.actualQtyFlowmeter) || 0) - (Number(item.qtySupplier) || 0);
+      return [
+        `"${item.tanggal}"`,
+        `"${item.jam || ''}"`,
+        `"${(item.distributor || '').replace(/"/g, '""')}"`,
+        `"${item.snReffNo}"`,
+        `"${item.platNomor || '-'}"`,
+        `"${(item.driverName || '').replace(/"/g, '""')}"`,
+        `"${item.stickAwal ?? ''}"`,
+        `"${item.stickAkhir ?? ''}"`,
+        `"${item.flowmeterStart ?? ''}"`,
+        `"${item.flowmeterEnd ?? ''}"`,
+        `"${item.qtySupplier ?? ''}"`,
+        `"${item.actualQtyFlowmeter ?? ''}"`,
+        `"${diff}"`,
+        `"${item.picFogName || '-'}"`,
+      ];
+    });
+    const csv = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN PENERIMAAN STOK BBM SOLAR"`,
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Catatan: ${filteredList.length} | Dicetak oleh: ${currentUser.fullName || currentUser.username}"`,
+      '',
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Penerimaan_Stok_Solar_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
@@ -272,6 +324,16 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
               className="pl-9 pr-3 py-2 bg-stone-950/80 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500/50 w-56 sm:w-64"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+            title="Export CSV Penerimaan Stok Solar (PT BATU KALI WELANG AMPUH)"
+          >
+            <Download className="w-4 h-4 text-amber-400" />
+            <span>Export CSV</span>
+          </button>
 
           {canEdit ? (
             <button
@@ -690,11 +752,12 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                 <select
                   value={picFogName}
                   onChange={(e) => handlePicChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60"
+                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60 font-mono text-xs"
                 >
-                  {manpowerList.map((m) => (
+                  <option value="">-- Pilih PIC FOG (Urut Jabatan &amp; Nama) --</option>
+                  {sortedManpowerList.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      {m.nama} — {m.jabatan} ({m.nik})
+                      [{m.jabatan}] {m.nama} ({m.nik})
                     </option>
                   ))}
                 </select>

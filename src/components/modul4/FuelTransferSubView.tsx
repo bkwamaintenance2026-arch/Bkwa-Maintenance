@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   FuelTransferRecord, 
   ManpowerData, 
@@ -67,11 +67,30 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   const [qty, setQty] = useState<number | ''>('');
   const [remark, setRemark] = useState('');
 
-  // Filter manpower drivers and general manpower
-  const drivers = manpowerList.filter((m) => 
-    m.jabatan.toLowerCase().includes('driver') || m.jabatan.toLowerCase().includes('operator')
-  );
-  const effectiveDrivers = drivers.length > 0 ? drivers : manpowerList;
+  // Filter manpower drivers dan urutkan berdasarkan Jabatan terlebih dahulu baru sesuai Abjad Nama
+  const sortedDrivers = useMemo(() => {
+    const drivers = manpowerList.filter((m) => 
+      m.jabatan.toLowerCase().includes('driver') || 
+      m.jabatan.toLowerCase().includes('sopir') || 
+      m.jabatan.toLowerCase().includes('operator')
+    );
+    const list = drivers.length > 0 ? drivers : manpowerList;
+    return [...list].sort((a, b) => {
+      const cmp = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
+      if (cmp !== 0) return cmp;
+      return (a.nama || '').localeCompare(b.nama || '', 'id');
+    });
+  }, [manpowerList]);
+
+  const sortedManpowerList = useMemo(() => {
+    return [...manpowerList].sort((a, b) => {
+      const cmp = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
+      if (cmp !== 0) return cmp;
+      return (a.nama || '').localeCompare(b.nama || '', 'id');
+    });
+  }, [manpowerList]);
+
+  const effectiveDrivers = sortedDrivers;
 
   const handleOpenAdd = () => {
     if (!canEdit) return;
@@ -457,11 +476,12 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                 <select
                   value={namaDriverFt}
                   onChange={(e) => handleDriverChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60"
+                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono text-xs"
                 >
-                  {manpowerList.map((m) => (
+                  <option value="">-- Pilih Driver FT (Urut Jabatan &amp; Nama) --</option>
+                  {sortedDrivers.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      {m.nama} — {m.jabatan}
+                      [{m.jabatan}] {m.nama}
                     </option>
                   ))}
                 </select>
@@ -480,11 +500,12 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                 <select
                   value={picFog}
                   onChange={(e) => handlePicChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60"
+                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono text-xs"
                 >
-                  {manpowerList.map((m) => (
+                  <option value="">-- Pilih PIC FOG (Urut Jabatan &amp; Nama) --</option>
+                  {sortedManpowerList.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      {m.nama} — {m.jabatan}
+                      [{m.jabatan}] {m.nama}
                     </option>
                   ))}
                 </select>

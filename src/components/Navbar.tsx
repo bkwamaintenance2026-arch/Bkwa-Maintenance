@@ -49,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </h1>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-amber-500">
-                  PT Batu Kaliwelang Ampuh
+                  PT BATU KALI WELANG AMPUH
                 </span>
                 <span className="text-stone-600 hidden sm:inline">•</span>
                 <span className="inline-flex items-center gap-1 text-[11px] text-stone-400 font-medium">

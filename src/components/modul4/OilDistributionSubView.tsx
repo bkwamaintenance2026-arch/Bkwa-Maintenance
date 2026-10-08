@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   OilDistributionRecord, 
   HeavyEquipment, 
@@ -19,7 +19,8 @@ import {
   X, 
   CheckCircle2,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  Download
 } from 'lucide-react';
 
 interface OilDistributionSubViewProps {
@@ -61,6 +62,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   const [noBon, setNoBon] = useState('');
   const [tanggal, setTanggal] = useState('');
   const [jam, setJam] = useState('');
+  const [selectedJenis, setSelectedJenis] = useState('');
   const [noUnit, setNoUnit] = useState('');
   const [namaUnit, setNamaUnit] = useState('');
   const [hmUnit, setHmUnit] = useState<number | ''>('');
@@ -74,29 +76,102 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   const [picGudangJabatan, setPicGudangJabatan] = useState('');
   const [remark, setRemark] = useState('');
 
-  // Filter mekanik
-  const mechanics = manpowerList.filter((m) => 
-    m.jabatan.toLowerCase().includes('mekanik') || 
-    m.jabatan.toLowerCase().includes('mechanic') ||
-    m.jabatan.toLowerCase().includes('teknisi')
-  );
-  const effectiveMechanics = mechanics.length > 0 ? mechanics : manpowerList;
+  // Unit Helper
+  const getUnitCn = (u: any): string => u?.cnNew || u?.codeNumber || u?.kodeUnit || '';
+  const getUnitJenis = (u: any): string => (u?.jenis || u?.category || '').trim();
+  const getUnitName = (u: any): string => u?.namaAlat || `${u?.brandMerk || u?.brand || ''} ${u?.modelUnit || u?.model || ''}`.trim() || getUnitCn(u);
 
-  // Filter gudang
-  const warehouseStaff = manpowerList.filter((m) => 
-    m.jabatan.toLowerCase().includes('gudang') || 
-    m.jabatan.toLowerCase().includes('logistik') ||
-    m.jabatan.toLowerCase().includes('admin')
-  );
-  const effectiveWarehouse = warehouseStaff.length > 0 ? warehouseStaff : manpowerList;
+  // 1. Daftar Jenis Alat berdasarkan "JENIS" di Modul 1
+  const availableJenisList = useMemo(() => {
+    const set = new Set<string>();
+    equipmentList.forEach((u: any) => {
+      const j = getUnitJenis(u);
+      if (j) set.add(j);
+    });
+    if (set.size === 0) {
+      return ['Dump Truck', 'Excavator', 'Wheel Loader', 'Bulldozer', 'Stone Crusher', 'Support'];
+    }
+    return Array.from(set).sort();
+  }, [equipmentList]);
 
-  const handleNoUnitChange = (codeNumber: string) => {
-    setNoUnit(codeNumber);
-    const eq = equipmentList.find((e) => e.codeNumber === codeNumber);
+  // 2. Daftar Unit yang terfilter berdasarkan Jenis yang dipilih
+  const availableUnitsForSelectedJenis = useMemo(() => {
+    if (!selectedJenis) return equipmentList;
+    return equipmentList.filter((u: any) => {
+      const j = getUnitJenis(u);
+      return j.toLowerCase() === selectedJenis.trim().toLowerCase();
+    });
+  }, [equipmentList, selectedJenis]);
+
+  // Filter mekanik: HANYA jabatan Mekanik / Helper Mekanik
+  // Diurutkan berdasarkan Jabatan terlebih dahulu, lalu sesuai Abjad Nama
+  const mechanics = useMemo(() => {
+    const list = manpowerList.filter((m) => {
+      const jab = (m.jabatan || '').toUpperCase();
+      return jab === 'MEKANIK' || 
+             jab === 'HELPER MEKANIK' || 
+             jab.includes('MEKANIK') || 
+             jab.includes('MECHANIC') ||
+             jab.includes('TEKNISI');
+    });
+    return list.sort((a, b) => {
+      const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+      if (cmpJabatan !== 0) return cmpJabatan;
+      return (a.nama || '').localeCompare(b.nama || '');
+    });
+  }, [manpowerList]);
+
+  const effectiveMechanics = mechanics.length > 0 ? mechanics : [...manpowerList].sort((a, b) => {
+    const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+    if (cmpJabatan !== 0) return cmpJabatan;
+    return (a.nama || '').localeCompare(b.nama || '');
+  });
+
+  // Filter gudang: HANYA jabatan Administrasi dan Kabag
+  // Diurutkan berdasarkan Jabatan terlebih dahulu, lalu sesuai Abjad Nama
+  const warehouseStaff = useMemo(() => {
+    const list = manpowerList.filter((m) => {
+      const jab = (m.jabatan || '').toUpperCase();
+      return jab === 'ADMINISTRASI' || 
+             jab === 'KABAG WORKSHOP' || 
+             jab.includes('ADMINISTRASI') || 
+             jab.includes('ADMIN') || 
+             jab.includes('KABAG');
+    });
+    return list.sort((a, b) => {
+      const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+      if (cmpJabatan !== 0) return cmpJabatan;
+      return (a.nama || '').localeCompare(b.nama || '');
+    });
+  }, [manpowerList]);
+
+  const effectiveWarehouse = warehouseStaff.length > 0 ? warehouseStaff : [...manpowerList].sort((a, b) => {
+    const cmpJabatan = (a.jabatan || '').localeCompare(b.jabatan || '');
+    if (cmpJabatan !== 0) return cmpJabatan;
+    return (a.nama || '').localeCompare(b.nama || '');
+  });
+
+  const handleJenisChange = (newJenis: string) => {
+    setSelectedJenis(newJenis);
+    // User requested: "Jenis baru , CN_NEW baru nama alat otomatis"
+    // Reset CN_NEW dan Nama Alat saat memilih Jenis Alat baru agar user memilih CN_NEW yang sesuai
+    setNoUnit('');
+    setNamaUnit('');
+    setHmUnit('');
+  };
+
+  const handleNoUnitChange = (cn: string) => {
+    setNoUnit(cn);
+    const eq = equipmentList.find((e) => getUnitCn(e).trim().toUpperCase() === cn.trim().toUpperCase());
     if (eq) {
-      setNamaUnit(`${eq.brand || ''} ${eq.model} (${eq.category})`.trim());
-      if (eq.currentHours && (!hmUnit || hmUnit === 0)) {
-        setHmUnit(eq.currentHours);
+      setNamaUnit(getUnitName(eq));
+      const j = getUnitJenis(eq);
+      if (j && (!selectedJenis || selectedJenis.toLowerCase() !== j.toLowerCase())) {
+        setSelectedJenis(j);
+      }
+      const hours = (eq as any).currentHours || (eq as any).lastHm || (eq as any).hm;
+      if (hours && (!hmUnit || hmUnit === 0)) {
+        setHmUnit(hours);
       }
     } else {
       setNamaUnit('');
@@ -112,29 +187,25 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
     setTanggal(now.toISOString().split('T')[0]);
     setJam(now.toTimeString().substring(0, 5));
 
-    const firstEq = equipmentList[0];
-    if (firstEq) {
-      setNoUnit(firstEq.codeNumber);
-      setNamaUnit(`${firstEq.brand || ''} ${firstEq.model} (${firstEq.category})`.trim());
-      setHmUnit(firstEq.currentHours || 1500);
-    } else {
-      setNoUnit('');
-      setNamaUnit('');
-      setHmUnit('');
-    }
+    // Dimulai dari Jenis kosong agar alur cascade berjalan: Jenis -> CN_NEW -> Nama Alat Otomatis
+    setSelectedJenis('');
+    setNoUnit('');
+    setNamaUnit('');
+    setHmUnit('');
 
-    setJenisOli(availableOilTypes[0] || 'TURALIK 52 PERTAMINA');
+    // Input manual bebas jenis oli
+    setJenisOli('');
     setQty('');
     setSatuan('Ltr');
     setRincianKerusakan('');
 
     const defaultMekanik = effectiveMechanics[0];
     setPicMekanik(defaultMekanik?.nama || '');
-    setPicMekanikJabatan(defaultMekanik?.jabatan || 'Mekanik Alat Berat');
+    setPicMekanikJabatan(defaultMekanik?.jabatan || 'MEKANIK');
 
     const defaultGudang = effectiveWarehouse[0];
     setPicGudangMaterial(defaultGudang?.nama || currentUser.fullName || currentUser.username);
-    setPicGudangJabatan(defaultGudang?.jabatan || 'Staff Gudang Material');
+    setPicGudangJabatan(defaultGudang?.jabatan || 'ADMINISTRASI');
 
     setRemark('');
     setErrorMsg('');
@@ -146,8 +217,12 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
     setNoBon(item.noBon || '');
     setTanggal(item.tanggal);
     setJam(item.jam || '');
+    const eq = equipmentList.find((e) => getUnitCn(e) === item.noUnit);
+    if (eq) {
+      setSelectedJenis(getUnitJenis(eq));
+    }
     setNoUnit(item.noUnit);
-    setNamaUnit(item.namaUnit || '');
+    setNamaUnit(item.namaUnit || (eq ? getUnitName(eq) : item.noUnit));
     setHmUnit(item.hmUnit);
     setJenisOli(item.jenisOli);
     setQty(item.qty);
@@ -256,6 +331,46 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
 
   const totalOliDistribusi = oilDistributions.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
 
+  // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
+  const handleExportCSV = () => {
+    if (filteredList.length === 0) {
+      alert('Tidak ada data pengeluaran oli untuk diexport.');
+      return;
+    }
+    const headers = ['NO BON', 'TANGGAL', 'JAM', 'NO UNIT (CN)', 'NAMA ALAT', 'HM UNIT', 'JENIS OLI', 'QTY', 'SATUAN', 'RINCIAN KERUSAKAN', 'PIC MEKANIK', 'JABATAN MEKANIK', 'PIC GUDANG', 'JABATAN GUDANG', 'REMARK'];
+    const rows = filteredList.map((item) => [
+      `"${item.noBon || ''}"`,
+      `"${item.tanggal}"`,
+      `"${item.jam || ''}"`,
+      `"${item.noUnit}"`,
+      `"${(item.namaUnit || '').replace(/"/g, '""')}"`,
+      `"${item.hmUnit ?? (item as any).hm ?? ''}"`,
+      `"${item.jenisOli}"`,
+      `"${item.qty}"`,
+      `"${item.satuan || 'Ltr'}"`,
+      `"${(item.rincianKerusakan || '').replace(/"/g, '""')}"`,
+      `"${item.picMekanik}"`,
+      `"${item.picMekanikJabatan || 'MEKANIK'}"`,
+      `"${item.picGudangMaterial}"`,
+      `"${item.picGudangJabatan || 'ADMINISTRASI'}"`,
+      `"${(item.remark || '').replace(/"/g, '""')}"`,
+    ]);
+    const csv = '\uFEFF' + [
+      `"PT BATU KALI WELANG AMPUH - LAPORAN PENGELUARAN OLI KE ALAT BERAT"`,
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Catatan: ${filteredList.length} | Dicetak oleh: ${currentUser.fullName || currentUser.username}"`,
+      '',
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Laporan_Pengeluaran_Oli_PT_BATU_KALI_WELANG_AMPUH_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Action Bar */}
@@ -287,6 +402,16 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
               className="pl-9 pr-3 py-2 bg-stone-950/80 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500/50 w-56 sm:w-64"
             />
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+            title="Export CSV Laporan Pengeluaran Oli (PT BATU KALI WELANG AMPUH)"
+          >
+            <Download className="w-4 h-4 text-emerald-400" />
+            <span>Export CSV</span>
+          </button>
 
           <button
             id="btn-add-oil-distribution"
@@ -500,71 +625,153 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
                 </div>
               </div>
 
-              {/* 1. No Unit (CN) & 2. HM Unit */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-stone-950/70 rounded-xl border border-stone-800">
-                <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    1. No Unit (Reff: Modul 1 Asset) <span className="text-amber-400">*</span>
-                  </label>
-                  <select
-                    value={noUnit}
-                    onChange={(e) => handleNoUnitChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-amber-400 font-mono font-bold focus:outline-none focus:border-amber-500/60"
-                  >
-                    {equipmentList.map((eq) => (
-                      <option key={eq.id} value={eq.codeNumber}>
-                        {eq.codeNumber} — {eq.brand || ''} {eq.model}
+              {/* 1. Cascading Unit Selection (Jenis -> CN_NEW -> Nama Alat Otomatis & HM) */}
+              <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800 space-y-3">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                  Reff Unit Alat Berat (Modul 1 Asset)
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-stone-300 font-semibold mb-1">
+                      1. Jenis Alat (Modul 1) <span className="text-amber-400">*</span>
+                    </label>
+                    <select
+                      value={selectedJenis}
+                      onChange={(e) => handleJenisChange(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-amber-400 font-bold font-mono text-xs focus:outline-none focus:border-amber-500/60"
+                    >
+                      <option value="">-- Pilih Jenis Alat di Modul 1 --</option>
+                      {availableJenisList.map((j) => (
+                        <option key={j} value={j}>{j}</option>
+                      ))}
+                    </select>
+                    <span className="text-[10px] text-stone-500 mt-1 block">
+                      Memfilter daftar pilihan CN_NEW di samping
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-300 font-semibold mb-1">
+                      2. CN_NEW (Unit Terkelompok sesuai Jenis) <span className="text-amber-400">*</span>
+                    </label>
+                    <select
+                      required
+                      value={noUnit}
+                      onChange={(e) => handleNoUnitChange(e.target.value)}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-xs focus:outline-none focus:border-amber-500/60"
+                    >
+                      <option value="">
+                        {selectedJenis 
+                          ? `-- Pilih CN_NEW (Kelompok: ${selectedJenis}) --` 
+                          : '-- Pilih CN_NEW (Dikelompokkan Sesuai Jenis) --'}
                       </option>
-                    ))}
-                  </select>
+                      {selectedJenis ? (
+                        availableUnitsForSelectedJenis.length > 0 ? (
+                          availableUnitsForSelectedJenis.map((eq: any) => {
+                            const cn = getUnitCn(eq);
+                            return (
+                              <option key={eq.id || cn} value={cn}>
+                                {cn} — {getUnitName(eq)}
+                              </option>
+                            );
+                          })
+                        ) : (
+                          <option value="" disabled>(Belum ada unit terdaftar di Modul 1 untuk {selectedJenis})</option>
+                        )
+                      ) : (
+                        availableJenisList.map((j) => {
+                          const matchUnits = equipmentList.filter((u: any) => getUnitJenis(u).toLowerCase() === j.toLowerCase());
+                          if (matchUnits.length === 0) return null;
+                          return (
+                            <optgroup key={j} label={`Kelompok: ${j}`}>
+                              {matchUnits.map((eq: any) => {
+                                const cn = getUnitCn(eq);
+                                return (
+                                  <option key={eq.id || cn} value={cn}>
+                                    {cn} — {getUnitName(eq)}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          );
+                        })
+                      )}
+                    </select>
+                    <div className="flex items-center gap-2 mt-1">
+                      <input
+                        type="text"
+                        placeholder="Atau ketik CN_NEW manual..."
+                        value={noUnit}
+                        onChange={(e) => handleNoUnitChange(e.target.value)}
+                        className="w-full px-2.5 py-1 bg-stone-900 border border-stone-800 rounded-lg text-amber-400 font-mono text-xs focus:outline-none focus:border-amber-500/60 placeholder:text-stone-600"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    Nama Unit Alat
-                  </label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={namaUnit}
-                    className="w-full px-3 py-2 bg-stone-900/60 border border-stone-800/80 rounded-xl text-stone-300 font-medium cursor-not-allowed"
-                    placeholder="Nama unit terpilih"
-                  />
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-stone-300 font-semibold mb-1">
+                      Nama Alat (Otomatis dari CN_NEW)
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={namaUnit}
+                      className="w-full px-3 py-2 bg-stone-900/60 border border-stone-800/80 rounded-xl text-stone-200 font-medium cursor-not-allowed text-xs font-mono"
+                      placeholder="Otomatis dari CN_NEW terpilih"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    2. HM Unit Saat Ini <span className="text-amber-400">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    placeholder="Hour meter unit"
-                    value={hmUnit}
-                    onChange={(e) => setHmUnit(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-200 font-mono font-bold focus:outline-none focus:border-amber-500/60"
-                  />
+                  <div>
+                    <label className="block text-stone-300 font-semibold mb-1">
+                      HM Unit Saat Ini <span className="text-amber-400">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      placeholder="Hour meter unit"
+                      value={hmUnit}
+                      onChange={(e) => setHmUnit(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-200 font-mono font-bold text-xs focus:outline-none focus:border-amber-500/60"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* 3. Jenis Oli & 4. Qty */}
+              {/* 3. Jenis Oli (Input Bebas Manual) & 4. Qty */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
                   <label className="block text-stone-300 font-semibold mb-1">
-                    3. Jenis Oli / Pelumas <span className="text-amber-400">*</span>
+                    3. Jenis Oli / Pelumas (Input Bebas Manual) <span className="text-amber-400">*</span>
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    required
+                    list="oil-dist-types-list"
+                    placeholder="Ketik manual jenis oli (contoh: TURALIK 52, SAE 15W-40, ATF, dll.)"
                     value={jenisOli}
                     onChange={(e) => setJenisOli(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-emerald-400 font-mono font-bold focus:outline-none focus:border-amber-500/60"
-                  >
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-emerald-400 font-mono font-bold text-xs focus:outline-none focus:border-amber-500/60"
+                  />
+                  <datalist id="oil-dist-types-list">
                     {availableOilTypes.map((oil) => (
-                      <option key={oil} value={oil}>
-                        {oil}
-                      </option>
+                      <option key={oil} value={oil} />
                     ))}
-                  </select>
+                    <option value="TURALIK 52 PERTAMINA" />
+                    <option value="RORED HDA SAE 90" />
+                    <option value="MEDITRAN S SAE 40" />
+                    <option value="MEDITRAN SX SAE 15W-40" />
+                    <option value="RORED HDA SAE 140" />
+                    <option value="TELLUS S2 M 68" />
+                    <option value="RIMULA R4X 15W-40" />
+                    <option value="ATF DEXRON III" />
+                  </datalist>
+                  <span className="text-[10px] text-stone-500 block mt-1">
+                    Input bebas secara manual atau pilih saran dari daftar pelumas
+                  </span>
                 </div>
 
                 <div>
@@ -609,47 +816,55 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
                 />
               </div>
 
-              {/* 6. PIC Mekanik & 7. PIC Gudang Material */}
+              {/* 6. PIC Mekanik (Hanya Jabatan Mekanik) & 7. PIC Gudang Material (Hanya Administrasi & Kabag) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    6. PIC Mekanik (Peminta / Eksekutor) <span className="text-amber-400">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-stone-300 font-semibold">
+                      6. PIC Mekanik (Peminta / Eksekutor) <span className="text-amber-400">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-mono">Khusus Mekanik</span>
+                  </div>
                   <select
                     value={picMekanik}
                     onChange={(e) => handleMekanikChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60"
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60 font-mono text-xs"
                   >
-                    {manpowerList.map((m) => (
+                    <option value="">-- Pilih PIC Mekanik (Hanya Mekanik - Urut Abjad) --</option>
+                    {effectiveMechanics.map((m) => (
                       <option key={m.id} value={m.nama}>
-                        {m.nama} — {m.jabatan}
+                        [{m.jabatan}] {m.nama}
                       </option>
                     ))}
                   </select>
                   {picMekanikJabatan && (
-                    <span className="text-[10px] text-stone-400 font-mono mt-1 block">
+                    <span className="text-[10px] text-emerald-400 font-mono mt-1 block">
                       Jabatan: {picMekanikJabatan}
                     </span>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    7. PIC Gudang Material (Pemberi) <span className="text-amber-400">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-stone-300 font-semibold">
+                      7. PIC Gudang Material (Pemberi) <span className="text-amber-400">*</span>
+                    </label>
+                    <span className="text-[10px] text-blue-400 font-mono">Administrasi &amp; Kabag</span>
+                  </div>
                   <select
                     value={picGudangMaterial}
                     onChange={(e) => handleGudangChange(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60"
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-amber-500/60 font-mono text-xs"
                   >
-                    {manpowerList.map((m) => (
+                    <option value="">-- Pilih PIC Gudang (Hanya Administrasi &amp; Kabag - Urut Abjad) --</option>
+                    {effectiveWarehouse.map((m) => (
                       <option key={m.id} value={m.nama}>
-                        {m.nama} — {m.jabatan}
+                        [{m.jabatan}] {m.nama}
                       </option>
                     ))}
                   </select>
                   {picGudangJabatan && (
-                    <span className="text-[10px] text-stone-400 font-mono mt-1 block">
+                    <span className="text-[10px] text-blue-400 font-mono mt-1 block">
                       Jabatan: {picGudangJabatan}
                     </span>
                   )}
