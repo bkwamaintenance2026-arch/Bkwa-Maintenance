@@ -126,18 +126,6 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     diketahuiJabatan: 'Kabag Workshop',
   });
 
-  // Sinkronisasi otomatis saat personil Manpower terdeteksi
-  useEffect(() => {
-    setSignatories((prev) => ({
-      pembuatName: prev.pembuatName || resolvedSig.pembuatName,
-      pembuatJabatan: prev.pembuatJabatan || resolvedSig.pembuatJabatan,
-      diperiksaName: prev.diperiksaName || resolvedSig.diperiksaName,
-      diperiksaJabatan: prev.diperiksaJabatan || resolvedSig.diperiksaJabatan,
-      diketahuiName: prev.diketahuiName || resolvedSig.diketahuiName,
-      diketahuiJabatan: prev.diketahuiJabatan || resolvedSig.diketahuiJabatan,
-    }));
-  }, [resolvedSig]);
-
   // List kandidat personil dari data Manpower Modul 2
   const administrasiCandidates = useMemo(() => {
     return manpowerData.filter((m) => {
@@ -171,6 +159,25 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     if (spvCandidates.length > 0) return spvCandidates;
     return kabagCandidates;
   }, [spvCandidates, kabagCandidates]);
+
+  // Sinkronisasi otomatis saat personil Manpower terdeteksi
+  useEffect(() => {
+    setSignatories((prev) => {
+      // Jika user belum memilih secara manual atau belum terisi, sinkronkan otomatis dengan resolusi dari Manpower Modul 2
+      const isPembuatInCandidates = administrasiCandidates.some((m) => m.nama === prev.pembuatName);
+      const isDiperiksaInCandidates = diperiksaCandidates.some((m) => m.nama === prev.diperiksaName);
+      const isDiketahuiInCandidates = kabagCandidates.some((m) => m.nama === prev.diketahuiName);
+
+      return {
+        pembuatName: (isPembuatInCandidates ? prev.pembuatName : resolvedSig.pembuatName) || resolvedSig.pembuatName,
+        pembuatJabatan: (isPembuatInCandidates ? prev.pembuatJabatan : resolvedSig.pembuatJabatan) || resolvedSig.pembuatJabatan,
+        diperiksaName: (isDiperiksaInCandidates ? prev.diperiksaName : resolvedSig.diperiksaName) || resolvedSig.diperiksaName,
+        diperiksaJabatan: (isDiperiksaInCandidates ? prev.diperiksaJabatan : resolvedSig.diperiksaJabatan) || resolvedSig.diperiksaJabatan,
+        diketahuiName: (isDiketahuiInCandidates ? prev.diketahuiName : resolvedSig.diketahuiName) || resolvedSig.diketahuiName,
+        diketahuiJabatan: (isDiketahuiInCandidates ? prev.diketahuiJabatan : resolvedSig.diketahuiJabatan) || resolvedSig.diketahuiJabatan,
+      };
+    });
+  }, [resolvedSig, administrasiCandidates, diperiksaCandidates, kabagCandidates]);
 
   // Cek otorisasi export
   const canExport = useMemo(() => {
@@ -653,6 +660,161 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               <span>Mode Viewer (Read-Only)</span>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* KARTU PEJABAT PENANDATANGAN LAPORAN (OTORITAS MODUL 2 MANPOWER) */}
+      <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+              Pejabat Penandatangan Laporan (Sesuai Otoritas Modul 2 Manpower)
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-stone-400">
+            Otomatis terisi dari data personil &amp; hak akses Modul 2
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+          {/* 1. Yang Membuat (Pilih Jabatan Administrasi) */}
+          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-amber-400 uppercase">
+                1. Yang Membuat (Administrasi)
+              </label>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {signatories.pembuatJabatan || 'Administrasi'}
+              </span>
+            </div>
+            {administrasiCandidates.length > 0 ? (
+              <select
+                id="select-penandatangan-pembuat"
+                value={signatories.pembuatName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = administrasiCandidates.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    pembuatName: val,
+                    pembuatJabatan: found?.jabatan || 'Administrasi',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+              >
+                {administrasiCandidates.map((m) => (
+                  <option key={m.id} value={m.nama}>
+                    {m.nama} ({m.jabatan || 'Administrasi'})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="input-penandatangan-pembuat"
+                type="text"
+                value={signatories.pembuatName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatName: e.target.value }))}
+                placeholder="Nama Admin / Pembuat..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Admin ditunjuk sesuai otoritas di Modul 2 Manpower
+            </p>
+          </div>
+
+          {/* 2. Diperiksa Oleh (SPV / Kabag Workshop) */}
+          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-blue-400 uppercase">
+                2. Diperiksa Oleh (SPV / Kabag)
+              </label>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                {spvCandidates.length > 0 ? 'SPV Terdeteksi' : 'Fallback: Kabag Workshop'}
+              </span>
+            </div>
+            {diperiksaCandidates.length > 0 ? (
+              <select
+                id="select-penandatangan-diperiksa"
+                value={signatories.diperiksaName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = diperiksaCandidates.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    diperiksaName: val,
+                    diperiksaJabatan: found?.jabatan || 'Supervisor Maintenance',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-blue-500 focus:outline-none"
+              >
+                {diperiksaCandidates.map((m) => (
+                  <option key={m.id} value={m.nama}>
+                    {m.nama} ({m.jabatan || 'Supervisor'})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="input-penandatangan-diperiksa"
+                type="text"
+                value={signatories.diperiksaName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaName: e.target.value }))}
+                placeholder="Nama Supervisor / Pemeriksa..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-blue-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Otomatis SPV, jika tidak ada fallback ke Kabag Workshop
+            </p>
+          </div>
+
+          {/* 3. Diketahui Oleh (Kabag Workshop) */}
+          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-emerald-400 uppercase">
+                3. Diketahui Oleh (Kabag Workshop)
+              </label>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Kabag Workshop
+              </span>
+            </div>
+            {kabagCandidates.length > 0 ? (
+              <select
+                id="select-penandatangan-diketahui"
+                value={signatories.diketahuiName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = kabagCandidates.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    diketahuiName: val,
+                    diketahuiJabatan: found?.jabatan || 'Kabag Workshop',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+              >
+                {kabagCandidates.map((m) => (
+                  <option key={m.id} value={m.nama}>
+                    {m.nama} ({m.jabatan || 'Kabag Workshop'})
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="input-penandatangan-diketahui"
+                type="text"
+                value={signatories.diketahuiName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, diketahuiName: e.target.value }))}
+                placeholder="Nama Kabag Workshop..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Otomatis mencari personil berjabatan Kabag Workshop
+            </p>
+          </div>
         </div>
       </div>
 

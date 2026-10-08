@@ -4,8 +4,9 @@ import {
   BreakdownPartJasaItem, 
   UserAccount 
 } from '../../types';
-import { getAllSparePartTransactions } from '../../utils/storage';
+import { getAllSparePartTransactions, getAllManpower } from '../../utils/storage';
 import { exportPartRequirementToPDF } from '../../utils/pdfGenerator';
+import { resolveReportSignatories } from '../../utils/reportSignatories';
 import { 
   X, 
   Printer, 
@@ -107,10 +108,19 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
     return list;
   }, [breakdown, moNumber, notifNumber]);
 
+  // Resolusi penandatangan resmi:
+  // - Yang Membuat: Admin yang ditunjuk sesuai otoritas di Modul 2 Manpower (Jabatan Administrasi)
+  // - Diperiksa Oleh: Otomatis SPV, jika tidak ada fallback ke Kabag Workshop
+  // - Diketahui Oleh: Kabag Workshop
+  const signatories = useMemo(() => {
+    const mpList = getAllManpower();
+    return resolveReportSignatories(mpList, currentUser);
+  }, [currentUser]);
+
   // Handler Export PDF: Meng-generate file PDF asli PT BATU KALI WELANG AMPUH untuk dikirim ke Head Office Malang
   const handleExportPDF = () => {
     try {
-      exportPartRequirementToPDF(breakdown, allNeededParts, currentUser);
+      exportPartRequirementToPDF(breakdown, allNeededParts, currentUser, signatories);
     } catch (e) {
       console.error('Error generating PDF with jsPDF, falling back to window.print', e);
       const originalTitle = document.title;
@@ -156,7 +166,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
       <body>
         <h1>PT BATU KALI WELANG AMPUH</h1>
         <h2>FORMULIR PERMINTAAN &amp; KEBUTUHAN SPARE PART UNIT (LAPORAN KE MALANG)</h2>
-        <p class='subtitle'>Quarry Purwosari • Divisi Maintenance &amp; Alat Berat<br>Waktu Cetak: ${nowStr} | Dibuat Oleh: ${currentUser.fullName || currentUser.username}</p>
+        <p class='subtitle'>Quarry Purwosari • Divisi Maintenance &amp; Alat Berat<br>Waktu Cetak: ${nowStr} | Dibuat Oleh: ${signatories.pembuatName} (${signatories.pembuatJabatan})</p>
 
         <table>
           <tr><td style="width: 25%; background:#f8fafc;"><strong>No. Maintenance Order (MO):</strong></td><td><strong>${moNumber}</strong> (Notif: ${notifNumber})</td></tr>
@@ -199,19 +209,19 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
         <table class="sig-table">
           <tr>
             <td>
-              Dibuat Oleh (Pemohon),<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Mekanik / Admin Workshop
+              Yang Membuat,<br><br><br><br>
+              <strong>( ${signatories.pembuatName} )</strong><br>
+              ${signatories.pembuatJabatan || 'Administrasi'}
             </td>
             <td>
               Diperiksa Oleh,<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Supervisor Maintenance
+              <strong>( ${signatories.diperiksaName} )</strong><br>
+              ${signatories.diperiksaJabatan || 'Supervisor Maintenance'}
             </td>
             <td>
-              Disetujui Oleh (Head Office Malang),<br><br><br><br>
-              <strong>( ............................................ )</strong><br>
-              Logistik / Purchasing / Ka. Maintenance
+              Diketahui Oleh,<br><br><br><br>
+              <strong>( ${signatories.diketahuiName} )</strong><br>
+              ${signatories.diketahuiJabatan || 'Kabag Workshop'}
             </td>
           </tr>
         </table>
@@ -486,35 +496,35 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
             <div className="pt-6 border-t-2 border-stone-300">
               <div className="grid grid-cols-3 gap-4 text-center font-mono text-[11px] text-stone-800">
                 <div className="space-y-1">
-                  <span className="block font-bold">Dibuat Oleh (Pemohon),</span>
-                  <span className="text-[10px] text-stone-500 block">Mekanik / Admin Workshop</span>
+                  <span className="block font-bold">Yang Membuat,</span>
+                  <span className="text-[10px] text-stone-500 block">{signatories.pembuatJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">
-                    ( {currentUser.fullName || currentUser.username || 'Mekanik Workshop'} )
+                    ( {signatories.pembuatName} )
                   </strong>
                 </div>
 
                 <div className="space-y-1">
                   <span className="block font-bold">Diperiksa Oleh,</span>
-                  <span className="text-[10px] text-stone-500 block">Supervisor Maintenance Quarry</span>
+                  <span className="text-[10px] text-stone-500 block">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">
-                    ( ............................................ )
+                    ( {signatories.diperiksaName} )
                   </strong>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="block font-bold">Disetujui Oleh,</span>
-                  <span className="text-[10px] text-rose-700 font-bold block uppercase">Head Office Malang</span>
+                  <span className="block font-bold">Diketahui Oleh,</span>
+                  <span className="text-[10px] text-rose-700 font-bold block uppercase">{signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan / Stempel )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">
-                    ( ............................................ )
+                    ( {signatories.diketahuiName} )
                   </strong>
                 </div>
               </div>

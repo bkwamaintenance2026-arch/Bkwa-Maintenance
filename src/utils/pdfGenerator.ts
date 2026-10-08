@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BreakdownRecord, BreakdownPartJasaItem, P2HRecord, UserAccount } from '../types';
+import { ReportSignatories } from './reportSignatories';
 
 /**
  * Utility untuk mengekspor Formulir Permintaan Part & Jasa Breakdown ke PDF
@@ -9,7 +10,8 @@ import { BreakdownRecord, BreakdownPartJasaItem, P2HRecord, UserAccount } from '
 export const exportPartRequirementToPDF = (
   breakdown: BreakdownRecord,
   parts: BreakdownPartJasaItem[],
-  currentUser: UserAccount
+  currentUser: UserAccount,
+  signatories?: Partial<ReportSignatories>
 ) => {
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -225,40 +227,47 @@ export const exportPartRequirementToPDF = (
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
-  // Kolom 1: Dibuat Oleh (Pemohon)
-  doc.text('Dibuat Oleh (Pemohon),', 42, sigBoxY, { align: 'center' });
+  const namaPembuat = signatories?.pembuatName || currentUser.fullName || currentUser.username || 'Admin Workshop';
+  const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
+  const namaDiperiksa = signatories?.diperiksaName || 'Supervisor Maintenance';
+  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Supervisor Maintenance';
+  const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
+  const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
+
+  // Kolom 1: Yang Membuat (Admin yang ditunjuk - Jabatan Administrasi)
+  doc.text('Yang Membuat,', 42, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text('Mekanik / Admin Workshop', 42, sigBoxY + 4, { align: 'center' });
+  doc.text(jabatanPembuat, 42, sigBoxY + 4, { align: 'center' });
   doc.line(20, sigBoxY + 22, 64, sigBoxY + 22);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${currentUser.fullName || currentUser.username || 'Mekanik Workshop'} )`, 42, sigBoxY + 26, { align: 'center' });
+  doc.text(`( ${namaPembuat} )`, 42, sigBoxY + 26, { align: 'center' });
 
-  // Kolom 2: Diperiksa Oleh
+  // Kolom 2: Diperiksa Oleh (SPV / Kabag Workshop)
   doc.setFont('helvetica', 'normal');
   doc.text('Diperiksa Oleh,', 105, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text('Supervisor Maintenance Quarry', 105, sigBoxY + 4, { align: 'center' });
+  doc.text(jabatanDiperiksa, 105, sigBoxY + 4, { align: 'center' });
   doc.line(83, sigBoxY + 22, 127, sigBoxY + 22);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text('( ............................................ )', 105, sigBoxY + 26, { align: 'center' });
+  doc.text(`( ${namaDiperiksa} )`, 105, sigBoxY + 26, { align: 'center' });
 
-  // Kolom 3: Disetujui Oleh (Head Office Malang)
+  // Kolom 3: Diketahui Oleh (Kabag Workshop) / Disetujui Head Office Malang
   doc.setFont('helvetica', 'normal');
-  doc.text('Disetujui Oleh,', 168, sigBoxY, { align: 'center' });
+  doc.text('Diketahui Oleh,', 168, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(190, 18, 60);
-  doc.text('Head Office Malang', 168, sigBoxY + 4, { align: 'center' });
+  doc.text(jabatanDiketahui, 168, sigBoxY + 4, { align: 'center' });
   doc.line(146, sigBoxY + 22, 190, sigBoxY + 22);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text('( ............................................ )', 168, sigBoxY + 26, { align: 'center' });
+  doc.text(`( ${namaDiketahui} )`, 168, sigBoxY + 26, { align: 'center' });
 
   // Footer on all pages
   const totalPages = doc.getNumberOfPages();

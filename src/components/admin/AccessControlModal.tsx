@@ -65,6 +65,10 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
   const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
 
+  // Username & Phone edit states
+  const [editingUsernameUserId, setEditingUsernameUserId] = useState<string | null>(null);
+  const [newUsernameInput, setNewUsernameInput] = useState<string>('');
+
   // New user form state
   const [newUserData, setNewUserData] = useState({
     username: '',
@@ -270,28 +274,62 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     }
   };
 
+  // Handler Simpan Perubahan Username / No HP
+  const handleSaveNewUsername = (targetUser: UserAccount) => {
+    if (!newUsernameInput.trim()) {
+      setFeedback({ type: 'error', text: 'Username / No HP tidak boleh kosong!' });
+      return;
+    }
+    const cleanVal = newUsernameInput.trim();
+    const cleanDigits = cleanVal.replace(/[^0-9]/g, '');
+    const cleanU = cleanDigits || cleanVal.toLowerCase();
+    const success = updateUserAccount(targetUser.id, { 
+      username: cleanU, 
+      phone: cleanVal 
+    });
+    if (success) {
+      setFeedback({ 
+        type: 'success', 
+        text: `Username/No HP untuk ${targetUser.fullName} berhasil diperbarui menjadi: @${cleanU}` 
+      });
+      setEditingUsernameUserId(null);
+      setNewUsernameInput('');
+      onRefreshUsers();
+    } else {
+      setFeedback({ type: 'error', text: 'Gagal memperbarui Username/No HP.' });
+    }
+  };
+
   // Handler Register Karyawan Baru
   const handleCreateNewUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserData.username.trim() || !newUserData.fullName.trim() || !newUserData.password.trim()) {
-      setFeedback({ type: 'error', text: 'Nama lengkap, username, dan password wajib diisi!' });
+    const phoneInput = newUserData.phone.trim();
+    const phoneClean = phoneInput.replace(/[^0-9]/g, '');
+    // Prioritaskan No HP sebagai username
+    const usernameInput = (newUserData.username.trim() || phoneClean || newUserData.fullName.trim().toLowerCase().replace(/[^a-z0-9]/g, '')).toLowerCase();
+
+    if (!usernameInput || !newUserData.fullName.trim() || !newUserData.password.trim()) {
+      setFeedback({ type: 'error', text: 'Nama lengkap, No HP / Username, dan Password wajib diisi!' });
       return;
     }
 
     const res = registerKaryawanUser({
-      username: newUserData.username.trim().toLowerCase(),
+      username: usernameInput,
       fullName: newUserData.fullName.trim(),
       password: newUserData.password.trim(),
       role: 'KARYAWAN',
       department: newUserData.department,
-      phone: newUserData.phone.trim() || '-',
+      phone: phoneInput || usernameInput,
       status: 'AKTIF',
       accessLevel: newUserData.accessLevel,
       modulePermissions: newUserData.modulePermissions,
     });
 
     if (res.success) {
-      setFeedback({ type: 'success', text: res.message });
+      setFeedback({ 
+        type: 'success', 
+        text: `Akun ${newUserData.fullName} berhasil didaftarkan! User dapat login menggunakan No HP / Username: "${usernameInput}" dan Password: "${newUserData.password.trim()}". Hak Akses: ${newUserData.accessLevel === 'BISA_MENGISI' ? 'Bisa Mengisi' : 'Hanya View'}.` 
+      });
       setNewUserData({
         username: '',
         fullName: '',
@@ -314,8 +352,8 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/85 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-stone-900 border border-stone-700 rounded-3xl shadow-2xl shadow-stone-950/95 my-6 overflow-hidden text-stone-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/85 backdrop-blur-sm p-2 sm:p-4 md:p-6 flex justify-center items-start">
+      <div className="relative w-full max-w-4xl bg-stone-900 border border-stone-700 rounded-3xl shadow-2xl shadow-stone-950/95 my-2 sm:my-6 text-stone-100 flex flex-col max-h-[92vh] overflow-hidden">
         
         {/* MODAL HEADER */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-stone-800 bg-stone-900/95 shrink-0">
@@ -375,8 +413,8 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           </div>
         )}
 
-        {/* STATISTIK RINGKASAN & BANNER SINKRONISASI MANPOWER */}
-        <div className="p-6 pb-2 space-y-4 shrink-0">
+        {/* MODAL BODY (Single smooth scrollable container from top to bottom) */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 overscroll-contain">
           
           {/* BANNER REKOMENDASI RBAC OTOMATIS: SINKRONISASI MANPOWER KE AKUN LOGIN */}
           <div className="p-4 bg-gradient-to-r from-amber-950/40 via-stone-900 to-sky-950/40 border border-amber-800/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-inner">
@@ -458,14 +496,14 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
             </div>
           </div>
 
-          {/* FILTER & TOMBOL TAMBAH PENGGUNA */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+          {/* STICKY FILTER & TOMBOL TAMBAH PENGGUNA */}
+          <div className="sticky top-0 z-20 bg-stone-900/95 backdrop-blur-md py-2 border-b border-stone-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-500" />
                 <input
                   type="text"
-                  placeholder="Cari nama, username, jabatan..."
+                  placeholder="Cari nama, username, jabatan, No HP..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -547,7 +585,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                     <UserPlus className="w-4 h-4" />
                     <span>Daftarkan Akun Pengguna Baru &amp; Tentukan Password</span>
                   </h4>
-                  <p className="text-[11px] text-stone-400">Pilih template cepat di bawah atau isi manual.</p>
+                  <p className="text-[11px] text-stone-400">Username otomatis menggunakan No HP, Password ditentukan oleh Anda (Admin).</p>
                 </div>
 
                 {/* Quick Presets */}
@@ -609,10 +647,33 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="misal: Owner BKWA / Budi Santoso"
+                    placeholder="misal: Budi Santoso"
                     value={newUserData.fullName}
                     onChange={(e) => setNewUserData({ ...newUserData, fullName: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-stone-300 mb-1 flex items-center justify-between">
+                    <span>No. WhatsApp / HP <span className="text-amber-400">*</span></span>
+                    <span className="text-[10px] text-amber-400 font-normal">Otomatis jadi Username</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="0812xxxxxxxx"
+                    value={newUserData.phone}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const cleanDigits = val.replace(/[^0-9]/g, '');
+                      setNewUserData(prev => ({
+                        ...prev,
+                        phone: val,
+                        username: cleanDigits || val.toLowerCase()
+                      }));
+                    }}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
 
@@ -623,7 +684,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="misal: owner_bkwa"
+                    placeholder="misal: 08123456789 atau username"
                     value={newUserData.username}
                     onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -631,13 +692,14 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Password Akun <span className="text-amber-400">*</span>
+                  <label className="block text-xs font-medium text-stone-300 mb-1 flex items-center justify-between">
+                    <span>Password Akun <span className="text-amber-400">*</span></span>
+                    <span className="text-[10px] text-stone-400 font-normal">Dibuat oleh Admin</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="misal: owner123 / admin123"
+                    placeholder="misal: pass123 / admin123"
                     value={newUserData.password}
                     onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -650,22 +712,9 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="misal: Owner / Administrasi / Mekanik"
+                    placeholder="misal: Administrasi / Mekanik / Operasional"
                     value={newUserData.department}
                     onChange={(e) => setNewUserData({ ...newUserData, department: e.target.value })}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1">
-                    No. WhatsApp / HP
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="0812-xxxx-xxxx"
-                    value={newUserData.phone}
-                    onChange={(e) => setNewUserData({ ...newUserData, phone: e.target.value })}
                     className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
@@ -740,10 +789,9 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
               </div>
             </form>
           )}
-        </div>
 
-        {/* DAFTAR PENGGUNA & KONTROL HAK AKSES */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3">
+          {/* DAFTAR PENGGUNA & KONTROL HAK AKSES */}
+          <div className="space-y-3 pt-2">
           <div className="text-[11px] font-mono text-stone-400 uppercase tracking-wider mb-1 flex items-center justify-between">
             <span>Daftar Pengguna & Status Otorisasi ({filteredUsers.length})</span>
             <span className="text-stone-500 text-[10px]">Klik tombol akses untuk mengubah izin secara instan</span>
@@ -845,14 +893,64 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs text-stone-400">
-                          <span className="font-mono text-stone-300 font-semibold">@{user.username}</span>
-                          <span>•</span>
-                          <span className="truncate max-w-[180px]">{user.department || user.jabatan || 'Operasional'}</span>
-                          {user.phone && user.phone !== '-' && (
+                        {/* USERNAME & NO HP DISPLAY & EDIT */}
+                        <div className="flex items-center gap-2 text-xs text-stone-400 flex-wrap">
+                          {editingUsernameUserId === user.id ? (
+                            <div className="flex items-center gap-1.5 py-0.5 bg-stone-950 p-1.5 rounded-xl border border-amber-500/60">
+                              <span className="text-[10px] text-amber-400 font-mono font-bold">No HP / Username:</span>
+                              <input
+                                type="text"
+                                placeholder="08xxxxxxxx"
+                                value={newUsernameInput}
+                                onChange={(e) => setNewUsernameInput(e.target.value)}
+                                className="bg-stone-900 border border-amber-500 rounded-lg px-2 py-0.5 text-xs text-stone-100 font-mono w-36 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveNewUsername(user)}
+                                className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] rounded-lg transition"
+                              >
+                                Simpan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingUsernameUserId(null);
+                                  setNewUsernameInput('');
+                                }}
+                                className="px-2 py-0.5 bg-stone-800 text-stone-400 hover:text-stone-200 text-[11px] rounded-lg transition"
+                              >
+                                Batal
+                              </button>
+                            </div>
+                          ) : (
                             <>
+                              <span className="font-mono text-stone-200 font-bold bg-stone-950/80 px-2 py-0.5 rounded border border-stone-800">
+                                Username: @{user.username}
+                              </span>
+                              {user.phone && user.phone !== '-' && (
+                                <span className="font-mono text-amber-300/90 bg-stone-950/60 px-2 py-0.5 rounded text-[11px] border border-amber-950/60">
+                                  📞 {user.phone}
+                                </span>
+                              )}
+                              {!isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingUsernameUserId(user.id);
+                                    setNewUsernameInput(user.phone && user.phone !== '-' ? user.phone : user.username);
+                                  }}
+                                  className="text-[10px] text-amber-400/90 hover:text-amber-300 hover:underline flex items-center gap-1"
+                                  title="Ganti No HP / Username untuk login"
+                                >
+                                  <Phone className="w-3 h-3 text-amber-400" />
+                                  <span>Ubah No HP</span>
+                                </button>
+                              )}
                               <span>•</span>
-                              <span className="font-mono text-[11px] text-stone-500">{user.phone}</span>
+                              <span className="text-[11px] text-stone-400 font-mono">Role: <strong className="text-stone-300 font-semibold">{user.role || 'KARYAWAN'}</strong></span>
+                              <span>•</span>
+                              <span className="truncate max-w-[180px] text-stone-400">{user.department || user.jabatan || 'Operasional'}</span>
                             </>
                           )}
                         </div>
@@ -1124,6 +1222,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
             })}
           </div>
         </div>
+      </div>
 
         {/* MODAL FOOTER */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-stone-800 bg-stone-900/95 shrink-0 text-xs text-stone-400">

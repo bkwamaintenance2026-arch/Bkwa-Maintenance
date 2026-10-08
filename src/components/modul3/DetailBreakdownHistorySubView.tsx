@@ -6,7 +6,8 @@ import {
   BreakdownComponentOption, 
   BREAKDOWN_COMPONENT_OPTIONS,
   UserAccount,
-  SparePartTransaction
+  SparePartTransaction,
+  ManpowerData
 } from '../../types';
 import { getAllSparePartTransactions, isDeveloper } from '../../utils/storage';
 import { 

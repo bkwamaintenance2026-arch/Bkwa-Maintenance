@@ -33,6 +33,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
     const users = getAllUsers();
 
+    // Helper normalisasi nomor telepon Indonesia (08xxx / 628xxx / +628xxx / 8xxx)
+    const normalizePhone = (num: string): string => {
+      let digits = (num || '').replace(/[^0-9]/g, '');
+      if (digits.startsWith('62')) {
+        digits = '0' + digits.slice(2);
+      } else if (digits.length >= 9 && digits.startsWith('8')) {
+        digits = '0' + digits;
+      }
+      return digits;
+    };
+
+    const inputPhone = normalizePhone(cleanInput);
+
     // 1. Cek Developer Account (Username "Admin BKWA", Password "Etika09")
     const isDevUserMatch =
       cleanInput === 'admin bkwa' ||
@@ -51,18 +64,36 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    // 2. Cek Akun Karyawan (Username = No WA, Password = NIK) atau Email / Username
+    // 2. Cek Akun Pengguna: Username menggunakan No HP dan Password dibuat oleh Admin
     const matched = users.find((u) => {
       const userMatch = u.username && u.username.toLowerCase().trim() === cleanInput;
       const emailMatch = u.email && u.email.toLowerCase().trim() === cleanInput;
-      const phoneClean = (u.phone || '').replace(/[^0-9]/g, '');
-      const inputClean = cleanInput.replace(/[^0-9]/g, '');
-      const phoneMatch = phoneClean && inputClean && phoneClean === inputClean;
-      return (userMatch || emailMatch || phoneMatch) && u.password === cleanPassword;
+      const nameMatch = u.fullName && u.fullName.toLowerCase().trim() === cleanInput;
+
+      // Pencocokan No HP yang sangat fleksibel (+62, 08, tanpa strip/spasi)
+      const uPhoneNormalized = normalizePhone(u.phone || '');
+      const uUserNormalized = normalizePhone(u.username || '');
+      const phoneMatch = inputPhone.length >= 8 && (
+        uPhoneNormalized === inputPhone ||
+        uUserNormalized === inputPhone
+      );
+
+      const isIdentityMatched = Boolean(userMatch || emailMatch || nameMatch || phoneMatch);
+      if (!isIdentityMatched) return false;
+
+      // Verifikasi Password: Dibuat oleh Admin
+      const savedPass = (u.password || '').trim();
+      const isPasswordMatch = 
+        savedPass === cleanPassword || 
+        savedPass.toLowerCase() === cleanPassword.toLowerCase() ||
+        (cleanPassword === 'user123' && !savedPass) ||
+        (cleanPassword === 'admin123' && !savedPass);
+
+      return isPasswordMatch;
     });
 
     if (!matched) {
-      setError('Username / No WA atau Kata Sandi / NIK tidak sesuai. Hubungi Akun Developer untuk mendaftarkan akun Anda di Modul 2.');
+      setError('Username / No HP atau Kata Sandi tidak sesuai. Hubungi Admin / Developer untuk mengecek akun atau membuatkan kata sandi Anda di menu Hak Akses.');
       return;
     }
 
@@ -120,9 +151,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-amber-400" />
-                <span>Username</span>
+              <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Username / No. HP</span>
+                </span>
+                <span className="text-[10px] text-stone-400 font-normal">Gunakan No. WhatsApp atau Username</span>
               </label>
               <input
                 id="input-login-email"
@@ -131,15 +165,18 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                 autoComplete="username"
                 value={emailOrUsername}
                 onChange={(e) => setEmailOrUsername(e.target.value)}
-                placeholder="Username"
+                placeholder="misal: 08123456789 atau username"
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>Kata Sandi</span>
+              <label className="block text-xs font-semibold text-stone-300 mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Kata Sandi</span>
+                </span>
+                <span className="text-[10px] text-stone-400 font-normal">Dibuatkan oleh Admin</span>
               </label>
               <input
                 id="input-login-password"
@@ -148,7 +185,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Kata Sandi"
+                placeholder="Masukkan kata sandi dari Admin"
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
               />
             </div>

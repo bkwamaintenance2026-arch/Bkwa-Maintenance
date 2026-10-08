@@ -183,33 +183,40 @@ export function getAllUsers(): UserAccount[] {
       if (mpData) {
         const mpList: ManpowerData[] = JSON.parse(mpData);
         mpList.forEach((mp) => {
-          if (mp.isUserAccountActive && mp.noWa && mp.nik) {
-            const cleanWa = mp.noWa.trim();
-            const cleanNik = mp.nik.trim();
+          if (mp.noWa || (mp.nik && mp.isUserAccountActive)) {
+            const cleanWa = (mp.noWa || '').trim();
+            const cleanNik = (mp.nik || '').trim();
+            const loginUsername = cleanWa ? cleanWa.replace(/[^0-9]/g, '') || cleanWa : (cleanNik || 'karyawan');
             const existingIdx = parsed.findIndex(
-              (u) => u.manpowerId === mp.id || (u.username && u.username.trim() === cleanWa)
+              (u) => u.manpowerId === mp.id || 
+                    (cleanWa && u.phone && u.phone.trim() === cleanWa) ||
+                    (cleanWa && u.username && u.username.trim() === cleanWa) ||
+                    (u.username && u.username.trim() === loginUsername)
             );
             if (existingIdx !== -1) {
-              parsed[existingIdx].username = cleanWa;
-              parsed[existingIdx].password = cleanNik;
-              parsed[existingIdx].fullName = mp.nama || cleanWa;
-              parsed[existingIdx].phone = cleanWa;
+              // Pertahankan password yang telah dibuat oleh Admin, jangan ditimpa!
+              const currentPassword = parsed[existingIdx].password || cleanNik || 'bkwa123';
+              parsed[existingIdx].username = parsed[existingIdx].username || loginUsername;
+              parsed[existingIdx].password = currentPassword;
+              parsed[existingIdx].fullName = mp.nama || parsed[existingIdx].fullName || cleanWa;
+              parsed[existingIdx].phone = cleanWa || parsed[existingIdx].phone || '-';
               parsed[existingIdx].manpowerId = mp.id;
-              parsed[existingIdx].permissions = mp.permissions;
-              parsed[existingIdx].status = 'AKTIF';
+              parsed[existingIdx].role = parsed[existingIdx].role || 'KARYAWAN';
+              parsed[existingIdx].permissions = mp.permissions || parsed[existingIdx].permissions;
+              parsed[existingIdx].status = parsed[existingIdx].status || 'AKTIF';
               modified = true;
-            } else {
+            } else if (mp.isUserAccountActive && cleanWa) {
               parsed.push({
                 id: `usr-mp-${mp.id}`,
-                username: cleanWa,
+                username: loginUsername,
                 fullName: mp.nama || cleanWa,
                 role: 'KARYAWAN',
-                accountTier: 'MEMBER',
-                password: cleanNik,
+                accountTier: mp.jabatan === 'ADMINISTRASI' ? 'ADMIN' : 'MEMBER',
+                password: cleanNik || 'bkwa123',
                 department: typeof mp.jabatan === 'string' ? mp.jabatan : 'Manpower',
                 phone: cleanWa,
                 status: 'AKTIF',
-                accessLevel: 'BISA_MENGISI',
+                accessLevel: mp.jabatan === 'ADMINISTRASI' ? 'BISA_MENGISI' : 'HANYA_VIEW',
                 manpowerId: mp.id,
                 permissions: mp.permissions,
                 createdAt: mp.createdAt || new Date().toISOString(),
@@ -536,15 +543,20 @@ export function syncAllManpowerToUserAccounts(): {
         users[existingIndex].jabatan = mp.jabatan;
         users[existingIndex].department = mp.jabatan || 'Workshop & Quarry';
         users[existingIndex].phone = mp.noWa || users[existingIndex].phone;
+        users[existingIndex].role = users[existingIndex].role || 'KARYAWAN';
+        // Password yang sudah dibuat admin tidak boleh ditimpa
+        users[existingIndex].password = users[existingIndex].password || (isAdministrasi ? 'admin123' : 'user123');
         users[existingIndex].accessLevel = targetAccessLevel;
         users[existingIndex].modulePermissions = targetPermissions;
         updatedCount++;
       }
     } else {
-      // Buat akun baru
-      // Tentukan username unik yang rapi
+      // Buat akun baru: Utamakan No HP sebagai Username sesuai instruksi user
       let baseUsername = '';
-      if (isOwner) {
+      const cleanWa = (mp.noWa || '').replace(/[^0-9]/g, '');
+      if (cleanWa) {
+        baseUsername = cleanWa;
+      } else if (isOwner) {
         baseUsername = 'owner_bkwa';
       } else if (mp.nik && mp.nik.trim()) {
         baseUsername = mp.nik.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -561,7 +573,7 @@ export function syncAllManpowerToUserAccounts(): {
         counter++;
       }
 
-      // Tentukan password awal
+      // Tentukan password awal (Admin dapat mengubahnya kapan saja di menu Hak Akses)
       let defaultPassword = 'user123';
       if (isOwner) {
         defaultPassword = 'owner123';
