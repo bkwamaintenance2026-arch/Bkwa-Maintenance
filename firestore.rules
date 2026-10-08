@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Test connection endpoint for connection verification
+    match /test/connection {
+      allow read, write: if true;
+    }
+
+    // Dokumen Akun User Sistem BKWA
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Registrasi Unit Alat Berat & Armada
+    match /units/{unitId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Manpower & Personil Workshop
+    match /manpower/{manpowerId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Breakdown Record & History Perbaikan
+    match /breakdowns/{breakdownId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Fuel, Oil, Grease (FOG) & Out Field Fuel
+    match /fog_records/{fogId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Pemeriksaan Harian P2H
+    match /p2h_records/{p2hId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Inventory Spare Part
+    match /spare_parts/{partId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Tyre Management
+    match /tyre_records/{tyreId} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Activity Logs
+    match /activity_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

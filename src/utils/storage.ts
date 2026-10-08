@@ -49,6 +49,7 @@ import {
   INITIAL_KARYAWAN_USERS,
   INITIAL_MANPOWER_LIST,
 } from '../data/mockUnits';
+import { syncItemToFirestore, deleteItemFromFirestore } from '../services/firestoreSync';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'bkwa_current_user',
@@ -455,6 +456,7 @@ export function registerKaryawanUser(newUser: Omit<UserAccount, 'id' | 'createdA
 
   users.push(userRecord);
   saveUsers(users);
+  syncItemToFirestore('users', userRecord.id, userRecord);
 
   logActivity({
     aksi: 'REGISTRASI',
@@ -477,6 +479,7 @@ export function updateUserAccount(id: string, updates: Partial<UserAccount>): bo
 
   users[index] = { ...users[index], ...updates };
   saveUsers(users);
+  syncItemToFirestore('users', id, users[index]);
   return true;
 }
 
@@ -489,6 +492,7 @@ export function updateUserPassword(id: string, newPassword: string): { success: 
 
   users[index].password = newPassword.trim();
   saveUsers(users);
+  syncItemToFirestore('users', id, users[index]);
 
   logActivity({
     aksi: 'UPDATE',
@@ -629,6 +633,7 @@ export function deleteUserAccount(id: string): { success: boolean; message: stri
 
   const updated = users.filter((u) => u.id !== id);
   saveUsers(updated);
+  deleteItemFromFirestore('users', id);
   return { success: true, message: `Akun ${target.fullName} berhasil dihapus.` };
 }
 
@@ -693,6 +698,7 @@ export function registerUnit(unitData: Omit<AssetUnit, 'id' | 'tanggalRegistrasi
 
   units.unshift(newUnit);
   saveUnits(units);
+  syncItemToFirestore('units', newUnit.id, newUnit);
 
   logActivity({
     aksi: 'REGISTRASI',
@@ -751,6 +757,7 @@ export function updateUnit(
 
   units[index] = updatedUnit;
   saveUnits(units);
+  syncItemToFirestore('units', id, updatedUnit);
 
   logActivity({
     aksi: 'UPDATE',
@@ -774,6 +781,7 @@ export function deleteUnit(
 
   const filtered = units.filter((u) => u.id !== id);
   saveUnits(filtered);
+  deleteItemFromFirestore('units', id);
 
   logActivity({
     aksi: 'HAPUS',
@@ -833,6 +841,7 @@ export function registerManpower(data: Omit<ManpowerData, 'id' | 'createdAt' | '
 
   list.unshift(newRecord);
   saveManpowerList(list);
+  syncItemToFirestore('manpower', newRecord.id, newRecord);
 
   logActivity({
     aksi: 'REGISTRASI',
@@ -869,6 +878,7 @@ export function updateManpower(
 
   list[index] = updatedRecord;
   saveManpowerList(list);
+  syncItemToFirestore('manpower', id, updatedRecord);
 
   logActivity({
     aksi: 'UPDATE',
@@ -891,6 +901,7 @@ export function deleteManpower(id: string): { success: boolean; message: string 
 
   const filtered = list.filter((m) => m.id !== id);
   saveManpowerList(filtered);
+  deleteItemFromFirestore('manpower', id);
 
   logActivity({
     aksi: 'HAPUS',
@@ -1135,6 +1146,7 @@ export function registerBreakdown(
 
   records.unshift(newRecord);
   saveBreakdownList(records);
+  syncItemToFirestore('breakdowns', newRecord.id, newRecord);
 
   logActivity({
     aksi: 'REGISTRASI',
@@ -1234,6 +1246,7 @@ export function updateBreakdownActivity(
 
   records[index] = updatedRecord;
   saveBreakdownList(records);
+  syncItemToFirestore('breakdowns', id, updatedRecord);
 
   const isCompletedOrReady = newStatus === 'READY' || newStatus === 'LIMIT OPERASI';
 
@@ -1261,6 +1274,7 @@ export function deleteBreakdown(id: string): { success: boolean; message: string
 
   const filtered = records.filter((r) => r.id !== id);
   saveBreakdownList(filtered);
+  deleteItemFromFirestore('breakdowns', id);
 
   logActivity({
     aksi: 'HAPUS',
@@ -1421,6 +1435,7 @@ export function addOrUpdateFogDistribution(
     };
     currentList[index] = updatedRecord;
     saveFogDistributionList(currentList);
+    syncItemToFirestore('fog_records', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -1442,6 +1457,7 @@ export function addOrUpdateFogDistribution(
     };
     currentList.unshift(newRecord);
     saveFogDistributionList(currentList);
+    syncItemToFirestore('fog_records', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -1465,6 +1481,7 @@ export function deleteFogDistribution(id: string): { success: boolean; message: 
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveFogDistributionList(filtered);
+  deleteItemFromFirestore('fog_records', id);
 
   logActivity({
     aksi: 'HAPUS',
@@ -2576,6 +2593,7 @@ export function saveP2HRecord(
 
       records[index] = updatedRecord;
       saveAllP2HRecords(records);
+      syncItemToFirestore('p2h_records', existingId, updatedRecord);
 
       logActivity({
         aksi: 'UPDATE',
@@ -2599,6 +2617,7 @@ export function saveP2HRecord(
 
       records.unshift(newRecord);
       saveAllP2HRecords(records);
+      syncItemToFirestore('p2h_records', newRecord.id, newRecord);
 
       logActivity({
         aksi: 'REGISTRASI',
@@ -2628,6 +2647,7 @@ export function deleteP2HRecord(id: string): { success: boolean; message: string
 
     const filtered = records.filter((r) => r.id !== id);
     saveAllP2HRecords(filtered);
+    deleteItemFromFirestore('p2h_records', id);
 
     logActivity({
       aksi: 'HAPUS',

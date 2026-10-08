@@ -1,0 +1,202 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Akun pengguna sistem BKWA Maintenance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 100 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["ADMIN", "KARYAWAN"] },
+        "accountTier": { "type": "string", "enum": ["DEVELOPER", "ADMIN", "KHUSUS", "MEMBER"] },
+        "password": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "jabatan": { "type": "string", "maxLength": 100 },
+        "department": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["AKTIF", "NONAKTIF"] },
+        "accessLevel": { "type": "string", "enum": ["BISA_MENGISI", "HANYA_VIEW"] },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "username", "fullName", "role", "status"]
+    },
+    "AssetUnit": {
+      "title": "AssetUnit",
+      "description": "Data registrasi alat berat dan unit kendaraan PT BKWA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nomorLambung": { "type": "string", "maxLength": 100 },
+        "jenisAlat": { "type": "string", "maxLength": 100 },
+        "merk": { "type": "string", "maxLength": 100 },
+        "model": { "type": "string", "maxLength": 100 },
+        "serialNumber": { "type": "string", "maxLength": 100 },
+        "lokasi": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "maxLength": 100 },
+        "hmKm": { "type": "number" },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "nomorLambung", "jenisAlat", "lokasi", "status"]
+    },
+    "Manpower": {
+      "title": "Manpower",
+      "description": "Data personil manpower dan tim workshop PT BKWA",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nik": { "type": "string", "maxLength": 50 },
+        "nama": { "type": "string", "maxLength": 150 },
+        "jabatan": { "type": "string", "maxLength": 100 },
+        "departemen": { "type": "string", "maxLength": 100 },
+        "lokasi": { "type": "string", "maxLength": 100 },
+        "noWa": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "nik", "nama", "jabatan", "departemen"]
+    },
+    "BreakdownRecord": {
+      "title": "BreakdownRecord",
+      "description": "Laporan breakdown unit dan history perbaikan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nomorLaporan": { "type": "string", "maxLength": 100 },
+        "unitId": { "type": "string", "maxLength": 128 },
+        "unitNomor": { "type": "string", "maxLength": 100 },
+        "tanggalMasuk": { "type": "string", "maxLength": 50 },
+        "tanggalSelesai": { "type": "string", "maxLength": 50 },
+        "statusProgress": { "type": "string", "maxLength": 100 },
+        "statusUnit": { "type": "string", "maxLength": 100 },
+        "lokasi": { "type": "string", "maxLength": 100 },
+        "deskripsiKerusakan": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "unitNomor", "statusProgress"]
+    },
+    "FogRecord": {
+      "title": "FogRecord",
+      "description": "Pencatatan Fuel, Oil & Grease serta Out Field Fuel SPBU",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "jenis": { "type": "string", "maxLength": 50 },
+        "tanggal": { "type": "string", "maxLength": 50 },
+        "unitNomor": { "type": "string", "maxLength": 100 },
+        "liter": { "type": "number" },
+        "lokasi": { "type": "string", "maxLength": 100 },
+        "petugas": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "jenis", "tanggal"]
+    },
+    "P2HRecord": {
+      "title": "P2HRecord",
+      "description": "Pemeriksaan dan Perawatan Harian unit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "nomorDokumen": { "type": "string", "maxLength": 100 },
+        "tanggal": { "type": "string", "maxLength": 50 },
+        "unitNomor": { "type": "string", "maxLength": 100 },
+        "operator": { "type": "string", "maxLength": 100 },
+        "shift": { "type": "string", "maxLength": 20 },
+        "statusKelayakan": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "tanggal", "unitNomor", "operator"]
+    },
+    "SparePart": {
+      "title": "SparePart",
+      "description": "Item inventaris suku cadang workshop",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "kode": { "type": "string", "maxLength": 100 },
+        "nama": { "type": "string", "maxLength": 200 },
+        "partNumber": { "type": "string", "maxLength": 100 },
+        "satuan": { "type": "string", "maxLength": 50 },
+        "stok": { "type": "number" },
+        "lokasi": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "nama", "stok"]
+    },
+    "TyreRecord": {
+      "title": "TyreRecord",
+      "description": "Registrasi dan histori ban kendaraan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "serialNumber": { "type": "string", "maxLength": 100 },
+        "merk": { "type": "string", "maxLength": 100 },
+        "ukuran": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "serialNumber", "status"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Catatan log audit aktivitas pengguna",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tanggal": { "type": "string", "maxLength": 50 },
+        "aksi": { "type": "string", "maxLength": 50 },
+        "user": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "maxLength": 50 },
+        "keterangan": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "tanggal", "aksi", "user"]
+    },
+    "ConnectionTest": {
+      "title": "ConnectionTest",
+      "description": "Tes konektivitas Firestore",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Dokumen akun pengguna"
+    },
+    "/units/{unitId}": {
+      "schema": "AssetUnit",
+      "description": "Dokumen unit aset alat berat dan armada"
+    },
+    "/manpower/{manpowerId}": {
+      "schema": "Manpower",
+      "description": "Dokumen data personil workshop dan manpower"
+    },
+    "/breakdowns/{breakdownId}": {
+      "schema": "BreakdownRecord",
+      "description": "Dokumen laporan kerusakan unit dan breakdown"
+    },
+    "/fog_records/{fogId}": {
+      "schema": "FogRecord",
+      "description": "Dokumen pencatatan BBM, Oli, Grease dan Out Field"
+    },
+    "/p2h_records/{p2hId}": {
+      "schema": "P2HRecord",
+      "description": "Dokumen checklist P2H harian"
+    },
+    "/spare_parts/{partId}": {
+      "schema": "SparePart",
+      "description": "Dokumen item inventory suku cadang"
+    },
+    "/tyre_records/{tyreId}": {
+      "schema": "TyreRecord",
+      "description": "Dokumen inventaris ban alat berat"
+    },
+    "/activity_logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Dokumen audit log aktivitas"
+    },
+    "/test/connection": {
+      "schema": "ConnectionTest",
+      "description": "Dokumen uji coba koneksi Firestore"
+    }
+  }
+}

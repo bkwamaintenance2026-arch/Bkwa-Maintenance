@@ -20,7 +20,8 @@ import {
   BarChart3,
   Calendar,
   Boxes,
-  Disc
+  Disc,
+  Cloud
 } from 'lucide-react';
 
 interface MenuUtamaLauncherProps {
@@ -32,6 +33,7 @@ interface MenuUtamaLauncherProps {
   onSelectModule: (moduleId: number) => void;
   onOpenSheetsSync: () => void;
   onOpenAccessControl: () => void;
+  onOpenCloudSync?: () => void;
   sheetsConnected: boolean;
 }
 
@@ -44,6 +46,7 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
   onSelectModule,
   onOpenSheetsSync,
   onOpenAccessControl,
+  onOpenCloudSync,
   sheetsConnected,
 }) => {
   const tier = currentUser.accountTier || (currentUser.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
@@ -255,6 +258,19 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
               <span>{sheetsConnected ? 'Google Sheets Terhubung' : 'Sinkronisasi Sheets'}</span>
             </button>
+
+            {/* Cloud Firestore & Vercel Info Button */}
+            {onOpenCloudSync && (
+              <button
+                id="btn-main-cloud-sync"
+                type="button"
+                onClick={onOpenCloudSync}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-950/60 hover:bg-sky-900/70 border border-sky-700/60 text-sky-300 transition"
+              >
+                <Cloud className="w-4 h-4 text-sky-400" />
+                <span>Cloud Firestore (Realtime)</span>
+              </button>
+            )}
 
             {/* Developer Access Control Modal */}
             {tier === 'DEVELOPER' && (

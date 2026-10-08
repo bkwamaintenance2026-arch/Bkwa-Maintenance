@@ -1,7 +1,7 @@
 import React from 'react';
 import { UserAccount } from '../types';
 import { BkwaLogo } from './BkwaLogo';
-import { Home, LogOut, MapPin, ShieldCheck, Eye, Edit3, ArrowLeft, FileSpreadsheet } from 'lucide-react';
+import { Home, LogOut, MapPin, ShieldCheck, Eye, Edit3, ArrowLeft, FileSpreadsheet, Cloud } from 'lucide-react';
 import { getSavedSpreadsheetId } from '../services/googleSheets';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
   onGoHome?: () => void;
   onOpenAccessControl?: () => void;
   onOpenGoogleSheetsSync?: () => void;
+  onOpenCloudSync?: () => void;
   isSimulating?: boolean;
   onExitSimulation?: () => void;
 }
@@ -20,6 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onGoHome,
   onOpenAccessControl,
   onOpenGoogleSheetsSync,
+  onOpenCloudSync,
   isSimulating,
   onExitSimulation,
 }) => {
@@ -117,6 +119,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               );
             })()}
+
+            {/* Tombol Server Cloud Firebase Firestore & Realtime Sync */}
+            {onOpenCloudSync && (
+              <button
+                id="btn-nav-cloud-firestore"
+                type="button"
+                onClick={onOpenCloudSync}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-sky-300 bg-sky-950/70 hover:bg-sky-500 hover:text-stone-950 border border-sky-600/70 transition active:scale-95 shadow-lg shadow-sky-950/40 group relative"
+                title="Cloud Firebase Firestore Terhubung: Realtime Multi-Device & Kapasitas Database"
+              >
+                <div className="relative">
+                  <Cloud className="w-4 h-4 text-sky-400 group-hover:text-stone-950" />
+                  <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                </div>
+                <span className="hidden md:inline">Cloud DB</span>
+                <span className="md:hidden">Cloud</span>
+                <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-500 text-stone-950 ml-0.5">
+                  Live
+                </span>
+              </button>
+            )}
 
             {/* KHUSUS AKUN DEVELOPER: MENU TAMBAHAN PENGATURAN HAK AKSES USER */}
             {isAdmin && onOpenAccessControl && (

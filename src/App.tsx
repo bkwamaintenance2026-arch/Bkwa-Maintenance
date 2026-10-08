@@ -86,6 +86,8 @@ import { LoginModal } from './components/LoginModal';
 import { BkwaLogo } from './components/BkwaLogo';
 import { AccessControlModal } from './components/admin/AccessControlModal';
 import { GoogleSheetsSyncModal } from './components/admin/GoogleSheetsSyncModal';
+import { CloudSyncModal } from './components/admin/CloudSyncModal';
+import { setupRealtimeFirestoreListeners } from './services/firestoreSync';
 import { getSavedSpreadsheetId } from './services/googleSheets';
 
 export default function App() {
@@ -122,6 +124,7 @@ export default function App() {
   const [usersList, setUsersList] = useState<UserAccount[]>([]);
   const [isAccessControlOpen, setIsAccessControlOpen] = useState<boolean>(false);
   const [isGoogleSheetsSyncOpen, setIsGoogleSheetsSyncOpen] = useState<boolean>(false);
+  const [isCloudSyncOpen, setIsCloudSyncOpen] = useState<boolean>(false);
   const [originalAdminUser, setOriginalAdminUser] = useState<UserAccount | null>(null);
 
   // Toast notification
@@ -134,13 +137,22 @@ export default function App() {
     }, 4000);
   };
 
-  // Initial load
+  // Initial load and Realtime Cloud Firestore sync
   useEffect(() => {
     const user = getCurrentUser();
     if (user) {
       setLocalCurrentUser(user);
     }
     refreshAllData();
+
+    // Aktifkan Real-Time Listener Cloud Firestore (Multi-Device Sync)
+    const unsubFirestore = setupRealtimeFirestoreListeners(() => {
+      refreshAllData();
+    });
+
+    return () => {
+      unsubFirestore();
+    };
   }, []);
 
   const refreshAllData = () => {
@@ -633,6 +645,7 @@ export default function App() {
         onGoHome={handleGoHome}
         onOpenAccessControl={() => setIsAccessControlOpen(true)}
         onOpenGoogleSheetsSync={() => setIsGoogleSheetsSyncOpen(true)}
+        onOpenCloudSync={() => setIsCloudSyncOpen(true)}
         isSimulating={!!originalAdminUser}
         onExitSimulation={handleExitSimulation}
       />
@@ -661,6 +674,7 @@ export default function App() {
             onSelectModule={handleSelectModule}
             onOpenSheetsSync={() => setIsGoogleSheetsSyncOpen(true)}
             onOpenAccessControl={() => setIsAccessControlOpen(true)}
+            onOpenCloudSync={() => setIsCloudSyncOpen(true)}
             sheetsConnected={!!getSavedSpreadsheetId()}
           />
         ) : activeModuleId === 1 ? (
@@ -809,6 +823,13 @@ export default function App() {
         fuelDistributions={fuelDistributions}
         oilDistributions={oilDistributions}
         p2hRecords={p2hRecords}
+      />
+
+      {/* Modal Server Cloud Firebase Firestore & Panduan Vercel */}
+      <CloudSyncModal
+        isOpen={isCloudSyncOpen}
+        onClose={() => setIsCloudSyncOpen(false)}
+        onDataRefreshed={refreshAllData}
       />
     </div>
   );
