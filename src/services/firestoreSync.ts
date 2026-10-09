@@ -496,6 +496,158 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
   }
 }
 
+// Tarik (Download/Fetch) SELURUH data dari Cloud Firestore ke browser ini secara instan
+export async function downloadAllFirestoreDataToLocal(): Promise<{ 
+  success: boolean; 
+  message: string; 
+  count: number; 
+  breakdown: Record<string, number> 
+}> {
+  updateStatus({ isSyncing: true, error: null });
+  let totalCount = 0;
+  const breakdown: Record<string, number> = {};
+
+  const pullCollection = async (collectionName: string, localStorageKey: string, entityType: string) => {
+    try {
+      const snap = await getDocs(collection(db, collectionName));
+      const docsData: any[] = [];
+      snap.forEach((d) => docsData.push(d.data()));
+      breakdown[collectionName] = docsData.length;
+
+      if (docsData.length > 0) {
+        const localRaw = localStorage.getItem(localStorageKey);
+        const localData = localRaw ? JSON.parse(localRaw) : [];
+        const combined = [...(Array.isArray(localData) ? localData : []), ...docsData];
+        const deduped = deduplicateEntityList(entityType, combined);
+        localStorage.setItem(localStorageKey, JSON.stringify(deduped));
+        totalCount += docsData.length;
+      }
+    } catch (e) {
+      console.warn(`Gagal menarik koleksi ${collectionName}:`, e);
+      breakdown[collectionName] = 0;
+    }
+  };
+
+  try {
+    // 1. Akun Pengguna & Hak Akses
+    await pullCollection('users', 'bkwa_users_list_v4', 'users');
+
+    // 2. Modul 1: Asset Units
+    await pullCollection('units', 'bkwa_asset_units_v2', 'units');
+
+    // 3. Modul 2: Manpower
+    await pullCollection('manpower', 'bkwa_manpower_list_v1', 'manpower');
+
+    // 4. Modul 3: Breakdown Records
+    await pullCollection('breakdowns', 'bkwa_breakdown_records_v1', 'breakdowns');
+
+    // 5. Modul 4: FOG (Semua Sub-Modul)
+    await pullCollection('out_field_fuel', 'bkwa_inventory_out_field_fuel_v1', 'out_field_fuel');
+    await pullCollection('fuel_distributions', 'bkwa_inventory_fuel_dist_v2', 'fuel_distributions');
+    await pullCollection('oil_distributions', 'bkwa_inventory_oil_dist_v2', 'oil_distributions');
+    await pullCollection('fuel_stocks', 'bkwa_inventory_fuel_stock_v2', 'fuel_stocks');
+    await pullCollection('oil_stocks', 'bkwa_inventory_oil_stock_v2', 'oil_stocks');
+    await pullCollection('fuel_transfers', 'bkwa_inventory_fuel_transfer_v2', 'fuel_transfers');
+    await pullCollection('suppliers', 'bkwa_inventory_suppliers_v2', 'suppliers');
+    await pullCollection('grease_stocks', 'bkwa_inventory_grease_stocks_v1', 'grease_stocks');
+    await pullCollection('grease_distributions', 'bkwa_inventory_grease_dist_v1', 'grease_distributions');
+    await pullCollection('fog_fuel_distributions', 'bkwa_fog_distribution_v1', 'fog_fuel_distributions');
+    await pullCollection('fog_stock_inputs', 'bkwa_fog_stock_inputs_v1', 'fog_stock_inputs');
+    await pullCollection('fog_oil_distributions', 'bkwa_fog_oil_distribution_v1', 'fog_oil_distributions');
+
+    // 6. Modul 5: P2H Records
+    await pullCollection('p2h_records', 'bkwa_p2h_records_v1', 'p2h_records');
+
+    // 7. Modul 6: Spare Parts & PR
+    await pullCollection('spare_parts', 'bkwa_spare_parts_v1', 'spare_parts');
+    await pullCollection('spare_part_transactions', 'bkwa_sp_transactions_v1', 'spare_part_transactions');
+    await pullCollection('purchase_requests', 'bkwa_purchase_requests_v1', 'purchase_requests');
+
+    // 8. Modul 7: Tyre Management System
+    await pullCollection('tyre_records', 'bkwa_tyre_registrations_v1', 'tyre_records');
+    await pullCollection('tyre_installs', 'bkwa_tyre_installs_v1', 'tyre_installs');
+    await pullCollection('tyre_removes', 'bkwa_tyre_removes_v1', 'tyre_removes');
+
+    // 9. Activity Logs
+    await pullCollection('activity_logs', 'bkwa_activity_logs_v2', 'activity_logs');
+
+    updateStatus({
+      connected: true,
+      isSyncing: false,
+      lastSyncTime: new Date().toLocaleTimeString('id-ID'),
+      totalSyncedItems: totalCount,
+    });
+
+    window.dispatchEvent(new CustomEvent('bkwa-firestore-synced', { detail: { action: 'pullAll' } }));
+
+    return {
+      success: true,
+      message: `Berhasil menarik total ${totalCount} data dari Cloud Firestore ke browser ini!`,
+      count: totalCount,
+      breakdown,
+    };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    updateStatus({ isSyncing: false, error: errMsg });
+    return {
+      success: false,
+      message: `Gagal menarik data dari Firestore: ${errMsg}`,
+      count: totalCount,
+      breakdown,
+    };
+  }
+}
+
+// Cek jumlah data riil yang ada di Cloud Firestore saat ini untuk setiap modul
+export async function checkFirestoreDatabaseCounts(): Promise<{
+  categories: { module: string; name: string; count: number; collection: string; status: 'ready' | 'empty' }[];
+  total: number;
+}> {
+  const collectionList = [
+    { module: 'Modul 1', name: 'Asset Alat Berat & Armada', collection: 'units' },
+    { module: 'Modul 2', name: 'Manpower Tim Workshop', collection: 'manpower' },
+    { module: 'Modul 3', name: 'Breakdown & Maintenance Order', collection: 'breakdowns' },
+    { module: 'Modul 4', name: 'Out Field Fuel (SPBU Luar)', collection: 'out_field_fuel' },
+    { module: 'Modul 4', name: 'Distribusi Solar Harian', collection: 'fuel_distributions' },
+    { module: 'Modul 4', name: 'Stok Solar Masuk Tangki', collection: 'fuel_stocks' },
+    { module: 'Modul 4', name: 'Transfer Tangki Induk ke FT', collection: 'fuel_transfers' },
+    { module: 'Modul 4', name: 'Distribusi Pelumas Oli', collection: 'oil_distributions' },
+    { module: 'Modul 4', name: 'Stok Pelumas Oli Masuk', collection: 'oil_stocks' },
+    { module: 'Modul 4', name: 'Pemakaian Grease Pelumas', collection: 'grease_distributions' },
+    { module: 'Modul 4', name: 'Stok Grease Masuk', collection: 'grease_stocks' },
+    { module: 'Modul 4', name: 'Daftar Suplier & Distributor FOG', collection: 'suppliers' },
+    { module: 'Modul 5', name: 'Pemeriksaan P2H Harian Unit', collection: 'p2h_records' },
+    { module: 'Modul 6', name: 'Inventory Master Spare Part', collection: 'spare_parts' },
+    { module: 'Modul 6', name: 'Purchase Request (PR)', collection: 'purchase_requests' },
+    { module: 'Modul 7', name: 'Registrasi Master Tyre (Ban)', collection: 'tyre_records' },
+    { module: 'Sistem', name: 'Akun Pengguna & Hak Akses', collection: 'users' },
+  ];
+
+  let total = 0;
+  const categories: { module: string; name: string; count: number; collection: string; status: 'ready' | 'empty' }[] = [];
+
+  for (const item of collectionList) {
+    try {
+      const snap = await getDocs(collection(db, item.collection));
+      const count = snap.size;
+      total += count;
+      categories.push({
+        ...item,
+        count,
+        status: count > 0 ? 'ready' : 'empty'
+      });
+    } catch (_) {
+      categories.push({
+        ...item,
+        count: 0,
+        status: 'empty'
+      });
+    }
+  }
+
+  return { categories, total };
+}
+
 // Pasang Real-Time onSnapshot listener ke Firestore untuk multi-user / multi-device realtime update
 export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: string) => void): () => void {
   const unsubscribes: (() => void)[] = [];

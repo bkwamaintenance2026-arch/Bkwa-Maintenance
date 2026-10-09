@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { 
   uploadAllLocalDataToFirestore, 
+  downloadAllFirestoreDataToLocal,
+  checkFirestoreDatabaseCounts,
   getSyncStatus, 
   subscribeSyncStatus, 
   SyncStatus,
@@ -40,13 +42,32 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
 }) => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
   const [isUploading, setIsUploading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [cloudStats, setCloudStats] = useState<{
+    categories: { module: string; name: string; count: number; collection: string; status: 'ready' | 'empty' }[];
+    total: number;
+  } | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'status' | 'kapasitas' | 'vercel'>('status');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const fetchCloudStats = async () => {
+    setIsLoadingStats(true);
+    try {
+      const stats = await checkFirestoreDatabaseCounts();
+      setCloudStats(stats);
+    } catch (e) {
+      console.warn('Gagal memuat statistik cloud:', e);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const unsub = subscribeSyncStatus((s) => setSyncStatus(s));
+    fetchCloudStats();
     return unsub;
   }, [isOpen]);
 
@@ -61,6 +82,23 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     
     if (res.success) {
       setFeedback({ type: 'success', text: res.message });
+      await fetchCloudStats();
+      if (onDataRefreshed) onDataRefreshed();
+    } else {
+      setFeedback({ type: 'error', text: res.message });
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    setIsDownloading(true);
+    setFeedback({ type: 'info', text: 'Sedang menarik seluruh data terbaru dari Cloud Firestore ke browser ini...' });
+    
+    const res = await downloadAllFirestoreDataToLocal();
+    setIsDownloading(false);
+    
+    if (res.success) {
+      setFeedback({ type: 'success', text: res.message });
+      await fetchCloudStats();
       if (onDataRefreshed) onDataRefreshed();
     } else {
       setFeedback({ type: 'error', text: res.message });
@@ -232,31 +270,73 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </div>
               </div>
 
-              {/* ACTION: SINKRONKAN SEMUA DATA LOKAL KE CLOUD */}
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-950/40 via-stone-800/70 to-stone-900 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
-                <div className="flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
-                    <UploadCloud className="w-5 h-5" />
-                  </div>
+              {/* ACTION BUTTONS: TARIK & UPLOAD */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* 1. TOMBOL TARIK DATA DARI CLOUD */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-sky-950/50 via-stone-900 to-stone-900 border border-sky-500/40 flex flex-col justify-between shadow-lg">
                   <div>
-                    <h4 className="text-sm font-bold text-amber-300">
-                      Sinkronkan Seluruh Data Offline ke Cloud Firestore
-                    </h4>
-                    <p className="text-xs text-stone-300 mt-1 max-w-xl leading-relaxed">
-                      Klik tombol ini untuk memastikan seluruh data Aset, Manpower, Breakdown, P2H, FOG, dan Akun User yang ada di browser ini langsung diunggah menjadi <strong>Data Terpusat di Cloud</strong>.
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30">
+                        <RefreshCw className={`w-5 h-5 ${isDownloading ? 'animate-spin' : ''}`} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-sky-300">
+                          Tarik & Segarkan Data dari Cloud
+                        </h4>
+                        <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/40">
+                          Gunakan jika data PC Kantor belum muncul
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-stone-300 mt-2 leading-relaxed">
+                      Mengambil seluruh data terbaru (Modul 1 s/d 7, Akun User) yang ada di Google Cloud Firestore langsung ke web/browser ini tanpa menghapus data lokal.
                     </p>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadAll}
+                    disabled={isDownloading || isUploading}
+                    className="mt-4 w-full py-3 px-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-stone-950 font-extrabold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-xl shadow-sky-500/20 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isDownloading ? 'animate-spin' : ''}`} />
+                    <span>{isDownloading ? 'Sedang Menarik Data...' : 'Tarik & Tampilkan Data Cloud'}</span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleUploadAll}
-                  disabled={isUploading}
-                  className="px-5 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-extrabold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-xl shadow-amber-500/20 disabled:opacity-50 shrink-0"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isUploading ? 'animate-spin' : ''}`} />
-                  <span>{isUploading ? 'Menyinkronkan...' : 'Upload & Sinkronkan Sekarang'}</span>
-                </button>
+                {/* 2. TOMBOL UPLOAD KE CLOUD */}
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/40 via-stone-900 to-stone-900 border border-amber-500/40 flex flex-col justify-between shadow-lg">
+                  <div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+                        <UploadCloud className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-amber-300">
+                          Upload Data Lokal ke Cloud Firestore
+                        </h4>
+                        <span className="text-[10px] text-amber-400 font-bold bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800/40">
+                          Kirim input offline ke database pusat
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-stone-300 mt-2 leading-relaxed">
+                      Mengirim seluruh data offline yang diinput di browser ini ke Cloud Firestore agar dapat dibaca oleh komputer/HP lain secara terpusat.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleUploadAll}
+                    disabled={isUploading || isDownloading}
+                    className="mt-4 w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-extrabold text-xs flex items-center justify-center gap-2 transition active:scale-95 shadow-xl shadow-amber-500/20 disabled:opacity-50"
+                  >
+                    <UploadCloud className={`w-4 h-4 ${isUploading ? 'animate-spin' : ''}`} />
+                    <span>{isUploading ? 'Sedang Mengunggah...' : 'Upload Data Lokal ke Cloud'}</span>
+                  </button>
+                </div>
+
               </div>
 
               {/* ACTION KHUSUS: BERSIHKAN DATA LOKAL MODUL 1, 2, 4 & PERTAHANKAN MODUL 3 */}
@@ -284,45 +364,70 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 </button>
               </div>
 
-              {/* LIST KOLEKSI CLOUD TERPUSAT */}
-              <div className="p-4 rounded-2xl bg-stone-950/60 border border-stone-800">
-                <h5 className="text-xs font-bold text-stone-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Database className="w-4 h-4 text-amber-400" />
-                  Struktur Koleksi Cloud Firestore yang Tersimpan Realtime:
-                </h5>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/units</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Asset Unit</span>
+              {/* LIVE DATABASE INSPECTION TABLE */}
+              <div className="p-5 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Database className="w-5 h-5 text-amber-400" />
+                    <div>
+                      <h5 className="text-xs font-bold text-stone-200 uppercase tracking-wider">
+                        Hasil Pengecekan Riil Koleksi Cloud Firestore Saat Ini:
+                      </h5>
+                      <p className="text-[11px] text-stone-400">
+                        {cloudStats ? `Total dokumen tersimpan di Cloud: ${cloudStats.total} data` : 'Memeriksa jumlah data di cloud...'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/manpower</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Manpower</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/breakdowns</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Breakdown</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/p2h_records</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Form P2H</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/users</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Akun User</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/spare_parts</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Inventory</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/tyre_records</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Tyre System</span>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-between">
-                    <span className="text-stone-300">/activity_logs</span>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded">Audit Log</span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchCloudStats}
+                    disabled={isLoadingStats}
+                    className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[11px] font-bold flex items-center gap-1.5 border border-stone-700"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingStats ? 'animate-spin text-amber-400' : ''}`} />
+                    <span>Cek Ulang Cloud</span>
+                  </button>
+                </div>
+
+                {/* PENJELASAN KHUSUS MODUL 4 & PC KANTOR */}
+                <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/40 text-xs text-amber-200 leading-relaxed">
+                  <strong className="block text-amber-300 mb-1 flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-amber-400" />
+                    Catatan Mengapa Modul 4 di PC Kantor Belum Masuk ke Cloud:
+                  </strong>
+                  Data Modul 1 (65 Unit), Modul 2 (33 Manpower), Modul 3 (7 Breakdown), dan Modul 7 <strong>sudah tersimpan di Cloud</strong>. Namun Modul 4 masih 0 karena PC Kantor menggunakan link Vercel versi deploy lama. Setelah script terbaru ini di-sync ke GitHub & Vercel, buka kembali di PC Kantor dan klik tombol <em>"Upload Data Lokal ke Cloud"</em>, maka Modul 4 akan langsung tersimpan di Cloud dan otomatis muncul di seluruh perangkat!
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                  {cloudStats?.categories.map((cat, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`p-3 rounded-xl border flex items-center justify-between ${
+                        cat.status === 'ready' 
+                          ? 'bg-stone-900/90 border-emerald-800/50' 
+                          : 'bg-stone-900/40 border-stone-800/80 text-stone-500'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-stone-400 uppercase">{cat.module}</span>
+                          <span className="text-[10px] text-stone-500 font-mono">/{cat.collection}</span>
+                        </div>
+                        <div className={`font-semibold mt-0.5 text-[11px] ${cat.status === 'ready' ? 'text-stone-200' : 'text-stone-500'}`}>
+                          {cat.name}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                          cat.status === 'ready' 
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' 
+                            : 'bg-stone-800 text-stone-400'
+                        }`}>
+                          {cat.count} data
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

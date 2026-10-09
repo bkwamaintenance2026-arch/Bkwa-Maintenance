@@ -87,7 +87,7 @@ import { BkwaLogo } from './components/BkwaLogo';
 import { AccessControlModal } from './components/admin/AccessControlModal';
 import { GoogleSheetsSyncModal } from './components/admin/GoogleSheetsSyncModal';
 import { CloudSyncModal } from './components/admin/CloudSyncModal';
-import { setupRealtimeFirestoreListeners, cleanLocalDuplicates } from './services/firestoreSync';
+import { setupRealtimeFirestoreListeners, cleanLocalDuplicates, downloadAllFirestoreDataToLocal } from './services/firestoreSync';
 import { getSavedSpreadsheetId } from './services/googleSheets';
 
 export default function App() {
@@ -145,6 +145,11 @@ export default function App() {
     }
     cleanLocalDuplicates();
     refreshAllData();
+
+    // Tarik data terbaru dari Cloud Firestore secara otomatis saat aplikasi dimuat
+    downloadAllFirestoreDataToLocal().then(() => {
+      refreshAllData();
+    }).catch((e) => console.warn('Sync initial pull notice:', e));
 
     // Aktifkan Real-Time Listener Cloud Firestore (Multi-Device Sync)
     const unsubFirestore = setupRealtimeFirestoreListeners(() => {
