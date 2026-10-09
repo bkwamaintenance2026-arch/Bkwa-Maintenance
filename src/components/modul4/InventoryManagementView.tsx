@@ -23,7 +23,11 @@ import { FuelDistributionSubView } from './FuelDistributionSubView';
 import { OilDistributionSubView } from './OilDistributionSubView';
 import { OutFieldFuelSubView } from './OutFieldFuelSubView';
 import { GreaseSubView } from './GreaseSubView';
-import { calculateInventoryStockLevels } from '../../utils/storage';
+import { 
+  calculateInventoryStockLevels, 
+  calculateFuelSummaryBulanBerjalan, 
+  calculateOutFieldFuelBulanBerjalan 
+} from '../../utils/storage';
 import { 
   Fuel, 
   Droplet, 
@@ -176,6 +180,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [showQuickCapacityModal, setShowQuickCapacityModal] = useState(false);
+  const [quickCapacityTarget, setQuickCapacityTarget] = useState<'tangki_utama' | 'fuel_truck'>('tangki_utama');
   const [quickCapacityVal, setQuickCapacityVal] = useState<number>(20000);
 
   // Form states untuk kalibrasi Sisa Periode Sebelumnya & Kapasitas Tangki Manual
@@ -222,7 +227,24 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
     availableOilTypes,
   ]);
 
-  // Ringkasan Out Field Fuel
+  // Kalkulasi Summary Saldo Fuel khusus Bulan Berjalan
+  // Aturan: Total Qty Input = Input Total - Transfer, Total Qty Transfer = Transfer - Distribusi
+  const fuelSummaryBulanIni = useMemo(() => {
+    return calculateFuelSummaryBulanBerjalan(
+      fuelStockInputs,
+      fuelTransfers,
+      fuelDistributions,
+      new Date(),
+      standardSolarPrice
+    );
+  }, [fuelStockInputs, fuelTransfers, fuelDistributions, standardSolarPrice]);
+
+  // Ringkasan Out Field Fuel Khusus Bulan Berjalan (Tgl 1 - 30/31)
+  const outFieldBulanIni = useMemo(() => {
+    return calculateOutFieldFuelBulanBerjalan(outFieldFuelRecords, new Date());
+  }, [outFieldFuelRecords]);
+
+  // Ringkasan Out Field Fuel (All-Time)
   const totalOutFieldLiter = useMemo(() => {
     return outFieldFuelRecords.reduce((acc, r) => acc + (Number(r.jmlLtr) || 0), 0);
   }, [outFieldFuelRecords]);
@@ -279,10 +301,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   const handleSaveQuickCapacity = (e: React.FormEvent) => {
     e.preventDefault();
-    const val = Math.max(1, Number(quickCapacityVal) || 20000);
+    const val = Math.max(1, Number(quickCapacityVal) || (quickCapacityTarget === 'tangki_utama' ? 20000 : 5000));
     const updated: InventoryPeriodBalance = {
       ...periodBalance,
-      kapasitasTangkiUtama: val,
+      ...(quickCapacityTarget === 'tangki_utama'
+        ? { kapasitasTangkiUtama: val }
+        : { kapasitasFuelTruck: val }),
     };
     const res = onSavePeriodBalance(updated);
     if (res.success) {
@@ -464,202 +488,240 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             </div>
           </div>
 
-          {/* 3 Real-time Inventory Gauge Cards: FUEL, OIL, GREASE */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 1: KOLOM FUEL (Solar: Tangki Utama + FT-01 + SPBU Luar) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600" />
+          {/* ========================================================================= */}
+          {/* MODERN METRICS BAR: 5 KPI UTAMA MINIMALIS & TEGAS */}
+          {/* Sisa Qty Tangki Utama | Sisa Qty Fuel Truck | Pembelian Solar di Luar | Sisa Oli | Sisa Grease */}
+          {/* ========================================================================= */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* 1. SISA QTY TANGKI UTAMA */}
+            <div 
+              onClick={() => {
+                setSelectedCategory('FUEL');
+                setActiveSubModule('fuel_stock');
+              }}
+              className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-amber-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-amber-500 to-amber-600" />
               <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                      <Fuel className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                        KOLOM FUEL (SOLAR)
-                      </span>
-                      <span className="block text-[10px] text-amber-400 font-mono">Tangki & SPBU Luar</span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-mono font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                    {computation.tangkiUtama.persentase}% Level
+                <div className="flex items-center justify-between text-stone-400">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400">
+                    SISA TANGKI UTAMA
                   </span>
-                </div>
-
-                <div className="mt-3">
-                  <div className="flex items-baseline justify-between">
-                    <div className="text-xl sm:text-2xl font-black font-mono text-stone-100">
-                      {(computation?.tangkiUtama?.stokAkhir ?? 0).toLocaleString('id-ID')}
-                      <span className="text-xs font-normal text-stone-400 ml-1">Ltr</span>
-                    </div>
-                    <div className="text-[11px] font-mono text-stone-400 flex items-center gap-1.5">
-                      <span>Kapasitas: <strong className="text-stone-200 font-bold">{(computation?.tangkiUtama?.kapasitasMaksimal ?? 20000).toLocaleString('id-ID')}</strong> Ltr</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setQuickCapacityVal(computation?.tangkiUtama?.kapasitasMaksimal || 20000);
-                          setShowQuickCapacityModal(true);
-                        }}
-                        className="px-1.5 py-0.5 rounded bg-stone-800/90 hover:bg-amber-500/20 text-stone-400 hover:text-amber-300 border border-stone-700/60 transition inline-flex items-center gap-1 text-[10px] font-sans"
-                        title="Ubah Kapasitas Tangki Solar Utama Manual"
-                      >
-                        <Pencil className="w-2.5 h-2.5" />
-                        <span>Ubah</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Visual Bar Gauge */}
-                  <div className="w-full bg-stone-800 h-2.5 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        (computation?.tangkiUtama?.persentase ?? 0) > 60
-                          ? 'bg-gradient-to-r from-amber-500 to-emerald-400'
-                          : (computation?.tangkiUtama?.persentase ?? 0) > 25
-                          ? 'bg-amber-500'
-                          : 'bg-rose-500 animate-pulse'
-                      }`}
-                      style={{ width: `${computation?.tangkiUtama?.persentase ?? 0}%` }}
-                    />
+                  <div className="p-1 rounded-md bg-amber-500/10 text-amber-400">
+                    <Fuel className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
-                {/* Sub info FT & Out Field Fuel */}
-                <div className="mt-3 pt-2.5 border-t border-stone-800/80 text-[10.5px] font-mono text-stone-400 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Fuel Truck (FT-01):</span>
-                    <span className="text-blue-400 font-semibold">{(computation?.fuelTruck?.stokAkhir ?? 0).toLocaleString('id-ID')} Ltr</span>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-black font-mono text-stone-100">
+                    {(computation?.tangkiUtama?.stokAkhir ?? 0).toLocaleString('id-ID')}
+                  </span>
+                  <span className="text-xs font-mono text-stone-400">Ltr</span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-stone-800/80">
+                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 mb-1">
+                  <span>Level: <strong className="text-stone-200">{computation?.tangkiUtama?.persentase ?? 0}%</strong></span>
+                  <div className="flex items-center gap-1">
+                    <span>Kap: {(computation?.tangkiUtama?.kapasitasMaksimal ?? 20000).toLocaleString('id-ID')} L</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQuickCapacityTarget('tangki_utama');
+                        setQuickCapacityVal(computation?.tangkiUtama?.kapasitasMaksimal || 20000);
+                        setShowQuickCapacityModal(true);
+                      }}
+                      className="p-0.5 hover:text-amber-300 text-stone-500"
+                      title="Ubah Kapasitas Tangki Utama"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
                   </div>
-                  <div className="flex justify-between items-center pt-1 border-t border-stone-800/50">
-                    <span className="text-amber-300 font-bold flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-400" />
-                      SPBU Luar:
-                    </span>
-                    <span className="text-amber-400 font-bold">
-                      {totalOutFieldLiter.toLocaleString('id-ID')} Ltr (Rp {totalOutFieldNominal.toLocaleString('id-ID')})
-                    </span>
+                </div>
+                <div className="w-full bg-stone-800 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (computation?.tangkiUtama?.persentase ?? 0) > 40 ? 'bg-amber-500' : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${Math.min(100, computation?.tangkiUtama?.persentase ?? 0)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 2. SISA QTY FUEL TRUCK */}
+            <div 
+              onClick={() => {
+                setSelectedCategory('FUEL');
+                setActiveSubModule('fuel_transfer');
+              }}
+              className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-blue-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
+              <div>
+                <div className="flex items-center justify-between text-stone-400">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400">
+                    SISA FUEL TRUCK
+                  </span>
+                  <div className="p-1 rounded-md bg-blue-500/10 text-blue-400">
+                    <Truck className="w-3.5 h-3.5" />
                   </div>
-                  {outFieldFuelRecords.length > 0 && (
-                    <div className="flex justify-between text-[10px] text-stone-400 pt-0.5">
-                      <span>Cash Sopir / Sisa:</span>
-                      <span className={totalOutFieldSisaCash >= 0 ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                        Rp {totalOutFieldCashSopir.toLocaleString('id-ID')} / {totalOutFieldSisaCash >= 0 ? '+' : ''}Rp {totalOutFieldSisaCash.toLocaleString('id-ID')}
+                </div>
+
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-black font-mono text-stone-100">
+                    {(computation?.fuelTruck?.stokAkhir ?? 0).toLocaleString('id-ID')}
+                  </span>
+                  <span className="text-xs font-mono text-stone-400">Ltr</span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-stone-800/80">
+                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 mb-1">
+                  <span>Level: <strong className="text-stone-200">{computation?.fuelTruck?.persentase ?? 0}%</strong></span>
+                  <div className="flex items-center gap-1">
+                    <span>FT-01: {(computation?.fuelTruck?.kapasitasMaksimal ?? 5000).toLocaleString('id-ID')} L</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQuickCapacityTarget('fuel_truck');
+                        setQuickCapacityVal(computation?.fuelTruck?.kapasitasMaksimal || 5000);
+                        setShowQuickCapacityModal(true);
+                      }}
+                      className="p-0.5 hover:text-blue-300 text-stone-500"
+                      title="Ubah Kapasitas Armada Fuel Truck (FT-01)"
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="w-full bg-stone-800 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (computation?.fuelTruck?.persentase ?? 0) > 30 ? 'bg-blue-500' : 'bg-rose-500'
+                    }`}
+                    style={{ width: `${Math.min(100, computation?.fuelTruck?.persentase ?? 0)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 3. PEMBELIAN SOLAR DI LUAR */}
+            <div 
+              onClick={() => {
+                setSelectedCategory('FUEL');
+                setActiveSubModule('out_field_fuel');
+              }}
+              className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-rose-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-rose-500 to-orange-500" />
+              <div>
+                <div className="flex items-center justify-between text-stone-400">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-400">
+                    PEMBELIAN SOLAR DI LUAR
+                  </span>
+                  <div className="p-1 rounded-md bg-rose-500/10 text-rose-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-black font-mono text-stone-100">
+                    {outFieldBulanIni.totalLiter.toLocaleString('id-ID')}
+                  </span>
+                  <span className="text-xs font-mono text-stone-400">Ltr</span>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono">
+                <span className="text-rose-300 font-bold">
+                  Rp {outFieldBulanIni.totalNominal.toLocaleString('id-ID')}
+                </span>
+                <span className="text-stone-400 bg-stone-900 px-1.5 py-0.5 rounded border border-stone-800">
+                  {outFieldBulanIni.count} Bon (Bulan Ini)
+                </span>
+              </div>
+            </div>
+
+            {/* 4. SISA OLI (RINCIAN PER TIPE OLI) */}
+            <div 
+              onClick={() => {
+                setSelectedCategory('OIL');
+                setActiveSubModule('oil_stock');
+              }}
+              className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-emerald-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+              <div>
+                <div className="flex items-center justify-between text-stone-400">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+                    SISA OLI PER TIPE
+                  </span>
+                  <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-400">
+                    <Droplet className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                {/* List rincian stok per tipe oli */}
+                <div className="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1">
+                  {Object.entries(computation?.oliPerJenis || {}).map(([oilName, data]: [string, any]) => (
+                    <div key={oilName} className="flex items-center justify-between text-[11px] font-mono py-0.5 border-b border-stone-900">
+                      <span className="text-stone-300 truncate max-w-[110px]" title={oilName}>
+                        {oilName}
+                      </span>
+                      <span className={`font-bold ${(data?.stokAkhir ?? 0) > 50 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {(data?.stokAkhir ?? 0).toLocaleString('id-ID')} <span className="text-[10px] font-normal text-stone-500">L</span>
                       </span>
                     </div>
+                  ))}
+                  {Object.keys(computation?.oliPerJenis || {}).length === 0 && (
+                    <div className="text-[10px] text-stone-500 font-mono py-1">Belum ada data tipe oli</div>
                   )}
                 </div>
               </div>
 
-              {/* Quick Jump Button to Out Field Fuel */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCategory('FUEL');
-                  setActiveSubModule('out_field_fuel');
-                }}
-                className="mt-3 w-full py-1.5 px-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition active:scale-98"
-              >
-                <span>⛽ Buka Sub Modul Out Field Fuel (SPBU Luar)</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            </div>
-
-            {/* Card 2: KOLOM OIL (Pelumas & Oli Mesin/Hydraulic) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      <Droplet className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                        KOLOM OIL (PELUMAS)
-                      </span>
-                      <span className="block text-[10px] text-emerald-400 font-mono">Gudang & Pemakaian</span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-mono font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr
-                  </span>
-                </div>
-
-                <div className="mt-3">
-                  <div className="text-xs font-mono font-semibold text-stone-300 mb-1">
-                    Stok per Jenis Pelumas:
-                  </div>
-
-                  {/* List mini stok per jenis oli */}
-                  <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-                    {computation?.oliPerJenis && Object.entries(computation.oliPerJenis).slice(0, 4).map(([oilName, data]: [string, any]) => (
-                      <div key={oilName} className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-stone-400 truncate max-w-[150px]">{oilName}:</span>
-                        <span className={`font-bold ${(data?.stokAkhir ?? 0) > 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {(data?.stokAkhir ?? 0).toLocaleString('id-ID')} Ltr
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 pt-2.5 border-t border-stone-800/80 flex items-center justify-between">
-                <span className="text-[11px] text-stone-400 font-mono">Total Bon Oli:</span>
-                <span className="text-xs font-bold text-emerald-400 font-mono">{oilDistributions.length} Bon Terbit</span>
+              <div className="mt-2 pt-1.5 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
+                <span>Total: <strong className="text-emerald-400 font-bold">{(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr</strong></span>
+                <span className="text-stone-500">{oilDistributions.length} Bon</span>
               </div>
             </div>
 
-            {/* Card 3: KOLOM GREASE (Gemuk Pelumas Padat) */}
-            <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-yellow-500 via-amber-400 to-orange-400" />
+            {/* 5. SISA GREASE */}
+            <div 
+              onClick={() => {
+                setSelectedCategory('GREASE');
+                setActiveSubModule('grease');
+              }}
+              className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-yellow-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+            >
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-yellow-500 to-amber-500" />
               <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
-                      <Package className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold font-mono text-stone-200 uppercase">
-                        KOLOM GREASE (GEMUK)
-                      </span>
-                      <span className="block text-[10px] text-yellow-400 font-mono">Chassis & Bucket Pin</span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-mono font-black text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
-                    {totalGreaseStockKg} Kg Total
+                <div className="flex items-center justify-between text-stone-400">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-yellow-400">
+                    SISA GREASE
                   </span>
+                  <div className="p-1 rounded-md bg-yellow-500/10 text-yellow-400">
+                    <Package className="w-3.5 h-3.5" />
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-2">
-                  <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-mono space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-stone-400">Total Stok Masuk:</span>
-                      <span className="text-stone-200 font-bold">{totalGreaseStockKg} Kg ({greaseStocks.length} Batch)</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-stone-400">Pemakaian Greasing:</span>
-                      <span className="text-amber-400 font-bold">{totalGreaseDistKg} Kg ({greaseDistributions.length} Bon)</span>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-stone-400">
-                    Mencakup varian Chassis EP-2, MP-3, Lithium Complex untuk link arm excavator & loader.
-                  </p>
+                <div className="mt-1.5 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-black font-mono text-stone-100">
+                    {totalGreaseStockKg.toLocaleString('id-ID')}
+                  </span>
+                  <span className="text-xs font-mono text-stone-400">Kg</span>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCategory('GREASE');
-                  setActiveSubModule('grease');
-                }}
-                className="mt-3 w-full py-1.5 px-2 rounded-xl bg-yellow-500/15 hover:bg-yellow-500/25 border border-yellow-500/30 text-yellow-300 text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition active:scale-98"
-              >
-                <span>🧈 Buka Manajemen Grease</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
+              <div className="mt-3 pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
+                <span>Chassis &amp; Pin</span>
+                <span className="text-yellow-400 font-bold">
+                  Pakai: {totalGreaseDistKg.toLocaleString('id-ID')} Kg
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -806,6 +868,9 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         {activeSubModule === 'fuel_stock' && (
           <FuelStockInputSubView
             fuelStockInputs={fuelStockInputs}
+            fuelTransfers={fuelTransfers}
+            periodBalance={periodBalance}
+            standardSolarPrice={standardSolarPrice}
             suppliers={suppliers}
             manpowerList={manpowerList}
             currentUser={currentUser}
@@ -818,6 +883,9 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         {activeSubModule === 'fuel_transfer' && (
           <FuelTransferSubView
             fuelTransfers={fuelTransfers}
+            fuelDistributions={fuelDistributions}
+            periodBalance={periodBalance}
+            standardSolarPrice={standardSolarPrice}
             manpowerList={manpowerList}
             currentUser={currentUser}
             onSave={onSaveFuelTransfer}
@@ -1057,14 +1125,18 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         </div>
       )}
 
-      {/* QUICK MODAL: Ganti Kapasitas Manual Tangki Utama */}
+      {/* QUICK MODAL: Ganti Kapasitas Manual Tangki Utama & Fuel Truck */}
       {showQuickCapacityModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <h3 className="text-xs font-bold font-mono text-stone-100 uppercase flex items-center gap-1.5">
                 <Pencil className="w-3.5 h-3.5 text-amber-400" />
-                <span>Ubah Kapasitas Tangki Solar</span>
+                <span>
+                  {quickCapacityTarget === 'tangki_utama'
+                    ? 'Ubah Kapasitas Tangki Solar Utama'
+                    : 'Ubah Kapasitas Fuel Truck (FT-01)'}
+                </span>
               </h3>
               <button
                 type="button"
@@ -1077,7 +1149,9 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
             <form onSubmit={handleSaveQuickCapacity} className="space-y-3">
               <p className="text-[11px] text-stone-300">
-                Ubah kapasitas tangki solar utama jika terjadi pergantian unit tangki di quarry:
+                {quickCapacityTarget === 'tangki_utama'
+                  ? 'Ubah kapasitas tangki solar utama jika terjadi pergantian unit tangki di quarry:'
+                  : 'Ubah kapasitas muatan armada Fuel Truck FT-01:'}
               </p>
               <div>
                 <label className="block text-[11px] font-mono text-stone-400 mb-1">
@@ -1085,8 +1159,8 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </label>
                 <input
                   type="number"
-                  min="1000"
-                  step="500"
+                  min="100"
+                  step="100"
                   required
                   value={quickCapacityVal}
                   onChange={(e) => setQuickCapacityVal(Number(e.target.value))}

@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { 
   FuelStockInputRecord, 
+  FuelTransferRecord,
   SupplierRecord, 
   ManpowerData, 
-  UserAccount 
+  UserAccount,
+  InventoryPeriodBalance
 } from '../../types';
 import { 
   Fuel, 
@@ -25,12 +27,17 @@ import {
   Building2,
   Ruler,
   Lock,
-  Download
+  Download,
+  Sparkles,
+  ArrowRightLeft
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
 interface FuelStockInputSubViewProps {
   fuelStockInputs: FuelStockInputRecord[];
+  fuelTransfers?: FuelTransferRecord[];
+  periodBalance?: InventoryPeriodBalance;
+  standardSolarPrice?: number;
   suppliers: SupplierRecord[];
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
@@ -43,6 +50,9 @@ interface FuelStockInputSubViewProps {
 
 export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
   fuelStockInputs,
+  fuelTransfers = [],
+  periodBalance,
+  standardSolarPrice = 6800,
   suppliers,
   manpowerList,
   currentUser,
@@ -56,6 +66,23 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Logika Saldo Solar Tangki Utama (Solar Industri):
+  // Saldo solar periode sebelumnya + Input fuel dari distributor - Qty Transfer Fuel
+  // (Tanpa nominal uang karena solar industri)
+  const saldoTangkiLalu = Number(periodBalance?.sisaPeriodeLaluFuelTangki || 0);
+  const totalInputDistributor = useMemo(() => {
+    return fuelStockInputs.reduce(
+      (sum, r) => sum + (Number(r.actualQtyFlowmeter) || Number(r.qtySupplier) || 0),
+      0
+    );
+  }, [fuelStockInputs]);
+
+  const totalTransferFuel = useMemo(() => {
+    return fuelTransfers.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+  }, [fuelTransfers]);
+
+  const saldoAkhirTangkiUtama = saldoTangkiLalu + totalInputDistributor - totalTransferFuel;
 
   // Form states sesuai instruksi:
   // a. Distributor (Dropdown reff by "Data SUplier")
@@ -357,6 +384,79 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
               <span>+ Input Stock Fuel (Terkunci)</span>
             </button>
           )}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SUMMARY SALDO SOLAR TANGKI UTAMA (SOLAR INDUSTRI) */}
+      {/* Logika: Saldo Periode Sebelumnya + Input Distributor - Qty Transfer Fuel */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-amber-950/40 via-stone-900 to-amber-950/20 border border-amber-500/30 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1.5">
+              <Fuel className="w-3 h-3 text-amber-400" />
+              <span>SUMMARY SALDO TANGKI UTAMA</span>
+            </span>
+            <span className="text-xs font-mono font-black text-stone-100 uppercase">
+              Solar Industri (Kuantitas Fisik Liter)
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-stone-400">
+            * Tanpa Nominal Rupiah (Solar Industri)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 1. Saldo Periode Sebelumnya */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-stone-400">1. Saldo Periode Lalu</span>
+            <div className="text-lg font-black font-mono text-stone-300 mt-1">
+              {saldoTangkiLalu.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">Saldo awal tangki</span>
+          </div>
+
+          {/* 2. Input Fuel dari Distributor */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-amber-400">2. Input Fuel Distributor</span>
+            <div className="text-lg font-black font-mono text-amber-400 mt-1">
+              +{totalInputDistributor.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">{fuelStockInputs.length} penerimaan masuk</span>
+          </div>
+
+          {/* 3. Qty Transfer Fuel ke FT */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-blue-400">3. Transfer ke FT-01</span>
+            <div className="text-lg font-black font-mono text-blue-400 mt-1">
+              −{totalTransferFuel.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">{fuelTransfers.length} ritase transfer</span>
+          </div>
+
+          {/* 4. Sisa Saldo Tangki Utama */}
+          <div className="bg-stone-950/90 border border-emerald-500/40 rounded-xl p-3 flex flex-col justify-between shadow-lg shadow-emerald-950/20 relative overflow-hidden">
+            <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
+            <span className="text-[10.5px] font-mono uppercase font-bold text-emerald-400">
+              4. Saldo Solar Tangki Utama
+            </span>
+            <div className="text-xl font-black font-mono text-emerald-300 mt-1">
+              {saldoAkhirTangkiUtama.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Ltr</span>
+            </div>
+            <span className="text-[10px] text-emerald-400/80 font-mono mt-0.5 font-bold">
+              (Lalu + Input − Transfer)
+            </span>
+          </div>
+        </div>
+
+        <div className="text-[10.5px] font-mono text-stone-400 flex items-center justify-between pt-1 border-t border-stone-800/60">
+          <span>
+            * Rumus: Saldo Lalu ({saldoTangkiLalu.toLocaleString('id-ID')} Ltr) + Input Distributor ({totalInputDistributor.toLocaleString('id-ID')} Ltr) − Qty Transfer ({totalTransferFuel.toLocaleString('id-ID')} Ltr) = <strong>{saldoAkhirTangkiUtama.toLocaleString('id-ID')} Liter</strong>
+          </span>
+          <span className="text-stone-500">
+            Total Riwayat Penerimaan: {fuelStockInputs.length} batch
+          </span>
         </div>
       </div>
 

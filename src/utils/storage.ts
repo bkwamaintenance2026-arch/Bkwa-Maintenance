@@ -41,7 +41,8 @@ import {
   GranularUserPermissions,
   ModulePermissionSet,
   GreaseStockRecord,
-  GreaseDistributionRecord
+  GreaseDistributionRecord,
+  MechanicWorkLogRecord
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -56,6 +57,7 @@ const STORAGE_KEYS = {
   USERS: 'bkwa_users_list_v4', // updated to ensure clean migration to Admin BKWA and Manpower logins
   UNITS: 'bkwa_asset_units_v2', // updated version key to guarantee clean state
   MANPOWER: 'bkwa_manpower_list_v1', // storage key for Modul 2 Manpower
+  MECHANIC_WORK_LOGS: 'bkwa_mechanic_work_logs_v1', // storage key for Modul 2 Sub-Modul Remark Mekanik & Magang
   BREAKDOWN: 'bkwa_breakdown_records_v1', // storage key for Modul 3 Breakdown records
   BREAKDOWN_COUNTER: 'bkwa_breakdown_counter_v1', // persistent counter for notification numbering
   FOG_STOCK: 'bkwa_fog_stock_inputs_v1', // storage key for Modul 4 FOG Input Stock (Tangki Utama)
@@ -944,6 +946,112 @@ export function deleteManpower(id: string): { success: boolean; message: string 
   return {
     success: true,
     message: `Data manpower ${target.nama ? `[${target.nama}]` : ''} berhasil dihapus.`,
+  };
+}
+
+// --- MODUL 2 SUB-MODUL: REMARK & PEKERJAAN MEKANIK / MAGANG ---
+export function getAllMechanicWorkLogs(): MechanicWorkLogRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.MECHANIC_WORK_LOGS);
+    if (!data) return [];
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error reading mechanic work logs', e);
+    return [];
+  }
+}
+
+export function saveMechanicWorkLogs(records: MechanicWorkLogRecord[]): void {
+  localStorage.setItem(STORAGE_KEYS.MECHANIC_WORK_LOGS, JSON.stringify(records));
+}
+
+export function registerMechanicWorkLog(data: Omit<MechanicWorkLogRecord, 'id' | 'createdAt' | 'updatedAt'>): {
+  success: boolean;
+  message: string;
+  record?: MechanicWorkLogRecord;
+} {
+  const list = getAllMechanicWorkLogs();
+  const now = new Date().toISOString().split('T')[0];
+
+  const newRecord: MechanicWorkLogRecord = {
+    ...data,
+    id: `mwl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  list.unshift(newRecord);
+  saveMechanicWorkLogs(list);
+  syncItemToFirestore('mechanic_work_logs', newRecord.id, newRecord);
+
+  logActivity({
+    aksi: 'CREATE',
+    keterangan: `Input Remark Pekerjaan Mekanik: ${newRecord.namaMekanik} - ${newRecord.kategoriPekerjaan}`,
+  });
+
+  return {
+    success: true,
+    message: `Pekerjaan mekanik [${newRecord.namaMekanik}] berhasil dicatat!`,
+    record: newRecord,
+  };
+}
+
+export function updateMechanicWorkLog(
+  id: string,
+  updates: Partial<Omit<MechanicWorkLogRecord, 'id' | 'createdAt'>>
+): {
+  success: boolean;
+  message: string;
+  record?: MechanicWorkLogRecord;
+} {
+  const list = getAllMechanicWorkLogs();
+  const index = list.findIndex((r) => r.id === id);
+  if (index === -1) {
+    return { success: false, message: 'Data pekerjaan mekanik tidak ditemukan!' };
+  }
+
+  const now = new Date().toISOString().split('T')[0];
+  const updatedRecord: MechanicWorkLogRecord = {
+    ...list[index],
+    ...updates,
+    updatedAt: now,
+  };
+
+  list[index] = updatedRecord;
+  saveMechanicWorkLogs(list);
+  syncItemToFirestore('mechanic_work_logs', id, updatedRecord);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Update Remark Pekerjaan Mekanik: ${updatedRecord.namaMekanik} - ${updatedRecord.kategoriPekerjaan}`,
+  });
+
+  return {
+    success: true,
+    message: `Pekerjaan mekanik berhasil diperbarui!`,
+    record: updatedRecord,
+  };
+}
+
+export function deleteMechanicWorkLog(id: string): { success: boolean; message: string } {
+  const list = getAllMechanicWorkLogs();
+  const target = list.find((r) => r.id === id);
+  if (!target) {
+    return { success: false, message: 'Data pekerjaan mekanik tidak ditemukan!' };
+  }
+
+  const filtered = list.filter((r) => r.id !== id);
+  saveMechanicWorkLogs(filtered);
+  deleteItemFromFirestore('mechanic_work_logs', id);
+
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Catatan Pekerjaan Mekanik: ${target.namaMekanik} - ${target.kategoriPekerjaan}`,
+  });
+
+  return {
+    success: true,
+    message: `Catatan pekerjaan mekanik berhasil dihapus.`,
   };
 }
 
@@ -2475,6 +2583,177 @@ export interface InventoryStockComputation {
     persentase: number;
   }>;
   totalOliLiters: number;
+}
+
+export interface FuelSummaryBulanBerjalan {
+  yearMonth: string; // YYYY-MM
+  labelBulan: string; // e.g. "Oktober 2026"
+  standardSolarPrice: number;
+  
+  // 1. Tangki Utama / Input: Total Qty Input Total - Qty Transfer Fuel
+  totalQtyInputTotal: number;
+  totalNominalInputTotal: number;
+  qtyTransferFuel: number;
+  nominalTransferFuel: number;
+  sisaQtyInput: number; // Total Qty Input Total - Qty Transfer Fuel
+  sisaNominalInput: number; // sisaQtyInput * standardSolarPrice
+
+  // 2. Fuel Truck / Transfer: Total Qty Transfer Fuel - Distribusi Fuel
+  totalQtyTransferFuel: number;
+  distribusiFuel: number;
+  nominalDistribusiFuel: number;
+  sisaQtyTransfer: number; // Total Qty Transfer Fuel - Distribusi Fuel
+  sisaNominalTransfer: number; // sisaQtyTransfer * standardSolarPrice
+
+  // 3. Akumulasi Total Saldo Fuel (Bulan Berjalan)
+  totalAkumulasiQty: number; // sisaQtyInput + sisaQtyTransfer
+  totalAkumulasiNominal: number; // totalAkumulasiQty * standardSolarPrice
+}
+
+export function calculateFuelSummaryBulanBerjalan(
+  fuelStockInputs: FuelStockInputRecord[],
+  fuelTransfers: FuelTransferRecord[],
+  fuelDistributions: FuelDistributionRecord[],
+  targetDate = new Date(),
+  standardSolarPrice = 6800
+): FuelSummaryBulanBerjalan {
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const targetYearMonth = `${y}-${m}`;
+
+  const monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const labelBulan = `${monthNames[targetDate.getMonth()]} ${y}`;
+
+  const matchMonth = (dateStr?: string) => {
+    if (!dateStr) return false;
+    if (dateStr.startsWith(targetYearMonth)) return true;
+    try {
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const yr = parts[2].length === 4 ? parts[2] : parts[0];
+          const mo = parts[1].padStart(2, '0');
+          return `${yr}-${mo}` === targetYearMonth;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
+  // 1. Total Qty Input Total (Bulan Berjalan)
+  const inputsCurrentMonth = fuelStockInputs.filter((r) => matchMonth(r.tanggal));
+  const totalQtyInputTotal = inputsCurrentMonth.reduce(
+    (sum, r) => sum + (Number(r.actualQtyFlowmeter) || Number(r.qtySupplier) || 0),
+    0
+  );
+
+  // 2. Qty Transfer Fuel (Bulan Berjalan)
+  const transfersCurrentMonth = fuelTransfers.filter((r) => matchMonth(r.tanggal));
+  const qtyTransferFuel = transfersCurrentMonth.reduce(
+    (sum, r) => sum + (Number(r.qty) || 0),
+    0
+  );
+
+  // 3. Distribusi Fuel (Bulan Berjalan)
+  const distCurrentMonth = fuelDistributions.filter((r) => matchMonth(r.tanggal));
+  const distribusiFuel = distCurrentMonth.reduce(
+    (sum, r) => sum + (Number(r.qty) || 0),
+    0
+  );
+
+  // Logika 1: Total Qty Input Total dikurangi Qty Transfer Fuel
+  const sisaQtyInput = totalQtyInputTotal - qtyTransferFuel;
+  const sisaNominalInput = sisaQtyInput * standardSolarPrice;
+
+  // Logika 2: Total Qty Transfer Fuel dikurangi Distribusi Fuel
+  const sisaQtyTransfer = qtyTransferFuel - distribusiFuel;
+  const sisaNominalTransfer = sisaQtyTransfer * standardSolarPrice;
+
+  // Akumulasi Total Saldo Fuel (Bulan Berjalan)
+  const totalAkumulasiQty = sisaQtyInput + sisaQtyTransfer;
+  const totalAkumulasiNominal = totalAkumulasiQty * standardSolarPrice;
+
+  return {
+    yearMonth: targetYearMonth,
+    labelBulan,
+    standardSolarPrice,
+    totalQtyInputTotal,
+    totalNominalInputTotal: totalQtyInputTotal * standardSolarPrice,
+    qtyTransferFuel,
+    nominalTransferFuel: qtyTransferFuel * standardSolarPrice,
+    sisaQtyInput,
+    sisaNominalInput,
+    totalQtyTransferFuel: qtyTransferFuel,
+    distribusiFuel,
+    nominalDistribusiFuel: distribusiFuel * standardSolarPrice,
+    sisaQtyTransfer,
+    sisaNominalTransfer,
+    totalAkumulasiQty,
+    totalAkumulasiNominal,
+  };
+}
+
+export interface OutFieldFuelMonthlySummary {
+  yearMonth: string; // YYYY-MM
+  labelBulan: string; // e.g. "Oktober 2026"
+  count: number;
+  totalLiter: number;
+  totalNominal: number;
+  totalCashSopir: number;
+  totalSisaCash: number;
+  totalRitase: number;
+}
+
+export function calculateOutFieldFuelBulanBerjalan(
+  records: OutFieldFuelRecord[],
+  targetDate = new Date()
+): OutFieldFuelMonthlySummary {
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const targetYearMonth = `${y}-${m}`;
+
+  const monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  const labelBulan = `${monthNames[targetDate.getMonth()]} ${y}`;
+
+  const matchMonth = (dateStr?: string) => {
+    if (!dateStr) return false;
+    if (dateStr.startsWith(targetYearMonth)) return true;
+    try {
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/');
+        if (parts.length === 3) {
+          const yr = parts[2].length === 4 ? parts[2] : parts[0];
+          const mo = parts[1].padStart(2, '0');
+          return `${yr}-${mo}` === targetYearMonth;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
+  const currentMonthRecords = records.filter((r) => matchMonth(r.tanggal));
+  const totalLiter = currentMonthRecords.reduce((acc, r) => acc + (Number(r.jmlLtr) || 0), 0);
+  const totalNominal = currentMonthRecords.reduce((acc, r) => acc + (Number(r.totalNominal) || 0), 0);
+  const totalCashSopir = currentMonthRecords.reduce((acc, r) => acc + (Number(r.nominalCashSopir) || 0), 0);
+  const totalSisaCash = currentMonthRecords.reduce((acc, r) => acc + (Number(r.sisaSelisihCash) || 0), 0);
+  const totalRitase = currentMonthRecords.reduce((acc, r) => acc + (Number(r.ritaseTotal) || 0), 0);
+
+  return {
+    yearMonth: targetYearMonth,
+    labelBulan,
+    count: currentMonthRecords.length,
+    totalLiter,
+    totalNominal,
+    totalCashSopir,
+    totalSisaCash,
+    totalRitase,
+  };
 }
 
 export function calculateInventoryStockLevels(

@@ -166,6 +166,25 @@ export const STATUS_KARYAWAN_OPTIONS: StatusKaryawan[] = [
   'MAGANG',
 ];
 
+export type StatusKerjaKaryawan = 
+  | 'NORMAL'
+  | 'TUKAR_SHIFT'
+  | 'DINAS_LUAR'
+  | 'CUTI'
+  | 'IZIN'
+  | 'SAKIT'
+  | 'STANDBY';
+
+export const STATUS_KERJA_OPTIONS: { value: StatusKerjaKaryawan; label: string; color: string }[] = [
+  { value: 'NORMAL', label: 'Hadir Normal', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+  { value: 'TUKAR_SHIFT', label: 'Tukar Jam / Shift', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+  { value: 'DINAS_LUAR', label: 'Dinas Luar', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+  { value: 'CUTI', label: 'Cuti', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+  { value: 'IZIN', label: 'Izin', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' },
+  { value: 'SAKIT', label: 'Sakit', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30' },
+  { value: 'STANDBY', label: 'Standby / Cadangan', color: 'bg-stone-500/10 text-stone-300 border-stone-500/30' },
+];
+
 export interface ManpowerData {
   id: string;
   nik: string;               // NIK (Digunakan sebagai Password login akun karyawan)
@@ -175,9 +194,51 @@ export interface ManpowerData {
   statusKaryawan: StatusKaryawan | string; // STATUS KARYAWAN (TETAP, KONTRAK, HARIAN LEPAS, KEMITRAAN, MAGANG)
   tglMasukKerja: string;     // TGL. MASUK KERJA (Opsional, format YYYY-MM-DD atau DD/MM/YYYY)
   keterangan: string;        // KETERANGAN (Opsional)
+  // Catatan Presensi & Status Kerja (Tukar Jam Kerja, Dinas Luar, Cuti/Izin, Sakit, dsb.):
+  statusKerja?: StatusKerjaKaryawan | string;
+  catatanKerja?: string;
+  tglCatatan?: string;
   // Otorisasi Akses Sistem (Didaftarkan oleh Akun Developer di Modul 2):
   isUserAccountActive?: boolean;        // Aktifkan login sistem untuk karyawan ini
   permissions?: GranularUserPermissions; // Pilihan centang izin per modul (Viewer, Input, Edit, Delete, Export)
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Sub-Modul: Remark / Monitoring Pekerjaan Khusus Mekanik & Anak Magang
+export type MechanicJobCategory =
+  | 'NON_UNIT'          // Non-Unit (Genset, Pompa Tambang, Crusher, dll.)
+  | 'MAINTENANCE_UNIT'  // Maintenance Unit Alat Berat Quarry
+  | 'FABRIKASI'         // Fabrikasi & Pengelasan Workshop
+  | 'SARANA_PRASARANA'  // Sarana & Fasilitas Quarry
+  | 'LISTRIK_PANEL'     // Kelistrikan & Panel Plant
+  | 'DINAS_LUAR'        // Dinas Luar / Belanja Sparepart
+  | 'STANDBY_LAIN';     // Standby / Perapian Tools / Lain-lain
+
+export const MECHANIC_JOB_CATEGORIES: { value: MechanicJobCategory; label: string; badgeColor: string }[] = [
+  { value: 'NON_UNIT', label: 'Non-Unit (Genset / Pompa / Crusher)', badgeColor: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
+  { value: 'MAINTENANCE_UNIT', label: 'Maintenance Unit Alat Berat', badgeColor: 'bg-blue-500/15 text-blue-300 border-blue-500/30' },
+  { value: 'FABRIKASI', label: 'Fabrikasi & Pengelasan Workshop', badgeColor: 'bg-orange-500/15 text-orange-300 border-orange-500/30' },
+  { value: 'SARANA_PRASARANA', label: 'Sarana & Prasarana Quarry', badgeColor: 'bg-teal-500/15 text-teal-300 border-teal-500/30' },
+  { value: 'LISTRIK_PANEL', label: 'Kelistrikan & Panel Plant', badgeColor: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30' },
+  { value: 'DINAS_LUAR', label: 'Dinas Luar / Belanja Sparepart', badgeColor: 'bg-purple-500/15 text-purple-300 border-purple-500/30' },
+  { value: 'STANDBY_LAIN', label: 'Standby / Tools / Lainnya', badgeColor: 'bg-stone-700 text-stone-300 border-stone-600' },
+];
+
+export interface MechanicWorkLogRecord {
+  id: string;
+  tanggal: string;              // YYYY-MM-DD
+  jamMulai?: string;            // HH:mm
+  jamSelesai?: string;          // HH:mm
+  manpowerId?: string;          // ID referensi ke data karyawan
+  namaMekanik: string;          // Nama Mekanik / Helper / Anak Magang
+  jabatan: string;              // Jabatan (Mekanik, Helper, PKL, Magang)
+  kategoriPekerjaan: MechanicJobCategory;
+  lokasiPekerjaan: string;      // Workshop, Pit Tambang, Crusher Plant, dll.
+  uraianPekerjaan: string;      // Remark deskripsi pekerjaan yang dikerjakan
+  statusPekerjaan: 'DALAM_PROSES' | 'SELESAI' | 'TERTUNDA';
+  supervisorPic?: string;       // Supervisor / Kabag Workshop PIC
+  catatanTambahan?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
   FuelTransferRecord, 
+  FuelDistributionRecord,
   ManpowerData, 
-  UserAccount 
+  UserAccount,
+  InventoryPeriodBalance
 } from '../../types';
 import { 
   ArrowRightLeft, 
@@ -19,12 +21,17 @@ import {
   X, 
   CheckCircle2,
   Warehouse,
-  Lock
+  Lock,
+  Sparkles,
+  DollarSign
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
 interface FuelTransferSubViewProps {
   fuelTransfers: FuelTransferRecord[];
+  fuelDistributions?: FuelDistributionRecord[];
+  periodBalance?: InventoryPeriodBalance;
+  standardSolarPrice?: number;
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
   onSave: (
@@ -36,6 +43,9 @@ interface FuelTransferSubViewProps {
 
 export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   fuelTransfers,
+  fuelDistributions = [],
+  periodBalance,
+  standardSolarPrice = 6800,
   manpowerList,
   currentUser,
   onSave,
@@ -51,7 +61,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
 
   // Form states:
   // a. Tanggal & jam
-  // b. Nama Driver FT (dropdown reff nama Manpower di modul 2)
+  // b. Nama Driver FT (dropdown reff seluruh nama Manpower di modul 2)
   // c. PIC FOG (dropdown reff nama Manpower di modul 2)
   // d. Flowmeter Start
   // e. Flowmeter STop
@@ -67,30 +77,29 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   const [qty, setQty] = useState<number | ''>('');
   const [remark, setRemark] = useState('');
 
-  // Filter manpower drivers dan urutkan berdasarkan Jabatan terlebih dahulu baru sesuai Abjad Nama
-  const sortedDrivers = useMemo(() => {
-    const drivers = manpowerList.filter((m) => 
-      m.jabatan.toLowerCase().includes('driver') || 
-      m.jabatan.toLowerCase().includes('sopir') || 
-      m.jabatan.toLowerCase().includes('operator')
-    );
-    const list = drivers.length > 0 ? drivers : manpowerList;
-    return [...list].sort((a, b) => {
-      const cmp = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
-      if (cmp !== 0) return cmp;
-      return (a.nama || '').localeCompare(b.nama || '', 'id');
-    });
-  }, [manpowerList]);
-
-  const sortedManpowerList = useMemo(() => {
+  // DAFTAR SELURUH NAMA KARYAWAN (Dari Modul 2 Manpower)
+  // Memuat seluruh nama karyawan tanpa memfilter jabatan agar driver FT dapat dipilih bebas
+  const allEmployeesList = useMemo(() => {
     return [...manpowerList].sort((a, b) => {
-      const cmp = (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
-      if (cmp !== 0) return cmp;
-      return (a.nama || '').localeCompare(b.nama || '', 'id');
+      const cmpNama = (a.nama || '').localeCompare(b.nama || '', 'id');
+      if (cmpNama !== 0) return cmpNama;
+      return (a.jabatan || '').localeCompare(b.jabatan || '', 'id');
     });
   }, [manpowerList]);
 
-  const effectiveDrivers = sortedDrivers;
+  // Logika Saldo Solar Tanki Truck FT-01 (Jumlah Qty solar pada Tanki Truck):
+  // Saldo FT periode sebelumnya + data Transfer Fuel baru dikurangi pengisian ke unit di lapangan (Distribusi Fuel)
+  // (Tanpa nominal uang karena solar industri)
+  const saldoFTLalu = Number(periodBalance?.sisaPeriodeLaluFuelFT || 0);
+  const totalTransferFuel = useMemo(() => {
+    return fuelTransfers.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+  }, [fuelTransfers]);
+
+  const totalDistribusiFuel = useMemo(() => {
+    return fuelDistributions.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+  }, [fuelDistributions]);
+
+  const stokSolarTankiTruck = saldoFTLalu + totalTransferFuel - totalDistribusiFuel;
 
   const handleOpenAdd = () => {
     if (!canEdit) return;
@@ -99,9 +108,8 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
     setTanggal(now.toISOString().split('T')[0]);
     setJam(now.toTimeString().substring(0, 5));
 
-    const defaultDriver = effectiveDrivers[0];
-    setNamaDriverFt(defaultDriver?.nama || '');
-    setDriverFtJabatan(defaultDriver?.jabatan || '');
+    setNamaDriverFt('');
+    setDriverFtJabatan('');
 
     const defaultPic = manpowerList[0];
     setPicFog(defaultPic?.nama || currentUser.fullName || currentUser.username);
@@ -275,42 +283,76 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
         </div>
       </div>
 
-      {/* Summary Mini Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-stone-900/80 border border-stone-800 rounded-xl p-4 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            <Truck className="w-5 h-5" />
+      {/* ========================================================================= */}
+      {/* SUMMARY SALDO TANKI TRUCK FT-01 (SOLAR INDUSTRI) */}
+      {/* Logika: Data Transfer Fuel dikurangi Pengisian ke Unit di Lapangan */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-blue-950/40 via-stone-900 to-blue-950/20 border border-blue-500/30 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1.5">
+              <Truck className="w-3 h-3 text-blue-400" />
+              <span>STOK SOLAR PADA TANKI TRUCK (FT-01)</span>
+            </span>
+            <span className="text-xs font-mono font-black text-stone-100 uppercase">
+              Solar Industri (Kuantitas Fisik Liter)
+            </span>
           </div>
-          <div>
-            <div className="text-[11px] font-mono uppercase text-stone-400">Total Akumulasi Transfer</div>
-            <div className="text-lg font-black font-mono text-blue-400">
-              {(totalTransferLiter ?? 0).toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Liter</span>
+          <span className="text-[11px] font-mono text-stone-400">
+            * Tanpa Nominal Rupiah (Solar Industri)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 1. Saldo FT Periode Lalu */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-stone-400">1. Saldo FT Lalu</span>
+            <div className="text-lg font-black font-mono text-stone-300 mt-1">
+              {saldoFTLalu.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
             </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">Saldo awal armada</span>
+          </div>
+
+          {/* 2. Data Transfer Fuel Masuk ke FT */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-blue-400">2. Transfer Masuk FT</span>
+            <div className="text-lg font-black font-mono text-blue-400 mt-1">
+              +{totalTransferFuel.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">{fuelTransfers.length} rit transfer</span>
+          </div>
+
+          {/* 3. Pengisian ke Unit Lapangan (Distribusi Fuel) */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-3 flex flex-col justify-between">
+            <span className="text-[10.5px] font-mono uppercase text-orange-400">3. Pengisian ke Unit</span>
+            <div className="text-lg font-black font-mono text-orange-400 mt-1">
+              −{totalDistribusiFuel.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-500">Ltr</span>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono mt-0.5">{fuelDistributions.length} bon pengisian</span>
+          </div>
+
+          {/* 4. Sisa Saldo Tanki Truck */}
+          <div className="bg-stone-950/90 border border-emerald-500/40 rounded-xl p-3 flex flex-col justify-between shadow-lg shadow-emerald-950/20 relative overflow-hidden">
+            <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400" />
+            <span className="text-[10.5px] font-mono uppercase font-bold text-emerald-400">
+              4. Stok Solar Tanki Truck
+            </span>
+            <div className="text-xl font-black font-mono text-emerald-300 mt-1">
+              {stokSolarTankiTruck.toLocaleString('id-ID')} <span className="text-xs font-normal text-stone-400">Ltr</span>
+            </div>
+            <span className="text-[10px] text-emerald-400/80 font-mono mt-0.5 font-bold">
+              (Transfer − Pengisian Unit)
+            </span>
           </div>
         </div>
 
-        <div className="bg-stone-900/80 border border-stone-800 rounded-xl p-4 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <Warehouse className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-mono uppercase text-stone-400">Frekuensi Pengisian FT</div>
-            <div className="text-lg font-black font-mono text-stone-100">
-              {fuelTransfers.length} <span className="text-xs font-normal text-stone-400">Ritase Transfer</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-stone-900/80 border border-stone-800 rounded-xl p-4 flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <Gauge className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-mono uppercase text-stone-400">Rata-rata Per Pengisian</div>
-            <div className="text-lg font-black font-mono text-emerald-400">
-              {fuelTransfers.length > 0 ? Math.round((totalTransferLiter ?? 0) / fuelTransfers.length).toLocaleString('id-ID') : 0} <span className="text-xs font-normal text-stone-400">Ltr</span>
-            </div>
-          </div>
+        <div className="text-[10.5px] font-mono text-stone-400 flex items-center justify-between pt-1 border-t border-stone-800/60">
+          <span>
+            * Rumus: Transfer Fuel ({totalTransferFuel.toLocaleString('id-ID')} Ltr) − Pengisian Unit ({totalDistribusiFuel.toLocaleString('id-ID')} Ltr) {saldoFTLalu > 0 ? `+ Saldo Lalu (${saldoFTLalu} Ltr)` : ''} = <strong>{stokSolarTankiTruck.toLocaleString('id-ID')} Liter</strong>
+          </span>
+          <span className="text-stone-500">
+            Total Riwayat Transfer: {fuelTransfers.length} ritase
+          </span>
         </div>
       </div>
 
@@ -471,17 +513,18 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
               {/* b. Nama Driver FT */}
               <div>
                 <label className="block text-stone-300 font-semibold mb-1">
-                  b. Nama Driver FT (Reff: Manpower Modul 2) <span className="text-amber-400">*</span>
+                  b. Nama Driver FT (Daftar Seluruh Nama Karyawan) <span className="text-amber-400">*</span>
                 </label>
                 <select
+                  required
                   value={namaDriverFt}
                   onChange={(e) => handleDriverChange(e.target.value)}
                   className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono text-xs"
                 >
-                  <option value="">-- Pilih Driver FT (Urut Jabatan &amp; Nama) --</option>
-                  {sortedDrivers.map((m) => (
+                  <option value="">-- Pilih Nama Driver FT (Daftar Seluruh Karyawan) --</option>
+                  {allEmployeesList.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      [{m.jabatan}] {m.nama}
+                      {m.nama} — [{m.jabatan || 'Karyawan'}]
                     </option>
                   ))}
                 </select>
@@ -502,10 +545,10 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                   onChange={(e) => handlePicChange(e.target.value)}
                   className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono text-xs"
                 >
-                  <option value="">-- Pilih PIC FOG (Urut Jabatan &amp; Nama) --</option>
-                  {sortedManpowerList.map((m) => (
+                  <option value="">-- Pilih PIC FOG (Daftar Seluruh Karyawan) --</option>
+                  {allEmployeesList.map((m) => (
                     <option key={m.id} value={m.nama}>
-                      [{m.jabatan}] {m.nama}
+                      {m.nama} — [{m.jabatan || 'Karyawan'}]
                     </option>
                   ))}
                 </select>

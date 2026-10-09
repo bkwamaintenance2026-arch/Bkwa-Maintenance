@@ -138,6 +138,10 @@ export function getDeterministicDocId(collectionName: string, item: any): string
     const no = (item.noBon || item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return no ? `gdist_${no}` : String(item.id || Date.now());
   }
+  if (collectionName === 'mechanic_work_logs') {
+    const no = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return no ? `mwl_${no}` : String(Date.now());
+  }
 
   return String(item.id || Date.now());
 }

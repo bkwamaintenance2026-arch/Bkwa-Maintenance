@@ -419,18 +419,30 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
     }
   };
 
-  // Summary Metrics
+  // Filter Periode Metrics: BULAN_BERJALAN (Default: Akumulasi Tgl 1 - 30/31) vs ALL
+  const [metricsMode, setMetricsMode] = useState<'BULAN_BERJALAN' | 'ALL'>('BULAN_BERJALAN');
+
+  const now = new Date();
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const labelBulanAktif = `${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+
+  // Summary Metrics (Bulan Berjalan vs All Time)
   const metrics = useMemo(() => {
-    const totalRecords = outFieldFuelRecords.length;
-    const totalLiter = outFieldFuelRecords.reduce((acc, curr) => acc + (Number(curr.jmlLtr) || 0), 0);
-    const totalRitase = outFieldFuelRecords.reduce((acc, curr) => acc + (Number(curr.ritaseTotal) || 0), 0);
-    const totalBiayaFuelNet = outFieldFuelRecords.reduce(
+    const targetSource = metricsMode === 'BULAN_BERJALAN'
+      ? outFieldFuelRecords.filter((r) => r.tanggal?.startsWith(currentYearMonth))
+      : outFieldFuelRecords;
+
+    const totalRecords = targetSource.length;
+    const totalLiter = targetSource.reduce((acc, curr) => acc + (Number(curr.jmlLtr) || 0), 0);
+    const totalRitase = targetSource.reduce((acc, curr) => acc + (Number(curr.ritaseTotal) || 0), 0);
+    const totalBiayaFuelNet = targetSource.reduce(
       (acc, curr) => acc + (Number(curr.nominalFuelSetelahPembulatan) || Number(curr.nominalPembelianFuel) || 0),
       0
     );
-    const totalBiayaKeseluruhan = outFieldFuelRecords.reduce((acc, curr) => acc + (Number(curr.totalNominal) || 0), 0);
-    const totalCashSopir = outFieldFuelRecords.reduce((acc, curr) => acc + (Number(curr.nominalCashSopir) || 0), 0);
-    const totalSisaCash = outFieldFuelRecords.reduce((acc, curr) => acc + (Number(curr.sisaSelisihCash) || 0), 0);
+    const totalBiayaKeseluruhan = targetSource.reduce((acc, curr) => acc + (Number(curr.totalNominal) || 0), 0);
+    const totalCashSopir = targetSource.reduce((acc, curr) => acc + (Number(curr.nominalCashSopir) || 0), 0);
+    const totalSisaCash = targetSource.reduce((acc, curr) => acc + (Number(curr.sisaSelisihCash) || 0), 0);
 
     return { 
       totalRecords, 
@@ -441,7 +453,7 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
       totalCashSopir, 
       totalSisaCash 
     };
-  }, [outFieldFuelRecords]);
+  }, [outFieldFuelRecords, metricsMode, currentYearMonth]);
 
   // Filtered Table Records
   const filteredRecords = useMemo(() => {
@@ -618,8 +630,44 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
           </div>
         </div>
 
+        {/* Toggle Mode: Bulan Berjalan (Tgl 1 - 30/31) vs Semua Periode */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-5 pt-3 border-t border-stone-800/80">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono font-semibold text-stone-400">Akumulasi:</span>
+            <div className="inline-flex rounded-xl bg-stone-950 p-1 border border-stone-800">
+              <button
+                type="button"
+                onClick={() => setMetricsMode('BULAN_BERJALAN')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  metricsMode === 'BULAN_BERJALAN'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>📅 Bulan Berjalan ({labelBulanAktif})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMetricsMode('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  metricsMode === 'ALL'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>🌐 Semua Riwayat</span>
+              </button>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono text-stone-400">
+            {metricsMode === 'BULAN_BERJALAN' 
+              ? `* Akumulasi Tgl 1 - 30/31 ${labelBulanAktif}` 
+              : `* Total seluruh transaksi historis`}
+          </span>
+        </div>
+
         {/* 5 Cards Ringkasan Finansial & Operasional */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3">
           <div className="p-3.5 rounded-2xl bg-stone-950/70 border border-stone-800">
             <span className="text-[10px] font-mono uppercase text-stone-400 block">Total Transaksi</span>
             <div className="text-lg font-mono font-bold text-stone-100 mt-0.5">
