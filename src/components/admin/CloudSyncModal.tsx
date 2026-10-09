@@ -22,7 +22,9 @@ import {
   uploadAllLocalDataToFirestore, 
   getSyncStatus, 
   subscribeSyncStatus, 
-  SyncStatus 
+  SyncStatus,
+  clearLocalModules124Keep3,
+  cleanLocalDuplicates 
 } from '../../services/firestoreSync';
 
 interface CloudSyncModalProps {
@@ -62,6 +64,18 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
       if (onDataRefreshed) onDataRefreshed();
     } else {
       setFeedback({ type: 'error', text: res.message });
+    }
+  };
+
+  const handleClearLocalM124 = () => {
+    if (window.confirm('Bersihkan data lokal Modul 1, 2, dan 4 di laptop ini?\n\nCatatan:\n- Data Modul 3 (Maintenance Breakdown) di laptop ini TETAP AMAN dan TIDAK DIHAPUS.\n- Data Modul 1, 2, 4 akan ditarik bersih dari Cloud Firestore (PC Kantor) tanpa duplikat.')) {
+      clearLocalModules124Keep3();
+      cleanLocalDuplicates();
+      if (onDataRefreshed) onDataRefreshed();
+      setFeedback({
+        type: 'success',
+        text: 'Data lokal Modul 1, 2, 4 berhasil di-reset! Modul 3 (Breakdown) tetap aman, dan data dari PC Kantor akan otomatis ditarik bersih dari Cloud.'
+      });
     }
   };
 
@@ -242,6 +256,31 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
                 >
                   <RefreshCw className={`w-4 h-4 ${isUploading ? 'animate-spin' : ''}`} />
                   <span>{isUploading ? 'Menyinkronkan...' : 'Upload & Sinkronkan Sekarang'}</span>
+                </button>
+              </div>
+
+              {/* ACTION KHUSUS: BERSIHKAN DATA LOKAL MODUL 1, 2, 4 & PERTAHANKAN MODUL 3 */}
+              <div className="p-4 rounded-2xl bg-stone-900/90 border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/20">
+                    <HardDrive className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-stone-200">
+                      Reset Data Lokal Modul 1, 2, 4 (Pertahankan Modul 3 Breakdown di Laptop Ini)
+                    </h4>
+                    <p className="text-[11px] text-stone-400 mt-0.5 max-w-xl">
+                      Gunakan tombol ini jika Anda ingin mengosongkan data lokal lama Modul 1, 2, dan 4 pada laptop ini, sehingga hanya data asli dari PC Kantor yang ditarik bersih dari Cloud tanpa duplikasi. Data Modul 3 (Maintenance Breakdown) yang Anda buat di laptop ini akan tetap terjaga.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleClearLocalM124}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-rose-950 hover:border-rose-700 hover:text-rose-300 text-stone-300 border border-stone-700 font-bold text-xs flex items-center justify-center gap-2 transition shrink-0"
+                >
+                  <span>Reset Lokal Modul 1, 2, 4</span>
                 </button>
               </div>
 

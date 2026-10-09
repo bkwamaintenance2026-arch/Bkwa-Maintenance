@@ -87,7 +87,7 @@ import { BkwaLogo } from './components/BkwaLogo';
 import { AccessControlModal } from './components/admin/AccessControlModal';
 import { GoogleSheetsSyncModal } from './components/admin/GoogleSheetsSyncModal';
 import { CloudSyncModal } from './components/admin/CloudSyncModal';
-import { setupRealtimeFirestoreListeners } from './services/firestoreSync';
+import { setupRealtimeFirestoreListeners, cleanLocalDuplicates } from './services/firestoreSync';
 import { getSavedSpreadsheetId } from './services/googleSheets';
 
 export default function App() {
@@ -143,6 +143,7 @@ export default function App() {
     if (user) {
       setLocalCurrentUser(user);
     }
+    cleanLocalDuplicates();
     refreshAllData();
 
     // Aktifkan Real-Time Listener Cloud Firestore (Multi-Device Sync)

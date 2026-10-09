@@ -1701,6 +1701,7 @@ export function addOrUpdateSupplier(
     };
     currentList[index] = updatedRecord;
     saveSuppliersList(currentList);
+    syncItemToFirestore('suppliers', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -1721,6 +1722,7 @@ export function addOrUpdateSupplier(
     };
     currentList.unshift(newRecord);
     saveSuppliersList(currentList);
+    syncItemToFirestore('suppliers', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -1743,6 +1745,7 @@ export function deleteSupplier(id: string): { success: boolean; message: string 
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveSuppliersList(filtered);
+  deleteItemFromFirestore('suppliers', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -1879,6 +1882,7 @@ export function updateInventoryPeriodBalance(
     }
 
     localStorage.setItem(STORAGE_KEYS.PERIOD_BALANCE, JSON.stringify(balance));
+    syncItemToFirestore('settings', 'inventory_period_balance', balance);
     logActivity({
       aksi: 'UPDATE',
       keterangan: `Update Saldo & Kapasitas FOG: Tangki Utama ${balance.sisaPeriodeLaluFuelTangki}L (Kapasitas: ${balance.kapasitasTangkiUtama || 20000}L), FT ${balance.sisaPeriodeLaluFuelFT}L`,
@@ -1941,6 +1945,7 @@ export function addOrUpdateFuelStockInput(
     };
     currentList[index] = updatedRecord;
     saveFuelStockInputsList(currentList);
+    syncItemToFirestore('fuel_stocks', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -1961,6 +1966,7 @@ export function addOrUpdateFuelStockInput(
     };
     currentList.unshift(newRecord);
     saveFuelStockInputsList(currentList);
+    syncItemToFirestore('fuel_stocks', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -1983,6 +1989,7 @@ export function deleteFuelStockInput(id: string): { success: boolean; message: s
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveFuelStockInputsList(filtered);
+  deleteItemFromFirestore('fuel_stocks', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -2054,6 +2061,7 @@ export function addOrUpdateFuelTransfer(
     };
     currentList[index] = updatedRecord;
     saveFuelTransfersList(currentList);
+    syncItemToFirestore('fuel_transfers', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -2074,6 +2082,7 @@ export function addOrUpdateFuelTransfer(
     };
     currentList.unshift(newRecord);
     saveFuelTransfersList(currentList);
+    syncItemToFirestore('fuel_transfers', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -2096,6 +2105,7 @@ export function deleteFuelTransfer(id: string): { success: boolean; message: str
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveFuelTransfersList(filtered);
+  deleteItemFromFirestore('fuel_transfers', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -2155,6 +2165,7 @@ export function addOrUpdateOilStockInput(
     };
     currentList[index] = updatedRecord;
     saveOilStockInputsList(currentList);
+    syncItemToFirestore('oil_stocks', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -2175,6 +2186,7 @@ export function addOrUpdateOilStockInput(
     };
     currentList.unshift(newRecord);
     saveOilStockInputsList(currentList);
+    syncItemToFirestore('oil_stocks', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -2197,6 +2209,7 @@ export function deleteOilStockInput(id: string): { success: boolean; message: st
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveOilStockInputsList(filtered);
+  deleteItemFromFirestore('oil_stocks', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -2263,6 +2276,7 @@ export function addOrUpdateFuelDistribution(
     };
     currentList[index] = updatedRecord;
     saveFuelDistributionsList(currentList);
+    syncItemToFirestore('fuel_distributions', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -2284,6 +2298,7 @@ export function addOrUpdateFuelDistribution(
     };
     currentList.unshift(newRecord);
     saveFuelDistributionsList(currentList);
+    syncItemToFirestore('fuel_distributions', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -2307,6 +2322,7 @@ export function deleteFuelDistribution(id: string): { success: boolean; message:
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveFuelDistributionsList(filtered);
+  deleteItemFromFirestore('fuel_distributions', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -2371,6 +2387,7 @@ export function addOrUpdateOilDistribution(
     };
     currentList[index] = updatedRecord;
     saveOilDistributionsList(currentList);
+    syncItemToFirestore('oil_distributions', idToEdit, updatedRecord);
 
     logActivity({
       aksi: 'UPDATE',
@@ -2392,6 +2409,7 @@ export function addOrUpdateOilDistribution(
     };
     currentList.unshift(newRecord);
     saveOilDistributionsList(currentList);
+    syncItemToFirestore('oil_distributions', newRecord.id, newRecord);
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -2415,6 +2433,7 @@ export function deleteOilDistribution(id: string): { success: boolean; message: 
   }
   const filtered = currentList.filter((i) => i.id !== id);
   saveOilDistributionsList(filtered);
+  deleteItemFromFirestore('oil_distributions', id, target);
 
   logActivity({
     aksi: 'HAPUS',
@@ -3857,6 +3876,7 @@ export function getStandardSolarPrice(): number {
 export function setStandardSolarPrice(price: number): void {
   try {
     localStorage.setItem(STORAGE_KEYS.STANDARD_SOLAR_PRICE, String(price));
+    syncItemToFirestore('settings', 'standard_solar_price', { price, updatedAt: new Date().toISOString() });
   } catch (e) {
     console.error('Error saving solar price', e);
   }
@@ -4053,6 +4073,7 @@ export function addOrUpdateOutFieldFuelRecord(
     };
     currentList[idx] = updated;
     saveAllOutFieldFuelRecords(currentList);
+    syncItemToFirestore('out_field_fuel', idToEdit, updated);
     logActivity({
       aksi: 'UPDATE',
       keterangan: `Update Out Field Fuel: ${updated.noTransaksi} Unit ${updated.cnNew} ${updated.jmlLtr} Ltr (SPBU ${updated.kodeSpbu})`,
@@ -4073,6 +4094,7 @@ export function addOrUpdateOutFieldFuelRecord(
   };
   currentList.unshift(newRecord);
   saveAllOutFieldFuelRecords(currentList);
+  syncItemToFirestore('out_field_fuel', newRecord.id, newRecord);
   logActivity({
     aksi: 'REGISTRASI',
     keterangan: `Input Out Field Fuel Baru: ${newRecord.noTransaksi} Unit ${newRecord.cnNew} ${newRecord.jmlLtr} Ltr Total Rp ${newRecord.totalNominal.toLocaleString('id-ID')}`,
@@ -4093,6 +4115,7 @@ export function deleteOutFieldFuelRecord(id: string): { success: boolean; messag
   }
   const filtered = currentList.filter((item) => item.id !== id);
   saveAllOutFieldFuelRecords(filtered);
+  deleteItemFromFirestore('out_field_fuel', id, target);
   logActivity({
     aksi: 'HAPUS',
     keterangan: `Hapus Out Field Fuel: ${target.noTransaksi} Unit ${target.cnNew}`,
@@ -4145,6 +4168,7 @@ export function addOrUpdateGreaseStockRecord(
     };
     currentList[idx] = updated;
     saveAllGreaseStockRecords(currentList);
+    syncItemToFirestore('grease_stocks', idToEdit, updated);
     logActivity({
       aksi: 'UPDATE',
       keterangan: `Update Stok Grease: ${updated.namaGrease} ${updated.qty} ${updated.satuan}`,
@@ -4164,6 +4188,7 @@ export function addOrUpdateGreaseStockRecord(
   };
   currentList.unshift(newRecord);
   saveAllGreaseStockRecords(currentList);
+  syncItemToFirestore('grease_stocks', newRecord.id, newRecord);
   logActivity({
     aksi: 'REGISTRASI',
     keterangan: `Input Stok Grease: ${newRecord.namaGrease} ${newRecord.qty} ${newRecord.satuan} dari ${newRecord.distributor}`,
@@ -4183,6 +4208,7 @@ export function deleteGreaseStockRecord(id: string): { success: boolean; message
   }
   const filtered = currentList.filter((item) => item.id !== id);
   saveAllGreaseStockRecords(filtered);
+  deleteItemFromFirestore('grease_stocks', id, target);
   logActivity({
     aksi: 'HAPUS',
     keterangan: `Hapus Stok Grease: ${target.namaGrease} ${target.qty} ${target.satuan}`,
@@ -4231,6 +4257,7 @@ export function addOrUpdateGreaseDistributionRecord(
     };
     currentList[idx] = updated;
     saveAllGreaseDistributionRecords(currentList);
+    syncItemToFirestore('grease_distributions', idToEdit, updated);
     logActivity({
       aksi: 'UPDATE',
       keterangan: `Update Bon Pemakaian Grease: ${updated.noUnit} ${updated.namaGrease} ${updated.qty} ${updated.satuan}`,
@@ -4252,6 +4279,7 @@ export function addOrUpdateGreaseDistributionRecord(
   };
   currentList.unshift(newRecord);
   saveAllGreaseDistributionRecords(currentList);
+  syncItemToFirestore('grease_distributions', newRecord.id, newRecord);
   logActivity({
     aksi: 'REGISTRASI',
     keterangan: `Bon Pemakaian Grease: Unit ${newRecord.noUnit} ${newRecord.namaGrease} ${newRecord.qty} ${newRecord.satuan} (${newRecord.lokasiPelumasan})`,
@@ -4272,6 +4300,7 @@ export function deleteGreaseDistributionRecord(id: string): { success: boolean; 
   }
   const filtered = currentList.filter((item) => item.id !== id);
   saveAllGreaseDistributionRecords(filtered);
+  deleteItemFromFirestore('grease_distributions', id, target);
   logActivity({
     aksi: 'HAPUS',
     keterangan: `Hapus Bon Pemakaian Grease: ${target.noUnit} ${target.namaGrease}`,

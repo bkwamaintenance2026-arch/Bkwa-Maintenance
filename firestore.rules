@@ -12,43 +12,94 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // Dokumen Registrasi Unit Alat Berat & Armada
+    // Dokumen Registrasi Unit Alat Berat & Armada (Modul 1)
     match /units/{unitId} {
       allow read, write: if true;
     }
 
-    // Dokumen Manpower & Personil Workshop
+    // Dokumen Manpower & Personil Workshop (Modul 2)
     match /manpower/{manpowerId} {
       allow read, write: if true;
     }
 
-    // Dokumen Breakdown Record & History Perbaikan
+    // Dokumen Breakdown Record & History Perbaikan (Modul 3)
     match /breakdowns/{breakdownId} {
       allow read, write: if true;
     }
 
-    // Dokumen Fuel, Oil, Grease (FOG) & Out Field Fuel
+    // Dokumen Fuel, Oil, Grease (FOG) & Out Field Fuel (Modul 4)
     match /fog_records/{fogId} {
       allow read, write: if true;
     }
+    match /out_field_fuel/{id} {
+      allow read, write: if true;
+    }
+    match /fuel_distributions/{id} {
+      allow read, write: if true;
+    }
+    match /oil_distributions/{id} {
+      allow read, write: if true;
+    }
+    match /fuel_stocks/{id} {
+      allow read, write: if true;
+    }
+    match /oil_stocks/{id} {
+      allow read, write: if true;
+    }
+    match /fuel_transfers/{id} {
+      allow read, write: if true;
+    }
+    match /suppliers/{id} {
+      allow read, write: if true;
+    }
+    match /grease_stocks/{id} {
+      allow read, write: if true;
+    }
+    match /grease_distributions/{id} {
+      allow read, write: if true;
+    }
+    match /fog_stock_inputs/{id} {
+      allow read, write: if true;
+    }
+    match /fog_fuel_distributions/{id} {
+      allow read, write: if true;
+    }
+    match /fog_oil_distributions/{id} {
+      allow read, write: if true;
+    }
 
-    // Dokumen Pemeriksaan Harian P2H
+    // Dokumen Pemeriksaan Harian P2H (Modul 5)
     match /p2h_records/{p2hId} {
       allow read, write: if true;
     }
 
-    // Dokumen Inventory Spare Part
+    // Dokumen Inventory Spare Part (Modul 6)
     match /spare_parts/{partId} {
       allow read, write: if true;
     }
-
-    // Dokumen Tyre Management
-    match /tyre_records/{tyreId} {
+    match /spare_part_transactions/{txId} {
+      allow read, write: if true;
+    }
+    match /purchase_requests/{prId} {
       allow read, write: if true;
     }
 
-    // Dokumen Activity Logs
+    // Dokumen Tyre Management (Modul 7)
+    match /tyre_records/{tyreId} {
+      allow read, write: if true;
+    }
+    match /tyre_installs/{id} {
+      allow read, write: if true;
+    }
+    match /tyre_removes/{id} {
+      allow read, write: if true;
+    }
+
+    // Dokumen Activity Logs & Settings
     match /activity_logs/{logId} {
+      allow read, write: if true;
+    }
+    match /settings/{settingId} {
       allow read, write: if true;
     }
 
