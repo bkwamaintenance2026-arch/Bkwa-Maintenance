@@ -178,52 +178,79 @@ export function getAllUsers(): UserAccount[] {
       modified = true;
     }
 
-    // Sinkronisasi akun karyawan yang didaftarkan akun developer di Modul 2 Manpower
+    // Sinkronisasi akun karyawan yang memiliki No HP di Modul 2 Manpower
+    // Sesuai aturan: Karyawan tanpa No HP tidak memiliki akses ke sistem
     try {
       const mpData = localStorage.getItem(STORAGE_KEYS.MANPOWER);
       if (mpData) {
         const mpList: ManpowerData[] = JSON.parse(mpData);
         mpList.forEach((mp) => {
-          if (mp.noWa || (mp.nik && mp.isUserAccountActive)) {
-            const cleanWa = (mp.noWa || '').trim();
-            const cleanNik = (mp.nik || '').trim();
-            const loginUsername = cleanWa ? cleanWa.replace(/[^0-9]/g, '') || cleanWa : (cleanNik || 'karyawan');
-            const existingIdx = parsed.findIndex(
-              (u) => u.manpowerId === mp.id || 
-                    (cleanWa && u.phone && u.phone.trim() === cleanWa) ||
-                    (cleanWa && u.username && u.username.trim() === cleanWa) ||
-                    (u.username && u.username.trim() === loginUsername)
-            );
-            if (existingIdx !== -1) {
-              // Pertahankan password yang telah dibuat oleh Admin, jangan ditimpa!
-              const currentPassword = parsed[existingIdx].password || cleanNik || 'bkwa123';
-              parsed[existingIdx].username = parsed[existingIdx].username || loginUsername;
-              parsed[existingIdx].password = currentPassword;
-              parsed[existingIdx].fullName = mp.nama || parsed[existingIdx].fullName || cleanWa;
-              parsed[existingIdx].phone = cleanWa || parsed[existingIdx].phone || '-';
-              parsed[existingIdx].manpowerId = mp.id;
-              parsed[existingIdx].role = parsed[existingIdx].role || 'KARYAWAN';
-              parsed[existingIdx].permissions = mp.permissions || parsed[existingIdx].permissions;
-              parsed[existingIdx].status = parsed[existingIdx].status || 'AKTIF';
-              modified = true;
-            } else if (mp.isUserAccountActive && cleanWa) {
-              parsed.push({
-                id: `usr-mp-${mp.id}`,
-                username: loginUsername,
-                fullName: mp.nama || cleanWa,
-                role: 'KARYAWAN',
-                accountTier: mp.jabatan === 'ADMINISTRASI' ? 'ADMIN' : 'MEMBER',
-                password: cleanNik || 'bkwa123',
-                department: typeof mp.jabatan === 'string' ? mp.jabatan : 'Manpower',
-                phone: cleanWa,
-                status: 'AKTIF',
-                accessLevel: mp.jabatan === 'ADMINISTRASI' ? 'BISA_MENGISI' : 'HANYA_VIEW',
-                manpowerId: mp.id,
-                permissions: mp.permissions,
-                createdAt: mp.createdAt || new Date().toISOString(),
-              });
-              modified = true;
-            }
+          const rawWa = (mp.noWa || '').trim();
+          const cleanWa = rawWa.replace(/[^0-9]/g, '');
+
+          // JIKA TIDAK MEMILIKI NO HP: Karyawan tidak memiliki akses login
+          if (!cleanWa) {
+            return;
+          }
+
+          const loginUsername = cleanWa;
+          const cleanNik = (mp.nik || '').trim();
+          const existingIdx = parsed.findIndex(
+            (u) =>
+              u.manpowerId === mp.id ||
+              (u.phone && u.phone.replace(/[^0-9]/g, '') === cleanWa) ||
+              (u.username && u.username.replace(/[^0-9]/g, '') === cleanWa)
+          );
+
+          if (existingIdx !== -1) {
+            // Pertahankan password dan izin yang telah diatur oleh Developer atau diubah oleh user!
+            const currentPassword = parsed[existingIdx].password || cleanNik || 'bkwa123';
+            parsed[existingIdx].username = loginUsername;
+            parsed[existingIdx].phone = cleanWa;
+            parsed[existingIdx].password = currentPassword;
+            parsed[existingIdx].fullName = mp.nama || parsed[existingIdx].fullName || cleanWa;
+            parsed[existingIdx].manpowerId = mp.id;
+            parsed[existingIdx].department = mp.jabatan || parsed[existingIdx].department || 'Operasional';
+            parsed[existingIdx].jabatan = mp.jabatan || parsed[existingIdx].jabatan;
+            parsed[existingIdx].role = 'KARYAWAN';
+            parsed[existingIdx].status = parsed[existingIdx].status || 'AKTIF';
+            modified = true;
+          } else {
+            // Default Hak Akses Seluruh Karyawan: Viewer Dulu Secara Default
+            parsed.push({
+              id: `usr-mp-${mp.id}`,
+              username: loginUsername,
+              fullName: mp.nama || cleanWa,
+              role: 'KARYAWAN',
+              accountTier: 'MEMBER',
+              password: cleanNik || 'bkwa123',
+              department: mp.jabatan || 'Operasional',
+              jabatan: mp.jabatan,
+              phone: cleanWa,
+              status: 'AKTIF',
+              accessLevel: 'HANYA_VIEW', // Default Viewer
+              manpowerId: mp.id,
+              modulePermissions: {
+                modul1Asset: false,
+                modul2Manpower: false,
+                modul3Maintenance: false,
+                modul4Inventory: false,
+                modul5P2H: false,
+                modul6SparePart: false,
+                modul7Tyre: false,
+              },
+              permissions: {
+                modul1: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul2: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul3: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul4: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul5: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul6: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul7: { viewer: true, input: false, edit: false, delete: false, export: false },
+              },
+              createdAt: mp.createdAt || new Date().toISOString(),
+            });
+            modified = true;
           }
         });
       }
@@ -243,6 +270,32 @@ export function getAllUsers(): UserAccount[] {
 
 export function saveUsers(users: UserAccount[]): void {
   localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+}
+
+// Simpan Pengaturan Hak Akses oleh Developer & Update Real-Time ke Cloud Firestore
+export async function saveAccessControlSettings(
+  users: UserAccount[]
+): Promise<{ success: boolean; message: string }> {
+  try {
+    saveUsers(users);
+    // Sinkronkan seluruh data user ke Cloud Firestore secara realtime
+    for (const u of users) {
+      if (u.id) {
+        await syncItemToFirestore('users', u.id, u);
+      }
+    }
+    window.dispatchEvent(new CustomEvent('bkwa-users-updated'));
+    return {
+      success: true,
+      message: 'Pengaturan hak akses berhasil disimpan dan langsung aktif secara realtime!',
+    };
+  } catch (err: any) {
+    console.error('Error saving access control settings:', err);
+    return {
+      success: false,
+      message: `Gagal menyimpan hak akses: ${err?.message || 'Error koneksi'}`,
+    };
+  }
 }
 
 // ============================================================
@@ -502,9 +555,9 @@ export function updateUserPassword(id: string, newPassword: string): { success: 
   return { success: true, message: `Password akun ${users[index].fullName} berhasil diperbarui!` };
 }
 
-// Sinkronisasi otomatis personil Manpower ke Akun Pengguna:
-// - Administrasi: Otomatis disetel "BISA_MENGISI" (Editor)
-// - Owner dan Karyawan umum: Otomatis disetel "HANYA_VIEW" (Viewer)
+// Sinkronisasi personil Manpower ke Akun Pengguna:
+// - Hanya personil dengan No HP terdaftar yang mendapatkan akun login
+// - Seluruh Karyawan: Default "HANYA_VIEW" (Viewer)
 export function syncAllManpowerToUserAccounts(): {
   success: boolean;
   createdCount: number;
@@ -518,88 +571,68 @@ export function syncAllManpowerToUserAccounts(): {
   let updatedCount = 0;
 
   manpowerList.forEach((mp) => {
-    // Cari apakah sudah ada akun user yang tertaut dengan id manpower ini atau username/nama serupa
+    const rawWa = (mp.noWa || '').trim();
+    const cleanWa = rawWa.replace(/[^0-9]/g, '');
+
+    // JIKA TIDAK MEMILIKI NO HP: Tidak memiliki akses!
+    if (!cleanWa) {
+      return;
+    }
+
+    const loginUsername = cleanWa;
     const existingIndex = users.findIndex(
       (u) => 
         (u.manpowerId && u.manpowerId === mp.id) ||
-        (mp.nik && u.username.toLowerCase() === mp.nik.toLowerCase().trim()) ||
-        (mp.nama && u.fullName.toLowerCase().trim() === mp.nama.toLowerCase().trim())
+        (u.phone && u.phone.replace(/[^0-9]/g, '') === cleanWa) ||
+        (u.username && u.username.replace(/[^0-9]/g, '') === cleanWa)
     );
-
-    const isAdministrasi = mp.jabatan === 'ADMINISTRASI';
-    const isOwner = mp.jabatan === 'OWNER' || mp.jabatan === 'DIREKTUR / MANAGEMENT';
-
-    // Otorisasi sesuai kebutuhan user:
-    // - Khusus Administrasi: BISA MENGISI
-    // - Seluruh Karyawan dan Owner: HANYA VIEW
-    const targetAccessLevel: UserAccessLevel = isAdministrasi ? 'BISA_MENGISI' : 'HANYA_VIEW';
-    const targetPermissions: UserModulePermissions = {
-      modul1Asset: isAdministrasi,
-      modul2Manpower: isAdministrasi,
-      modul3Maintenance: isAdministrasi,
-      modul4Inventory: isAdministrasi,
-    };
 
     if (existingIndex !== -1) {
       // Update data yang sudah ada jika bukan ADMIN Developer
       if (users[existingIndex].role !== 'ADMIN') {
         users[existingIndex].manpowerId = mp.id;
+        users[existingIndex].username = loginUsername;
+        users[existingIndex].phone = cleanWa;
         users[existingIndex].jabatan = mp.jabatan;
         users[existingIndex].department = mp.jabatan || 'Workshop & Quarry';
-        users[existingIndex].phone = mp.noWa || users[existingIndex].phone;
-        users[existingIndex].role = users[existingIndex].role || 'KARYAWAN';
-        // Password yang sudah dibuat admin tidak boleh ditimpa
-        users[existingIndex].password = users[existingIndex].password || (isAdministrasi ? 'admin123' : 'user123');
-        users[existingIndex].accessLevel = targetAccessLevel;
-        users[existingIndex].modulePermissions = targetPermissions;
+        users[existingIndex].role = 'KARYAWAN';
+        // Password yang sudah dibuat/diubah user/admin tidak boleh ditimpa
+        users[existingIndex].password = users[existingIndex].password || (mp.nik ? mp.nik.trim() : 'bkwa123');
         updatedCount++;
       }
     } else {
-      // Buat akun baru: Utamakan No HP sebagai Username sesuai instruksi user
-      let baseUsername = '';
-      const cleanWa = (mp.noWa || '').replace(/[^0-9]/g, '');
-      if (cleanWa) {
-        baseUsername = cleanWa;
-      } else if (isOwner) {
-        baseUsername = 'owner_bkwa';
-      } else if (mp.nik && mp.nik.trim()) {
-        baseUsername = mp.nik.toLowerCase().replace(/[^a-z0-9]/g, '');
-      } else if (mp.nama && mp.nama.trim()) {
-        baseUsername = mp.nama.toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '');
-      } else {
-        baseUsername = 'karyawan';
-      }
-
-      let candidateUsername = baseUsername;
-      let counter = 1;
-      while (users.some((u) => u.username.toLowerCase() === candidateUsername.toLowerCase())) {
-        candidateUsername = `${baseUsername}${counter}`;
-        counter++;
-      }
-
-      // Tentukan password awal (Admin dapat mengubahnya kapan saja di menu Hak Akses)
-      let defaultPassword = 'user123';
-      if (isOwner) {
-        defaultPassword = 'owner123';
-      } else if (isAdministrasi) {
-        defaultPassword = 'admin123';
-      }
-
       const newUser: UserAccount = {
         id: `usr-mp-${mp.id}`,
         manpowerId: mp.id,
-        username: candidateUsername,
-        email: `${candidateUsername.toLowerCase()}@bkwa.co.id`,
-        fullName: mp.nama || (isOwner ? 'Owner BKWA' : 'Karyawan BKWA'),
+        username: loginUsername,
+        email: `${loginUsername}@bkwa.co.id`,
+        fullName: mp.nama || cleanWa,
         role: 'KARYAWAN',
-        accountTier: isAdministrasi ? 'ADMIN' : (isOwner ? 'KHUSUS' : 'MEMBER'),
-        password: defaultPassword,
+        accountTier: 'MEMBER',
+        password: mp.nik ? mp.nik.trim() : 'bkwa123',
         department: mp.jabatan || 'Operasional',
         jabatan: mp.jabatan,
-        phone: mp.noWa || '-',
+        phone: cleanWa,
         status: 'AKTIF',
-        accessLevel: targetAccessLevel,
-        modulePermissions: targetPermissions,
+        accessLevel: 'HANYA_VIEW', // Default Viewer untuk seluruh karyawan
+        modulePermissions: {
+          modul1Asset: false,
+          modul2Manpower: false,
+          modul3Maintenance: false,
+          modul4Inventory: false,
+          modul5P2H: false,
+          modul6SparePart: false,
+          modul7Tyre: false,
+        },
+        permissions: {
+          modul1: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul2: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul3: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul4: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul5: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul6: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul7: { viewer: true, input: false, edit: false, delete: false, export: false },
+        },
         createdAt: new Date().toISOString(),
       };
 

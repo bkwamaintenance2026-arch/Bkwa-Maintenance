@@ -1,39 +1,37 @@
-import React, { useState } from 'react';
-import { UserAccount, UserAccessLevel, UserModulePermissions } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { UserAccount, UserAccessLevel, UserModulePermissions, GranularUserPermissions } from '../../types';
 import { 
   X, 
   UserPlus, 
   ShieldCheck, 
   Eye, 
-  EyeOff,
+  EyeOff, 
   Edit3, 
   HardHat, 
   Lock, 
-  Unlock, 
   Trash2, 
   CheckCircle2, 
-  AlertCircle,
-  Search,
-  KeyRound,
+  AlertCircle, 
+  Search, 
+  KeyRound, 
+  Phone, 
+  Layers, 
+  ChevronDown, 
+  ChevronUp, 
+  Copy, 
+  Check, 
+  Save, 
+  Sparkles,
   RefreshCw,
-  UserCheck,
-  Building2,
-  Phone,
-  Layers,
-  ChevronDown,
-  ChevronUp,
-  Crown,
-  FileSpreadsheet,
-  Users
+  UserX
 } from 'lucide-react';
 import { 
-  registerKaryawanUser, 
-  updateUserAccount, 
-  updateUserAccessLevel, 
-  deleteUserAccount,
   updateUserPassword,
-  syncAllManpowerToUserAccounts,
-  setCurrentUser 
+  updateUserAccount,
+  deleteUserAccount,
+  registerKaryawanUser,
+  saveAccessControlSettings,
+  getAllManpower
 } from '../../utils/storage';
 
 interface AccessControlModalProps {
@@ -49,14 +47,15 @@ interface AccessControlModalProps {
 export const AccessControlModal: React.FC<AccessControlModalProps> = ({
   isOpen,
   onClose,
-  users,
+  users: initialUsers,
   currentUser,
   onRefreshUsers,
   onSwitchUser,
-  manpowerCount,
 }) => {
+  // Local state of users for immediate batch editing
+  const [usersList, setUsersList] = useState<UserAccount[]>(initialUsers);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'OWNER' | 'ADMINISTRASI' | 'BISA_MENGISI' | 'HANYA_VIEW'>('ALL');
+  const [filterType, setFilterType] = useState<'ALL' | 'BISA_MENGISI' | 'HANYA_VIEW' | 'NONAKTIF'>('ALL');
   const [showAddForm, setShowAddForm] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -64,28 +63,27 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [editingPasswordUserId, setEditingPasswordUserId] = useState<string | null>(null);
   const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [copiedPasswordId, setCopiedPasswordId] = useState<string | null>(null);
 
-  // Username & Phone edit states
-  const [editingUsernameUserId, setEditingUsernameUserId] = useState<string | null>(null);
-  const [newUsernameInput, setNewUsernameInput] = useState<string>('');
+  // Saving state & feedback
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // New user form state
-  const [newUserData, setNewUserData] = useState({
+  // Non-Karyawan Registration Form state
+  const [newNonKaryawanData, setNewNonKaryawanData] = useState({
     username: '',
     fullName: '',
-    password: '',
-    department: 'Mekanik Lapangan',
+    password: 'user123',
+    department: 'Manajemen Eksternal',
     phone: '',
     accessLevel: 'HANYA_VIEW' as UserAccessLevel,
-    modulePermissions: {
-      modul1Asset: false,
-      modul2Manpower: false,
-      modul3Maintenance: false,
-      modul4Inventory: false,
-    } as UserModulePermissions,
   });
 
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Sinkronisasi data awal jika prop berubah
+  useEffect(() => {
+    setUsersList(initialUsers);
+  }, [initialUsers]);
 
   if (!isOpen) return null;
 
@@ -111,73 +109,155 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     );
   }
 
-  // Helper check status jabatan
-  const isUserOwner = (u: UserAccount) => 
-    u.jabatan === 'OWNER' || 
-    u.jabatan === 'DIREKTUR / MANAGEMENT' || 
-    (u.department && (u.department.toLowerCase().includes('owner') || u.department.toLowerCase().includes('direktur'))) ||
-    u.username.toLowerCase().includes('owner');
+  // Identifikasi personil manpower yang belum memiliki No HP
+  const allManpower = getAllManpower();
+  const manpowerWithoutPhone = allManpower.filter((m) => !(m.noWa && m.noWa.trim()));
 
-  const isUserAdministrasi = (u: UserAccount) =>
-    u.jabatan === 'ADMINISTRASI' ||
-    (u.department && u.department.toLowerCase().includes('administrasi')) ||
-    u.username.toLowerCase().includes('admin_');
-
-  // Statistik Otorisasi
-  const totalUsers = users.length;
-  const countOwner = users.filter(isUserOwner).length;
-  const countAdministrasi = users.filter(isUserAdministrasi).length;
-  const countBisaMengisi = users.filter((u) => u.role === 'ADMIN' || u.accessLevel === 'BISA_MENGISI').length;
-  const countHanyaView = users.filter((u) => u.role !== 'ADMIN' && u.accessLevel === 'HANYA_VIEW').length;
-
-  // Filter list
-  const filteredUsers = users.filter((u) => {
+  // Filter list pengguna
+  const filteredUsers = usersList.filter((u) => {
     const matchesSearch = 
       u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.department && u.department.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (u.jabatan && u.jabatan.toLowerCase().includes(searchTerm.toLowerCase()));
+      (u.phone && u.phone.includes(searchTerm));
 
     if (!matchesSearch) return false;
 
-    if (filterType === 'OWNER') {
-      return isUserOwner(u);
-    }
-    if (filterType === 'ADMINISTRASI') {
-      return isUserAdministrasi(u);
-    }
     if (filterType === 'BISA_MENGISI') {
       return u.role === 'ADMIN' || u.accessLevel === 'BISA_MENGISI';
     }
     if (filterType === 'HANYA_VIEW') {
       return u.role !== 'ADMIN' && u.accessLevel === 'HANYA_VIEW';
     }
+    if (filterType === 'NONAKTIF') {
+      return u.status === 'NONAKTIF';
+    }
     return true;
   });
 
-  // Handler Sinkronisasi Manpower ke Akun Pengguna
-  const handleSyncFromManpower = () => {
-    const res = syncAllManpowerToUserAccounts();
-    if (res.success) {
-      setFeedback({
-        type: 'success',
-        text: `Sinkronisasi selesai! Staf Administrasi disetel BISA MENGISI, Owner dan Karyawan umum disetel HANYA VIEW.`
-      });
-      onRefreshUsers();
-    } else {
-      setFeedback({ type: 'error', text: 'Gagal menyinkronkan data Manpower.' });
-    }
+  // Toggle visibilitas password
+  const togglePasswordVisibility = (userId: string) => {
+    setVisiblePasswords((prev) => ({
+      ...prev,
+      [userId]: !prev[userId],
+    }));
   };
 
-  // Handler Simpan Password Baru
+  const copyPassword = (userId: string, passwordText: string) => {
+    navigator.clipboard.writeText(passwordText);
+    setCopiedPasswordId(userId);
+    setTimeout(() => setCopiedPasswordId(null), 2000);
+  };
+
+  // Ubah Level Akses Global (Bisa Mengisi vs Hanya View)
+  const handleToggleAccessLevel = (targetId: string, newLevel: UserAccessLevel) => {
+    setUsersList((prev) =>
+      prev.map((u) => {
+        if (u.id !== targetId || u.role === 'ADMIN') return u;
+
+        const isFill = newLevel === 'BISA_MENGISI';
+        const updatedModulePerms: UserModulePermissions = {
+          modul1Asset: isFill,
+          modul2Manpower: isFill,
+          modul3Maintenance: isFill,
+          modul4Inventory: isFill,
+          modul5P2H: isFill,
+          modul6SparePart: isFill,
+          modul7Tyre: isFill,
+        };
+
+        const updatedGranular: GranularUserPermissions = {
+          modul1: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul2: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul3: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul4: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul5: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul6: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul7: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+        };
+
+        return {
+          ...u,
+          accessLevel: newLevel,
+          modulePermissions: updatedModulePerms,
+          permissions: updatedGranular,
+        };
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  // Ubah Izin Spesifik Per-Modul (Modul 1 s/d Modul 7)
+  const handleToggleModulePermission = (targetId: string, moduleNum: number, mode: 'VIEW' | 'EDIT' | 'LOCKED') => {
+    setUsersList((prev) =>
+      prev.map((u) => {
+        if (u.id !== targetId || u.role === 'ADMIN') return u;
+
+        const modKey = `modul${moduleNum}` as keyof GranularUserPermissions;
+        const currentModPerm = u.permissions?.[modKey] || {
+          viewer: true,
+          input: false,
+          edit: false,
+          delete: false,
+          export: false,
+        };
+
+        let newModPerm = { ...currentModPerm };
+        if (mode === 'EDIT') {
+          newModPerm = { viewer: true, input: true, edit: true, delete: false, export: true };
+        } else if (mode === 'VIEW') {
+          newModPerm = { viewer: true, input: false, edit: false, delete: false, export: false };
+        } else {
+          // LOCKED / HIDE
+          newModPerm = { viewer: false, input: false, edit: false, delete: false, export: false };
+        }
+
+        const updatedPermissions: GranularUserPermissions = {
+          ...(u.permissions || {}),
+          [modKey]: newModPerm,
+        };
+
+        // Cek apakah ada setidaknya satu modul yang bisa diedit
+        const anyEditable = Object.values(updatedPermissions).some((p) => p && (p.input || p.edit));
+        const newAccessLevel: UserAccessLevel = anyEditable ? 'BISA_MENGISI' : 'HANYA_VIEW';
+
+        return {
+          ...u,
+          accessLevel: newAccessLevel,
+          permissions: updatedPermissions,
+        };
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  // Toggle Status Pengguna (Aktif / Nonaktif)
+  const handleToggleStatus = (targetId: string) => {
+    setUsersList((prev) =>
+      prev.map((u) => {
+        if (u.id !== targetId || u.role === 'ADMIN') return u;
+        return {
+          ...u,
+          status: u.status === 'AKTIF' ? 'NONAKTIF' : 'AKTIF',
+        };
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  // Simpan Password Baru
   const handleSaveNewPassword = (targetUser: UserAccount) => {
     if (!newPasswordInput.trim()) {
       setFeedback({ type: 'error', text: 'Password tidak boleh kosong!' });
       return;
     }
+
     const res = updateUserPassword(targetUser.id, newPasswordInput.trim());
     if (res.success) {
-      setFeedback({ type: 'success', text: res.message });
+      setUsersList((prev) =>
+        prev.map((u) => (u.id === targetUser.id ? { ...u, password: newPasswordInput.trim() } : u))
+      );
+      setFeedback({ type: 'success', text: `Password untuk ${targetUser.fullName} berhasil diperbarui!` });
       setEditingPasswordUserId(null);
       setNewPasswordInput('');
       onRefreshUsers();
@@ -186,86 +266,12 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     }
   };
 
-  const togglePasswordVisibility = (userId: string) => {
-    setVisiblePasswords(prev => ({
-      ...prev,
-      [userId]: !prev[userId]
-    }));
-  };
-
-  // Handler Ubah Level Global Akses (Bisa Mengisi vs Hanya View)
-  const handleToggleAccessLevel = (targetUser: UserAccount, newLevel: UserAccessLevel) => {
-    if (targetUser.role === 'ADMIN') {
-      setFeedback({ type: 'error', text: 'Hak akses Akun Developer selalu Full Access (Bisa Mengisi).' });
-      return;
-    }
-
-    const newModulePerms: UserModulePermissions = {
-      modul1Asset: newLevel === 'BISA_MENGISI',
-      modul2Manpower: newLevel === 'BISA_MENGISI',
-      modul3Maintenance: newLevel === 'BISA_MENGISI',
-      modul4Inventory: newLevel === 'BISA_MENGISI',
-    };
-
-    const res = updateUserAccessLevel(targetUser.id, newLevel, newModulePerms);
-    if (res.success) {
-      setFeedback({ type: 'success', text: res.message });
-      onRefreshUsers();
-    } else {
-      setFeedback({ type: 'error', text: res.message });
-    }
-  };
-
-  // Handler Ubah Izin Spesifik Per-Modul
-  const handleToggleModulePerm = (
-    targetUser: UserAccount, 
-    moduleKey: keyof UserModulePermissions
-  ) => {
-    if (targetUser.role === 'ADMIN') return;
-
-    const currentPerms = targetUser.modulePermissions || {
-      modul1Asset: targetUser.accessLevel === 'BISA_MENGISI',
-      modul2Manpower: targetUser.accessLevel === 'BISA_MENGISI',
-      modul3Maintenance: targetUser.accessLevel === 'BISA_MENGISI',
-      modul4Inventory: targetUser.accessLevel === 'BISA_MENGISI',
-    };
-
-    const updatedPerms: UserModulePermissions = {
-      ...currentPerms,
-      [moduleKey]: !currentPerms[moduleKey],
-    };
-
-    // If at least one is true, user is BISA_MENGISI, otherwise HANYA_VIEW
-    const anyTrue = Object.values(updatedPerms).some(Boolean);
-    const newGlobalLevel: UserAccessLevel = anyTrue ? 'BISA_MENGISI' : 'HANYA_VIEW';
-
-    const res = updateUserAccessLevel(targetUser.id, newGlobalLevel, updatedPerms);
-    if (res.success) {
-      setFeedback({ 
-        type: 'success', 
-        text: `Izin modul untuk ${targetUser.fullName} diperbarui.` 
-      });
-      onRefreshUsers();
-    }
-  };
-
-  // Handler Toggle Status Aktif / Nonaktif
-  const handleToggleStatus = (targetUser: UserAccount) => {
-    if (targetUser.role === 'ADMIN') return;
-    const nextStatus = targetUser.status === 'AKTIF' ? 'NONAKTIF' : 'AKTIF';
-    updateUserAccount(targetUser.id, { status: nextStatus });
-    setFeedback({ 
-      type: 'success', 
-      text: `Status akun ${targetUser.fullName} diubah menjadi ${nextStatus}.` 
-    });
-    onRefreshUsers();
-  };
-
-  // Handler Hapus User
+  // Hapus Pengguna
   const handleDeleteUser = (id: string, name: string) => {
-    if (window.confirm(`Yakin ingin menghapus akun pengguna: ${name}?`)) {
+    if (window.confirm(`Yakin ingin menghapus akun: ${name}?`)) {
       const res = deleteUserAccount(id);
       if (res.success) {
+        setUsersList((prev) => prev.filter((u) => u.id !== id));
         setFeedback({ type: 'success', text: res.message });
         onRefreshUsers();
       } else {
@@ -274,75 +280,50 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     }
   };
 
-  // Handler Simpan Perubahan Username / No HP
-  const handleSaveNewUsername = (targetUser: UserAccount) => {
-    if (!newUsernameInput.trim()) {
-      setFeedback({ type: 'error', text: 'Username / No HP tidak boleh kosong!' });
-      return;
-    }
-    const cleanVal = newUsernameInput.trim();
-    const cleanDigits = cleanVal.replace(/[^0-9]/g, '');
-    const cleanU = cleanDigits || cleanVal.toLowerCase();
-    const success = updateUserAccount(targetUser.id, { 
-      username: cleanU, 
-      phone: cleanVal 
-    });
-    if (success) {
-      setFeedback({ 
-        type: 'success', 
-        text: `Username/No HP untuk ${targetUser.fullName} berhasil diperbarui menjadi: @${cleanU}` 
-      });
-      setEditingUsernameUserId(null);
-      setNewUsernameInput('');
-      onRefreshUsers();
-    } else {
-      setFeedback({ type: 'error', text: 'Gagal memperbarui Username/No HP.' });
-    }
-  };
-
-  // Handler Register Karyawan Baru
-  const handleCreateNewUser = (e: React.FormEvent) => {
+  // Pendaftaran Pengguna Non-Karyawan / Eksternal
+  const handleCreateNonKaryawan = (e: React.FormEvent) => {
     e.preventDefault();
-    const phoneInput = newUserData.phone.trim();
-    const phoneClean = phoneInput.replace(/[^0-9]/g, '');
-    // Prioritaskan No HP sebagai username
-    const usernameInput = (newUserData.username.trim() || phoneClean || newUserData.fullName.trim().toLowerCase().replace(/[^a-z0-9]/g, '')).toLowerCase();
+    const cleanPhone = newNonKaryawanData.phone.replace(/[^0-9]/g, '');
+    const cleanUsername = (cleanPhone || newNonKaryawanData.username.trim() || newNonKaryawanData.fullName.trim().toLowerCase().replace(/[^a-z0-9]/g, '')).toLowerCase();
 
-    if (!usernameInput || !newUserData.fullName.trim() || !newUserData.password.trim()) {
-      setFeedback({ type: 'error', text: 'Nama lengkap, No HP / Username, dan Password wajib diisi!' });
+    if (!cleanUsername || !newNonKaryawanData.fullName.trim() || !newNonKaryawanData.password.trim()) {
+      setFeedback({ type: 'error', text: 'Nama lengkap, Username / No HP, dan Password wajib diisi!' });
       return;
     }
 
     const res = registerKaryawanUser({
-      username: usernameInput,
-      fullName: newUserData.fullName.trim(),
-      password: newUserData.password.trim(),
+      username: cleanUsername,
+      fullName: newNonKaryawanData.fullName.trim(),
+      password: newNonKaryawanData.password.trim(),
       role: 'KARYAWAN',
-      department: newUserData.department,
-      phone: phoneInput || usernameInput,
+      department: newNonKaryawanData.department,
+      phone: newNonKaryawanData.phone.trim() || cleanUsername,
       status: 'AKTIF',
-      accessLevel: newUserData.accessLevel,
-      modulePermissions: newUserData.modulePermissions,
+      accessLevel: newNonKaryawanData.accessLevel,
+      permissions: {
+        modul1: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul2: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul3: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul4: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul5: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul6: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul7: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+      },
     });
 
-    if (res.success) {
-      setFeedback({ 
-        type: 'success', 
-        text: `Akun ${newUserData.fullName} berhasil didaftarkan! User dapat login menggunakan No HP / Username: "${usernameInput}" dan Password: "${newUserData.password.trim()}". Hak Akses: ${newUserData.accessLevel === 'BISA_MENGISI' ? 'Bisa Mengisi' : 'Hanya View'}.` 
+    if (res.success && res.user) {
+      setUsersList((prev) => [res.user!, ...prev]);
+      setFeedback({
+        type: 'success',
+        text: `Akun non-karyawan ${res.user.fullName} berhasil didaftarkan (Username: "${res.user.username}")!`,
       });
-      setNewUserData({
+      setNewNonKaryawanData({
         username: '',
         fullName: '',
-        password: '',
-        department: 'Mekanik Lapangan',
+        password: 'user123',
+        department: 'Manajemen Eksternal',
         phone: '',
-        accessLevel: 'BISA_MENGISI',
-        modulePermissions: {
-          modul1Asset: true,
-          modul2Manpower: true,
-          modul3Maintenance: true,
-          modul4Inventory: true,
-        },
+        accessLevel: 'HANYA_VIEW',
       });
       setShowAddForm(false);
       onRefreshUsers();
@@ -351,48 +332,101 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     }
   };
 
+  // TOMBOL UTAMA: SIMPAN PENGATURAN HAK AKSES KE CLOUD FIRESTORE SECARA REALTIME
+  const handleSaveAllSettings = async () => {
+    setIsSaving(true);
+    setFeedback({ type: 'info', text: 'Menyimpan pengaturan hak akses ke database cloud Firestore secara realtime...' });
+
+    const res = await saveAccessControlSettings(usersList);
+    setIsSaving(false);
+
+    if (res.success) {
+      setHasUnsavedChanges(false);
+      setFeedback({
+        type: 'success',
+        text: '✅ Pengaturan hak akses berhasil disimpan dan langsung aktif secara realtime!',
+      });
+      onRefreshUsers();
+    } else {
+      setFeedback({ type: 'error', text: res.message });
+    }
+  };
+
+  const moduleNames = [
+    { num: 1, title: 'Modul 1: Asset', desc: 'Registrasi Unit Alat Berat' },
+    { num: 2, title: 'Modul 2: Manpower', desc: 'Data Personil & Jabatan' },
+    { num: 3, title: 'Modul 3: Maintenance', desc: 'Laporan Breakdown & WO' },
+    { num: 4, title: 'Modul 4: FOG Logistik', desc: 'BBM, Oli, Grease & SPBU Luar' },
+    { num: 5, title: 'Modul 5: Divisi Operation', desc: 'Pemeriksaan Harian Form P2H' },
+    { num: 6, title: 'Modul 6: Spare Part', desc: 'Inventory Suku Cadang & PR' },
+    { num: 7, title: 'Modul 7: Tyre System', desc: 'Manajemen Ban Alat Berat' },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/85 backdrop-blur-sm p-2 sm:p-4 md:p-6 flex justify-center items-start">
-      <div className="relative w-full max-w-4xl bg-stone-900 border border-stone-700 rounded-3xl shadow-2xl shadow-stone-950/95 my-2 sm:my-6 text-stone-100 flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="relative w-full max-w-5xl bg-stone-900 border border-stone-700 rounded-3xl shadow-2xl shadow-stone-950/95 my-2 sm:my-4 text-stone-100 flex flex-col max-h-[94vh] overflow-hidden">
         
         {/* MODAL HEADER */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-stone-800 bg-stone-900/95 shrink-0">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/10">
-              <ShieldCheck className="w-6 h-6" />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-800 bg-stone-900/95 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/10 shrink-0">
+              <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base sm:text-lg font-bold text-stone-100 font-mono tracking-wide">
-                  PENGATURAN OTORISASI & HAK AKSES USER
+                  PENGATURAN OTORISASI &amp; HAK AKSES PENGGUNA
                 </h3>
-                <span className="hidden sm:inline-flex text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-500 text-stone-950">
-                  Developer Mode
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-500 text-stone-950">
+                  Full Control Developer
                 </span>
               </div>
               <p className="text-xs text-stone-400 mt-0.5">
-                Atur secara instan siapa saja yang dapat <strong className="text-emerald-400 font-semibold">Mengisi (Input/Edit)</strong> dan siapa yang <strong className="text-sky-400 font-semibold">Hanya View (Lihat Saja)</strong>.
+                Otoritas penuh 1 akun Developer. Seluruh karyawan Viewer secara default, kontrol izin Modul 1 - Modul 7 per orang.
               </p>
             </div>
           </div>
-          <button
-            id="btn-close-access-modal"
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition"
-            title="Tutup Menu"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Tombol Simpan Cepat di Header */}
+            <button
+              type="button"
+              onClick={handleSaveAllSettings}
+              disabled={isSaving}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-lg active:scale-95 ${
+                hasUnsavedChanges
+                  ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-amber-500/30 animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
+              }`}
+              title="Simpan pengaturan hak akses ke sistem & Cloud Firestore"
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">
+                {isSaving ? 'Menyimpan...' : hasUnsavedChanges ? 'Simpan Perubahan' : 'Simpan Hak Akses'}
+              </span>
+            </button>
+
+            <button
+              id="btn-close-access-modal"
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition"
+              title="Tutup Menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* FEEDBACK NOTIFICATION */}
         {feedback && (
           <div
-            className={`mx-6 mt-4 p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between border ${
+            className={`mx-6 mt-3 p-3 rounded-2xl text-xs font-semibold flex items-center justify-between border shrink-0 ${
               feedback.type === 'success'
-                ? 'bg-emerald-950/70 border-emerald-700 text-emerald-300'
-                : 'bg-rose-950/70 border-rose-700 text-rose-300'
+                ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+                : feedback.type === 'error'
+                ? 'bg-rose-950/80 border-rose-700 text-rose-300'
+                : 'bg-sky-950/80 border-sky-700 text-sky-300'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -413,97 +447,17 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           </div>
         )}
 
-        {/* MODAL BODY (Single smooth scrollable container from top to bottom) */}
+        {/* MODAL BODY (Spacious, clean, direct access list) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 overscroll-contain">
           
-          {/* BANNER REKOMENDASI RBAC OTOMATIS: SINKRONISASI MANPOWER KE AKUN LOGIN */}
-          <div className="p-4 bg-gradient-to-r from-amber-950/40 via-stone-900 to-sky-950/40 border border-amber-800/40 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-inner">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                <RefreshCw className="w-5 h-5 text-amber-400" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h4 className="text-xs font-bold font-mono text-amber-300 uppercase tracking-wide">
-                    SINKRONISASI OTOMATIS DARI DATA MANPOWER
-                  </h4>
-                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold border border-amber-500/30">
-                    Sesuai Aturan Otorisasi
-                  </span>
-                </div>
-                <p className="text-xs text-stone-300 mt-0.5 leading-relaxed">
-                  Semua karyawan dari <strong>Modul 2 Manpower</strong> dan <strong>Owner</strong> otomatis dibuatkan akun dengan hak akses <span className="text-sky-400 font-semibold">Hanya View (Viewer)</span>. Khusus personil dengan jabatan <span className="text-emerald-400 font-semibold">Administrasi</span> otomatis disetel <span className="text-emerald-400 font-semibold">Bisa Mengisi (Editor)</span>.
-                </p>
-              </div>
-            </div>
-            <button
-              id="btn-sync-manpower-users"
-              type="button"
-              onClick={handleSyncFromManpower}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs rounded-xl transition shrink-0 shadow-md shadow-amber-500/20 active:scale-95 whitespace-nowrap"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Sinkronkan Personil Sekarang</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            {/* Total Akun */}
-            <div className="p-3 bg-stone-950/60 border border-stone-800 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-mono uppercase text-stone-400">Total Akun</p>
-                <p className="text-lg font-bold font-mono text-stone-100">{totalUsers} Pengguna</p>
-              </div>
-              <div className="w-8 h-8 rounded-xl bg-stone-800 flex items-center justify-center text-stone-300">
-                <Users className="w-4 h-4" />
-              </div>
-            </div>
-
-            {/* Owner (View Only) */}
-            <div className="p-3 bg-purple-950/20 border border-purple-800/40 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-mono uppercase text-purple-400">Owner / Direksi</p>
-                <p className="text-lg font-bold font-mono text-purple-300">{countOwner} Akun</p>
-                <p className="text-[10px] text-purple-400/80">Akses Hanya View</p>
-              </div>
-              <div className="w-8 h-8 rounded-xl bg-purple-900/40 border border-purple-700/50 flex items-center justify-center text-purple-300">
-                <Crown className="w-4 h-4" />
-              </div>
-            </div>
-
-            {/* Administrasi (Editor) */}
-            <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-mono uppercase text-emerald-400">Administrasi</p>
-                <p className="text-lg font-bold font-mono text-emerald-300">{countAdministrasi} Akun</p>
-                <p className="text-[10px] text-emerald-400/80">Bisa Input &amp; Edit</p>
-              </div>
-              <div className="w-8 h-8 rounded-xl bg-emerald-900/40 border border-emerald-700/50 flex items-center justify-center text-emerald-400">
-                <Edit3 className="w-4 h-4" />
-              </div>
-            </div>
-
-            {/* Karyawan Hanya View */}
-            <div className="p-3 bg-sky-950/20 border border-sky-800/40 rounded-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-mono uppercase text-sky-400">Total Viewer</p>
-                <p className="text-lg font-bold font-mono text-sky-300">{countHanyaView} Pengguna</p>
-                <p className="text-[10px] text-sky-400/80">Mode Lihat Saja</p>
-              </div>
-              <div className="w-8 h-8 rounded-xl bg-sky-900/40 border border-sky-700/50 flex items-center justify-center text-sky-400">
-                <Eye className="w-4 h-4" />
-              </div>
-            </div>
-          </div>
-
-          {/* STICKY FILTER & TOMBOL TAMBAH PENGGUNA */}
-          <div className="sticky top-0 z-20 bg-stone-900/95 backdrop-blur-md py-2 border-b border-stone-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1">
+          {/* SEARCH & ACTION TOOLBAR (Clean, Wide & Flat) */}
+          <div className="sticky top-0 z-20 bg-stone-900/95 backdrop-blur-md py-2 border-b border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-2 flex-1">
               <div className="relative flex-1 max-w-sm">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-500" />
                 <input
                   type="text"
-                  placeholder="Cari nama, username, jabatan, No HP..."
+                  placeholder="Cari nama, No HP, jabatan..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl pl-9 pr-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -515,260 +469,110 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setFilterType('ALL')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
-                    filterType === 'ALL' ? 'bg-stone-800 text-stone-100 font-bold' : 'text-stone-400 hover:text-stone-200'
+                  className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                    filterType === 'ALL' ? 'bg-stone-800 text-stone-100' : 'text-stone-400 hover:text-stone-200'
                   }`}
                 >
-                  Semua ({totalUsers})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('OWNER')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap ${
-                    filterType === 'OWNER' ? 'bg-purple-950 text-purple-300 font-bold border border-purple-800' : 'text-stone-400 hover:text-purple-300'
-                  }`}
-                >
-                  <Crown className="w-3 h-3" />
-                  <span>Owner ({countOwner})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('ADMINISTRASI')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition flex items-center gap-1 whitespace-nowrap ${
-                    filterType === 'ADMINISTRASI' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-stone-400 hover:text-emerald-300'
-                  }`}
-                >
-                  <Edit3 className="w-3 h-3" />
-                  <span>Administrasi ({countAdministrasi})</span>
+                  Semua ({usersList.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilterType('BISA_MENGISI')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
-                    filterType === 'BISA_MENGISI' ? 'bg-emerald-950 text-emerald-300 font-bold border border-emerald-800' : 'text-stone-400 hover:text-emerald-400'
+                  className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                    filterType === 'BISA_MENGISI' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'text-stone-400 hover:text-emerald-400'
                   }`}
                 >
-                  Bisa Mengisi ({countBisaMengisi})
+                  Bisa Mengisi ({usersList.filter((u) => u.role === 'ADMIN' || u.accessLevel === 'BISA_MENGISI').length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setFilterType('HANYA_VIEW')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap ${
-                    filterType === 'HANYA_VIEW' ? 'bg-sky-950 text-sky-300 font-bold border border-sky-800' : 'text-stone-400 hover:text-sky-400'
+                  className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                    filterType === 'HANYA_VIEW' ? 'bg-sky-950 text-sky-300 border border-sky-800' : 'text-stone-400 hover:text-sky-400'
                   }`}
                 >
-                  Hanya View ({countHanyaView})
+                  Viewer ({usersList.filter((u) => u.role !== 'ADMIN' && u.accessLevel === 'HANYA_VIEW').length})
                 </button>
               </div>
             </div>
 
-            <button
-              id="btn-tambah-user-baru"
-              type="button"
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95 whitespace-nowrap"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>{showAddForm ? 'Tutup Pendaftaran' : '+ Daftarkan Akun Baru'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-tambah-user-nonkaryawan"
+                type="button"
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-stone-200 bg-stone-800 hover:bg-stone-750 border border-stone-700 transition active:scale-95 whitespace-nowrap"
+                title="Khusus mendaftarkan akun yang bukan karyawan (Manajemen eksternal, Tamu, Auditor)"
+              >
+                <UserPlus className="w-4 h-4 text-amber-400" />
+                <span>{showAddForm ? 'Tutup Form' : '+ Akun Non-Karyawan'}</span>
+              </button>
+            </div>
           </div>
 
-          {/* FORM PENDAFTARAN PENGGUNA BARU DENGAN TEMPLATE CEPAT */}
+          {/* FORM PENDAFTARAN KHUSUS NON-KARYAWAN / EKSTERNAL */}
           {showAddForm && (
             <form
-              onSubmit={handleCreateNewUser}
-              className="p-4 bg-stone-950/90 border border-stone-800 rounded-2xl space-y-3 mt-2 animate-fadeIn"
+              onSubmit={handleCreateNonKaryawan}
+              className="p-4 bg-stone-950/90 border border-amber-500/30 rounded-2xl space-y-3 animate-fadeIn shadow-xl"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-stone-800 gap-2">
-                <div>
-                  <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                    <UserPlus className="w-4 h-4" />
-                    <span>Daftarkan Akun Pengguna Baru &amp; Tentukan Password</span>
-                  </h4>
-                  <p className="text-[11px] text-stone-400">Username otomatis menggunakan No HP, Password ditentukan oleh Anda (Admin).</p>
-                </div>
-
-                {/* Quick Presets */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewUserData({
-                        fullName: 'Owner BKWA',
-                        username: 'owner_bkwa',
-                        password: 'owner123',
-                        department: 'Owner & Direksi',
-                        phone: '',
-                        accessLevel: 'HANYA_VIEW',
-                        modulePermissions: {
-                          modul1Asset: false,
-                          modul2Manpower: false,
-                          modul3Maintenance: false,
-                          modul4Inventory: false,
-                        }
-                      });
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-950/60 border border-purple-700/80 text-purple-300 hover:bg-purple-900/60 transition flex items-center gap-1"
-                  >
-                    <Crown className="w-3 h-3" />
-                    <span>Template Owner (Hanya View)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewUserData({
-                        fullName: 'Staff Administrasi',
-                        username: 'admin_bkwa',
-                        password: 'admin123',
-                        department: 'Administrasi Workshop',
-                        phone: '',
-                        accessLevel: 'BISA_MENGISI',
-                        modulePermissions: {
-                          modul1Asset: true,
-                          modul2Manpower: true,
-                          modul3Maintenance: true,
-                          modul4Inventory: true,
-                        }
-                      });
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-950/60 border border-emerald-700/80 text-emerald-300 hover:bg-emerald-900/60 transition flex items-center gap-1"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>Template Administrasi (Bisa Mengisi)</span>
-                  </button>
-                </div>
+              <div className="flex items-center justify-between pb-2 border-b border-stone-800">
+                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider font-mono flex items-center gap-2">
+                  <UserPlus className="w-4 h-4" />
+                  <span>Daftarkan Akun Baru (Khusus Non-Karyawan / Manajemen Eksternal)</span>
+                </h4>
+                <span className="text-[10px] text-stone-400 font-mono">
+                  Untuk personil internal workshop, gunakan Modul 2 Manpower dengan mengisi No HP.
+                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Nama Lengkap <span className="text-amber-400">*</span>
-                  </label>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">Nama Lengkap *</label>
                   <input
                     type="text"
                     required
-                    placeholder="misal: Budi Santoso"
-                    value={newUserData.fullName}
-                    onChange={(e) => setNewUserData({ ...newUserData, fullName: e.target.value })}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    placeholder="misal: Pak Hendra (Auditor)"
+                    value={newNonKaryawanData.fullName}
+                    onChange={(e) => setNewNonKaryawanData({ ...newNonKaryawanData, fullName: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-700 rounded-xl text-xs text-stone-100 focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1 flex items-center justify-between">
-                    <span>No. WhatsApp / HP <span className="text-amber-400">*</span></span>
-                    <span className="text-[10px] text-amber-400 font-normal">Otomatis jadi Username</span>
-                  </label>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">No HP (Username) *</label>
                   <input
                     type="text"
                     required
-                    placeholder="0812xxxxxxxx"
-                    value={newUserData.phone}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const cleanDigits = val.replace(/[^0-9]/g, '');
-                      setNewUserData(prev => ({
-                        ...prev,
-                        phone: val,
-                        username: cleanDigits || val.toLowerCase()
-                      }));
-                    }}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    placeholder="08xxxxxxxx"
+                    value={newNonKaryawanData.phone}
+                    onChange={(e) => setNewNonKaryawanData({ ...newNonKaryawanData, phone: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-700 rounded-xl text-xs text-stone-100 font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Username Login <span className="text-amber-400">*</span>
-                  </label>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">Password *</label>
                   <input
                     type="text"
                     required
-                    placeholder="misal: 08123456789 atau username"
-                    value={newUserData.username}
-                    onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    placeholder="Password akun"
+                    value={newNonKaryawanData.password}
+                    onChange={(e) => setNewNonKaryawanData({ ...newNonKaryawanData, password: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-700 rounded-xl text-xs text-stone-100 font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1 flex items-center justify-between">
-                    <span>Password Akun <span className="text-amber-400">*</span></span>
-                    <span className="text-[10px] text-stone-400 font-normal">Dibuat oleh Admin</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="misal: pass123 / admin123"
-                    value={newUserData.password}
-                    onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 font-mono placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-stone-300 mb-1">
-                    Departemen / Jabatan
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="misal: Administrasi / Mekanik / Operasional"
-                    value={newUserData.department}
-                    onChange={(e) => setNewUserData({ ...newUserData, department: e.target.value })}
-                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  />
-                </div>
-
-                {/* PILIHAN OTORISASI AWAL LANGSUNG DI FORM */}
-                <div>
-                  <label className="block text-xs font-bold text-amber-400 mb-1">
-                    Tingkat Hak Akses <span className="text-amber-400">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewUserData({
-                        ...newUserData,
-                        accessLevel: 'BISA_MENGISI',
-                        modulePermissions: {
-                          modul1Asset: true,
-                          modul2Manpower: true,
-                          modul3Maintenance: true,
-                          modul4Inventory: true,
-                        }
-                      })}
-                      className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${
-                        newUserData.accessLevel === 'BISA_MENGISI'
-                          ? 'bg-emerald-950 border-emerald-600 text-emerald-300 shadow-sm'
-                          : 'bg-stone-800/80 border-stone-700 text-stone-400 hover:text-stone-200'
-                      }`}
-                    >
-                      <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Bisa Mengisi</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setNewUserData({
-                        ...newUserData,
-                        accessLevel: 'HANYA_VIEW',
-                        modulePermissions: {
-                          modul1Asset: false,
-                          modul2Manpower: false,
-                          modul3Maintenance: false,
-                          modul4Inventory: false,
-                        }
-                      })}
-                      className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition flex items-center justify-center gap-1.5 ${
-                        newUserData.accessLevel === 'HANYA_VIEW'
-                          ? 'bg-sky-950 border-sky-600 text-sky-300 shadow-sm'
-                          : 'bg-stone-800/80 border-stone-700 text-stone-400 hover:text-stone-200'
-                      }`}
-                    >
-                      <Eye className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Hanya View</span>
-                    </button>
-                  </div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">Hak Akses Awal</label>
+                  <select
+                    value={newNonKaryawanData.accessLevel}
+                    onChange={(e) => setNewNonKaryawanData({ ...newNonKaryawanData, accessLevel: e.target.value as UserAccessLevel })}
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-700 rounded-xl text-xs text-stone-100 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="HANYA_VIEW">Hanya View (Viewer)</option>
+                    <option value="BISA_MENGISI">Bisa Mengisi (Editor)</option>
+                  </select>
                 </div>
               </div>
 
@@ -784,78 +588,66 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   type="submit"
                   className="px-5 py-1.5 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow"
                 >
-                  Simpan Akun Baru
+                  Simpan Akun Non-Karyawan
                 </button>
               </div>
             </form>
           )}
 
-          {/* DAFTAR PENGGUNA & KONTROL HAK AKSES */}
-          <div className="space-y-3 pt-2">
-          <div className="text-[11px] font-mono text-stone-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-            <span>Daftar Pengguna & Status Otorisasi ({filteredUsers.length})</span>
-            <span className="text-stone-500 text-[10px]">Klik tombol akses untuk mengubah izin secara instan</span>
-          </div>
+          {/* DAFTAR PERSONIL MANPOWER TANPA NO HP (Pemberitahuan bahwa tidak memiliki akses) */}
+          {manpowerWithoutPhone.length > 0 && (
+            <div className="p-3 bg-stone-950/70 border border-stone-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-stone-400">
+                <UserX className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>
+                  Terdapat <strong className="text-amber-400">{manpowerWithoutPhone.length} personil</strong> di Modul 2 yang belum memiliki No HP terdaftar (otomatis tidak memiliki akses login ke sistem).
+                </span>
+              </div>
+              <span className="text-[11px] text-stone-500 font-mono">
+                Isi No HP di Modul 2 untuk memberikan akses login.
+              </span>
+            </div>
+          )}
 
+          {/* DAFTAR UTAMA PENGGUNA (CLEAN, WIDE & POWERFUL) */}
           <div className="space-y-3">
             {filteredUsers.map((user) => {
-              const isAdmin = user.role === 'ADMIN';
-              const isCurrentUser = currentUser.id === user.id;
-              const isOwner = isUserOwner(user);
-              const isAdministrasi = isUserAdministrasi(user);
-              const isEditor = isAdmin || user.accessLevel === 'BISA_MENGISI';
-              const isViewer = !isAdmin && user.accessLevel === 'HANYA_VIEW';
+              const isDev = user.role === 'ADMIN';
+              const isEditor = isDev || user.accessLevel === 'BISA_MENGISI';
+              const isViewer = !isDev && user.accessLevel === 'HANYA_VIEW';
               const isExpanded = expandedUserId === user.id;
-
-              const perms = user.modulePermissions || {
-                modul1Asset: isEditor,
-                modul2Manpower: isEditor,
-                modul3Maintenance: isEditor,
-                modul4Inventory: isEditor,
-              };
 
               return (
                 <div
                   key={user.id}
                   className={`border rounded-2xl transition duration-200 overflow-hidden ${
-                    isAdmin
-                      ? 'bg-amber-950/15 border-amber-800/40'
-                      : isOwner
-                      ? 'bg-purple-950/20 border-purple-800/40 hover:border-purple-700/60'
-                      : isAdministrasi
-                      ? 'bg-emerald-950/15 border-emerald-800/40 hover:border-emerald-700/60'
-                      : isViewer
-                      ? 'bg-stone-900/90 border-sky-900/30'
+                    isDev
+                      ? 'bg-amber-950/20 border-amber-500/40'
+                      : isEditor
+                      ? 'bg-stone-900/90 border-emerald-900/40'
                       : 'bg-stone-900/90 border-stone-800 hover:border-stone-700'
                   }`}
                 >
-                  {/* MAIN USER ROW */}
+                  {/* BARIS UTAMA PENGGUNA */}
                   <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* User Profile */}
-                    <div className="flex items-start gap-3.5 min-w-[240px]">
+                    
+                    {/* Profil & Akun */}
+                    <div className="flex items-start gap-3.5 min-w-[280px]">
                       <div
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border shadow-md mt-0.5 ${
-                          isAdmin
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border shadow-md mt-0.5 ${
+                          isDev
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                            : isOwner
-                            ? 'bg-purple-950 text-purple-300 border-purple-700/60 shadow-purple-950/40'
-                            : isAdministrasi
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60'
-                            : isViewer
-                            ? 'bg-sky-950 text-sky-400 border-sky-800/60'
-                            : 'bg-stone-800 text-stone-300 border-stone-700'
+                            : isEditor
+                            ? 'bg-emerald-950 text-emerald-400 border-emerald-700/60'
+                            : 'bg-stone-950 text-sky-400 border-sky-900/60'
                         }`}
                       >
-                        {isAdmin ? (
-                          <ShieldCheck className="w-5 h-5" />
-                        ) : isOwner ? (
-                          <Crown className="w-5 h-5 text-purple-300" />
-                        ) : isAdministrasi ? (
-                          <Edit3 className="w-5 h-5 text-emerald-400" />
-                        ) : isViewer ? (
-                          <Eye className="w-5 h-5" />
+                        {isDev ? (
+                          <ShieldCheck className="w-6 h-6" />
+                        ) : isEditor ? (
+                          <Edit3 className="w-5 h-5" />
                         ) : (
-                          <HardHat className="w-5 h-5" />
+                          <Eye className="w-5 h-5" />
                         )}
                       </div>
 
@@ -864,144 +656,89 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                           <h4 className="font-bold text-stone-100 text-sm font-mono">
                             {user.fullName}
                           </h4>
-                          {isAdmin && (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40">
-                              Developer
+                          {isDev ? (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-500 text-stone-950">
+                              Developer (Full Access)
                             </span>
-                          )}
-                          {isOwner && (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700/80 flex items-center gap-1">
-                              <Crown className="w-3 h-3" />
-                              Owner (Hanya View)
-                            </span>
-                          )}
-                          {isAdministrasi && (
-                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/80 flex items-center gap-1">
-                              <Edit3 className="w-3 h-3" />
-                              Administrasi (Bisa Mengisi)
-                            </span>
-                          )}
-                          {!isAdmin && !isOwner && !isAdministrasi && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
-                              {user.accessLevel === 'BISA_MENGISI' ? 'Editor' : 'Karyawan (Viewer)'}
-                            </span>
-                          )}
-                          {isCurrentUser && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-stone-800 text-stone-300">
-                              (Anda)
-                            </span>
-                          )}
-                        </div>
-
-                        {/* USERNAME & NO HP DISPLAY & EDIT */}
-                        <div className="flex items-center gap-2 text-xs text-stone-400 flex-wrap">
-                          {editingUsernameUserId === user.id ? (
-                            <div className="flex items-center gap-1.5 py-0.5 bg-stone-950 p-1.5 rounded-xl border border-amber-500/60">
-                              <span className="text-[10px] text-amber-400 font-mono font-bold">No HP / Username:</span>
-                              <input
-                                type="text"
-                                placeholder="08xxxxxxxx"
-                                value={newUsernameInput}
-                                onChange={(e) => setNewUsernameInput(e.target.value)}
-                                className="bg-stone-900 border border-amber-500 rounded-lg px-2 py-0.5 text-xs text-stone-100 font-mono w-36 focus:outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSaveNewUsername(user)}
-                                className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] rounded-lg transition"
-                              >
-                                Simpan
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingUsernameUserId(null);
-                                  setNewUsernameInput('');
-                                }}
-                                className="px-2 py-0.5 bg-stone-800 text-stone-400 hover:text-stone-200 text-[11px] rounded-lg transition"
-                              >
-                                Batal
-                              </button>
-                            </div>
                           ) : (
-                            <>
-                              <span className="font-mono text-stone-200 font-bold bg-stone-950/80 px-2 py-0.5 rounded border border-stone-800">
-                                Username: @{user.username}
-                              </span>
-                              {user.phone && user.phone !== '-' && (
-                                <span className="font-mono text-amber-300/90 bg-stone-950/60 px-2 py-0.5 rounded text-[11px] border border-amber-950/60">
-                                  📞 {user.phone}
-                                </span>
-                              )}
-                              {!isAdmin && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingUsernameUserId(user.id);
-                                    setNewUsernameInput(user.phone && user.phone !== '-' ? user.phone : user.username);
-                                  }}
-                                  className="text-[10px] text-amber-400/90 hover:text-amber-300 hover:underline flex items-center gap-1"
-                                  title="Ganti No HP / Username untuk login"
-                                >
-                                  <Phone className="w-3 h-3 text-amber-400" />
-                                  <span>Ubah No HP</span>
-                                </button>
-                              )}
-                              <span>•</span>
-                              <span className="text-[11px] text-stone-400 font-mono">Role: <strong className="text-stone-300 font-semibold">{user.role || 'KARYAWAN'}</strong></span>
-                              <span>•</span>
-                              <span className="truncate max-w-[180px] text-stone-400">{user.department || user.jabatan || 'Operasional'}</span>
-                            </>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                user.accessLevel === 'BISA_MENGISI'
+                                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700'
+                                  : 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              }`}
+                            >
+                              {user.accessLevel === 'BISA_MENGISI' ? 'Bisa Mengisi' : 'Hanya View (Viewer)'}
+                            </span>
                           )}
+                          <span className="text-[10px] text-stone-400 font-mono">
+                            {user.department || user.jabatan || 'Karyawan'}
+                          </span>
                         </div>
 
-                        {/* PASSWORD DISPLAY & MANAGEMENT BAR */}
-                        <div className="flex items-center gap-2 pt-1 text-xs flex-wrap">
-                          <div className="flex items-center gap-1.5 text-stone-400 font-mono">
-                            <KeyRound className="w-3.5 h-3.5 text-amber-400/80" />
-                            <span className="text-[11px] text-stone-400">Password:</span>
+                        {/* NO HP & USERNAME DISPLAY */}
+                        <div className="flex items-center gap-2 text-xs text-stone-300 flex-wrap">
+                          <span className="font-mono text-amber-300 font-bold bg-stone-950 px-2 py-0.5 rounded border border-stone-800 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-amber-400" />
+                            <span>Username (No HP): @{user.username}</span>
+                          </span>
+
+                          {/* PASSWORD DISPLAY: DEVELOPER BISA MELIHAT PASSWORD TERBARU KAPAN SAJA */}
+                          <div className="flex items-center gap-1.5 font-mono text-xs bg-stone-950 px-2.5 py-0.5 rounded border border-stone-800">
+                            <KeyRound className="w-3 h-3 text-stone-400" />
+                            <span className="text-stone-400 text-[11px]">Password:</span>
                             {visiblePasswords[user.id] ? (
-                              <span className="font-bold text-amber-300 bg-stone-950 px-2 py-0.5 rounded border border-stone-800 font-mono">
-                                {user.password || '(Default: user123)'}
+                              <span className="text-amber-300 font-bold tracking-normal select-all">
+                                {user.password || 'bkwa123'}
                               </span>
                             ) : (
-                              <span className="text-stone-400 font-mono tracking-widest text-[11px]">
-                                ••••••••
-                              </span>
+                              <span className="text-stone-400 tracking-widest text-[11px]">••••••••</span>
                             )}
+
                             <button
                               type="button"
                               onClick={() => togglePasswordVisibility(user.id)}
-                              className="p-0.5 text-stone-400 hover:text-stone-200 transition"
+                              className="p-1 text-stone-400 hover:text-stone-100 transition"
                               title={visiblePasswords[user.id] ? 'Sembunyikan password' : 'Lihat password'}
                             >
-                              {visiblePasswords[user.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              {visiblePasswords[user.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => copyPassword(user.id, user.password || 'bkwa123')}
+                              className="p-1 text-stone-400 hover:text-amber-400 transition"
+                              title="Salin password ke clipboard"
+                            >
+                              {copiedPasswordId === user.id ? (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
                             </button>
                           </div>
 
+                          {/* Tombol Ubah Password oleh Developer */}
                           {editingPasswordUserId === user.id ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 bg-stone-950 p-1 rounded-xl border border-amber-500">
                               <input
                                 type="text"
                                 placeholder="Password baru..."
                                 value={newPasswordInput}
                                 onChange={(e) => setNewPasswordInput(e.target.value)}
-                                className="bg-stone-950 border border-amber-500 rounded-lg px-2 py-0.5 text-xs text-stone-100 font-mono w-32 focus:outline-none"
+                                className="bg-stone-900 border border-stone-700 rounded px-2 py-0.5 text-xs text-stone-100 font-mono w-28 focus:outline-none"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleSaveNewPassword(user)}
-                                className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[11px] rounded-lg transition"
+                                className="px-2 py-0.5 bg-amber-500 text-stone-950 font-bold text-[10px] rounded"
                               >
                                 Simpan
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingPasswordUserId(null);
-                                  setNewPasswordInput('');
-                                }}
-                                className="px-2 py-0.5 bg-stone-800 text-stone-400 hover:text-stone-200 text-[11px] rounded-lg transition"
+                                onClick={() => setEditingPasswordUserId(null)}
+                                className="px-1.5 py-0.5 text-stone-400 text-[10px]"
                               >
                                 Batal
                               </button>
@@ -1013,113 +750,105 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                                 setEditingPasswordUserId(user.id);
                                 setNewPasswordInput(user.password || '');
                               }}
-                              className="text-[11px] text-amber-400/90 hover:text-amber-300 hover:underline flex items-center gap-1 ml-1"
+                              className="text-[10px] text-amber-400 hover:underline"
                             >
-                              <KeyRound className="w-3 h-3" />
-                              <span>Ubah Password</span>
+                              Ganti Password
                             </button>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {/* KONTROL HAK AKSES: BISA MENGISI vs HANYA VIEW */}
+                    {/* KONTROL GLOBAL & AKSI */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      {isAdmin ? (
-                        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+                      {isDev ? (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-bold font-mono">
                           <ShieldCheck className="w-4 h-4 text-amber-400" />
-                          <span>Otoritas Penuh (Full Access)</span>
+                          <span>Otoritas Penuh Mutlak</span>
                         </div>
                       ) : (
                         <div className="flex items-center bg-stone-950 p-1 border border-stone-800 rounded-xl">
-                          {/* Tombol Opsi: BISA MENGISI */}
                           <button
-                            id={`btn-perm-fill-${user.username}`}
                             type="button"
-                            onClick={() => handleToggleAccessLevel(user, 'BISA_MENGISI')}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                              isEditor
-                                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40'
-                                : 'text-stone-400 hover:text-emerald-400 hover:bg-stone-900'
-                            }`}
-                            title="Berikan izin mengisi form, mengedit data, dan menghapus di semua modul"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Bisa Mengisi</span>
-                          </button>
-
-                          {/* Tombol Opsi: HANYA VIEW */}
-                          <button
-                            id={`btn-perm-view-${user.username}`}
-                            type="button"
-                            onClick={() => handleToggleAccessLevel(user, 'HANYA_VIEW')}
+                            onClick={() => handleToggleAccessLevel(user.id, 'HANYA_VIEW')}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
                               isViewer
-                                ? 'bg-sky-600 text-white shadow-md shadow-sky-900/40'
-                                : 'text-stone-400 hover:text-sky-400 hover:bg-stone-900'
+                                ? 'bg-sky-600 text-white shadow-md'
+                                : 'text-stone-400 hover:text-sky-400'
                             }`}
-                            title="Batasi akun ini hanya dapat membaca dan memantau (View Only)"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Hanya View</span>
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAccessLevel(user.id, 'BISA_MENGISI')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                              isEditor
+                                ? 'bg-emerald-600 text-white shadow-md'
+                                : 'text-stone-400 hover:text-emerald-400'
+                            }`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Bisa Mengisi</span>
+                          </button>
                         </div>
                       )}
 
-                      {/* Detail Otorisasi Per-Modul Toggle */}
-                      {!isAdmin && (
+                      {/* Tombol Buka Rincian Kontrol Modul 1 - 7 */}
+                      {!isDev && (
                         <button
                           type="button"
                           onClick={() => setExpandedUserId(isExpanded ? null : user.id)}
-                          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1 border transition ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
                             isExpanded
-                              ? 'bg-stone-800 text-amber-400 border-stone-700'
-                              : 'bg-stone-950/60 text-stone-400 hover:text-stone-200 border-stone-800'
+                              ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+                              : 'bg-stone-950 text-stone-300 border-stone-800 hover:border-stone-700'
                           }`}
-                          title="Lihat / Atur Izin Per Modul"
+                          title="Buka kontrol spesifik Modul 1 s/d Modul 7 untuk orang ini"
                         >
-                          <Layers className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Izin Modul</span>
+                          <Layers className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Kontrol Modul 1 - 7</span>
                           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
                       )}
 
-                      {/* Simulasi Login Akun Ini (Fitur Khusus Developer) */}
-                      {onSwitchUser && !isAdmin && (
+                      {/* Uji Akun Ini (Simulasi Developer) */}
+                      {!isDev && onSwitchUser && (
                         <button
                           type="button"
                           onClick={() => onSwitchUser(user)}
-                          className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-stone-300 bg-stone-800 hover:bg-stone-700 hover:text-white border border-stone-700 transition"
-                          title={`Uji coba tampilan aplikasi sebagai ${user.fullName} (${user.accessLevel})`}
+                          className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-stone-300 bg-stone-800 hover:bg-stone-750 border border-stone-700 transition"
+                          title={`Uji coba tampilan aplikasi sebagai ${user.fullName}`}
                         >
                           <RefreshCw className="w-3 h-3 text-amber-400 inline mr-1" />
-                          <span className="text-[11px]">Uji Akun Ini</span>
+                          <span>Simulasi</span>
                         </button>
                       )}
 
-                      {/* Toggle Status Aktif / Nonaktif */}
-                      {!isAdmin && (
+                      {/* Status Aktif / Nonaktif */}
+                      {!isDev && (
                         <button
                           type="button"
-                          onClick={() => handleToggleStatus(user)}
+                          onClick={() => handleToggleStatus(user.id)}
                           className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition ${
                             user.status === 'AKTIF'
-                              ? 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60 hover:bg-emerald-900/50'
-                              : 'text-stone-500 bg-stone-950 border-stone-800 hover:text-stone-300'
+                              ? 'text-emerald-400 bg-emerald-950/40 border-emerald-800/60'
+                              : 'text-stone-500 bg-stone-950 border-stone-800'
                           }`}
-                          title={user.status === 'AKTIF' ? 'Klik untuk nonaktifkan akun' : 'Klik untuk aktifkan akun'}
                         >
                           {user.status}
                         </button>
                       )}
 
                       {/* Hapus Akun */}
-                      {!isAdmin && (
+                      {!isDev && (
                         <button
                           type="button"
                           onClick={() => handleDeleteUser(user.id, user.fullName)}
                           className="p-2 text-stone-500 hover:text-rose-400 hover:bg-rose-950/40 rounded-xl transition"
-                          title="Hapus akun pengguna"
+                          title="Hapus akun"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1127,93 +856,111 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                     </div>
                   </div>
 
-                  {/* EXPANDED VIEW: RINCIAN IZIN MODUL 1, 2, 3, 4 */}
-                  {isExpanded && !isAdmin && (
-                    <div className="px-4 py-3 bg-stone-950/90 border-t border-stone-800/80 text-xs">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-mono text-[11px] text-stone-400 uppercase font-semibold">
-                          Otorisasi Spesifik per Modul untuk {user.fullName}:
+                  {/* KONTROL RINCIAN MODUL 1 - 7 PER ORANG */}
+                  {isExpanded && !isDev && (
+                    <div className="px-5 py-4 bg-stone-950/95 border-t border-stone-800 space-y-3 animate-fadeIn">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-stone-800 gap-1.5">
+                        <span className="font-mono text-xs font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-amber-400" />
+                          <span>PENGATURAN AKSES MODUL 1 S/D 7 UNTUK {user.fullName.toUpperCase()}:</span>
                         </span>
-                        <span className="text-[10px] text-stone-500">
-                          Status Password: <span className="font-mono text-stone-300 font-bold">{user.password}</span>
+                        <span className="text-[11px] text-stone-400">
+                          Klik status untuk beralih antara <strong className="text-sky-400">Hanya View</strong> dan <strong className="text-emerald-400">Bisa Mengisi</strong>.
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {/* Modul 1: Asset */}
-                        <div className="p-2 bg-stone-900 border border-stone-800 rounded-xl flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-stone-200 text-[11px]">Modul 1: Asset</p>
-                            <p className="text-[10px] text-stone-400">Registrasi Unit</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleModulePerm(user, 'modul1Asset')}
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              perms.modul1Asset
-                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                                : 'bg-sky-950 text-sky-400 border border-sky-800'
-                            }`}
-                          >
-                            {perms.modul1Asset ? 'Bisa Mengisi' : 'Hanya View'}
-                          </button>
-                        </div>
 
-                        {/* Modul 2: Manpower */}
-                        <div className="p-2 bg-stone-900 border border-stone-800 rounded-xl flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-stone-200 text-[11px]">Modul 2: Manpower</p>
-                            <p className="text-[10px] text-stone-400">Tenaga Kerja</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleModulePerm(user, 'modul2Manpower')}
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              perms.modul2Manpower
-                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                                : 'bg-sky-950 text-sky-400 border border-sky-800'
-                            }`}
-                          >
-                            {perms.modul2Manpower ? 'Bisa Mengisi' : 'Hanya View'}
-                          </button>
-                        </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                        {moduleNames.map((mod) => {
+                          const modKey = `modul${mod.num}` as keyof GranularUserPermissions;
+                          const perm = user.permissions?.[modKey] || {
+                            viewer: true,
+                            input: user.accessLevel === 'BISA_MENGISI',
+                            edit: user.accessLevel === 'BISA_MENGISI',
+                            delete: false,
+                            export: user.accessLevel === 'BISA_MENGISI',
+                          };
 
-                        {/* Modul 3: Maintenance */}
-                        <div className="p-2 bg-stone-900 border border-stone-800 rounded-xl flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-stone-200 text-[11px]">Modul 3: Maintenance</p>
-                            <p className="text-[10px] text-stone-400">Input Breakdown</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleModulePerm(user, 'modul3Maintenance')}
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              perms.modul3Maintenance
-                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                                : 'bg-sky-950 text-sky-400 border border-sky-800'
-                            }`}
-                          >
-                            {perms.modul3Maintenance ? 'Bisa Mengisi' : 'Hanya View'}
-                          </button>
-                        </div>
+                          const isCanEdit = Boolean(perm.input || perm.edit);
+                          const isLocked = !perm.viewer;
 
-                        {/* Modul 4: Inventory */}
-                        <div className="p-2 bg-stone-900 border border-stone-800 rounded-xl flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-stone-200 text-[11px]">Modul 4: Inventory</p>
-                            <p className="text-[10px] text-stone-400">FOG & Suplier</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleModulePerm(user, 'modul4Inventory')}
-                            className={`px-2 py-1 rounded text-[10px] font-bold ${
-                              perms.modul4Inventory
-                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                                : 'bg-sky-950 text-sky-400 border border-sky-800'
-                            }`}
-                          >
-                            {perms.modul4Inventory ? 'Bisa Mengisi' : 'Hanya View'}
-                          </button>
-                        </div>
+                          return (
+                            <div
+                              key={mod.num}
+                              className={`p-3 rounded-2xl border transition flex flex-col justify-between gap-2 ${
+                                isLocked
+                                  ? 'bg-stone-950/60 border-stone-850 opacity-60'
+                                  : isCanEdit
+                                  ? 'bg-emerald-950/20 border-emerald-800/50 shadow-sm'
+                                  : 'bg-stone-900/90 border-stone-800'
+                              }`}
+                            >
+                              <div>
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-xs text-stone-200 font-mono">
+                                    {mod.title}
+                                  </span>
+                                  {isLocked ? (
+                                    <span className="text-[9px] bg-stone-800 text-stone-400 px-1.5 py-0.2 rounded font-mono">
+                                      Terkunci
+                                    </span>
+                                  ) : isCanEdit ? (
+                                    <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-700 px-1.5 py-0.2 rounded font-bold">
+                                      Bisa Input/Edit
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] bg-sky-950 text-sky-300 border border-sky-800 px-1.5 py-0.2 rounded font-bold">
+                                      Hanya View
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-stone-400 mt-0.5 leading-snug">
+                                  {mod.desc}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 pt-1 border-t border-stone-800/80">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleModulePermission(user.id, mod.num, 'VIEW')}
+                                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
+                                    !isLocked && !isCanEdit
+                                      ? 'bg-sky-600 text-white shadow-sm'
+                                      : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                                  }`}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>View</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleModulePermission(user.id, mod.num, 'EDIT')}
+                                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
+                                    !isLocked && isCanEdit
+                                      ? 'bg-emerald-600 text-white shadow-sm'
+                                      : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                                  }`}
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>Isi &amp; Edit</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleModulePermission(user.id, mod.num, isLocked ? 'VIEW' : 'LOCKED')}
+                                  className={`p-1 rounded-lg text-[10px] transition ${
+                                    isLocked
+                                      ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
+                                      : 'bg-stone-800 text-stone-500 hover:text-stone-300'
+                                  }`}
+                                  title={isLocked ? 'Buka Kunci Modul' : 'Kunci / Sembunyikan Modul'}
+                                >
+                                  <Lock className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1221,22 +968,43 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
               );
             })}
           </div>
-        </div>
-      </div>
 
-        {/* MODAL FOOTER */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-stone-800 bg-stone-900/95 shrink-0 text-xs text-stone-400">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-amber-500" />
-            <span>Perubahan hak akses disimpan otomatis ke sistem dan berlaku real-time.</span>
+        </div>
+
+        {/* MODAL FOOTER DENGAN TOMBOL SIMPAN REALTIME */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-t border-stone-800 bg-stone-900/95 shrink-0 gap-3">
+          <div className="text-xs text-stone-400 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              {hasUnsavedChanges
+                ? 'Ada perubahan izin yang belum disimpan. Klik "Simpan Pengaturan Hak Akses".'
+                : 'Semua perubahan hak akses tersimpan rapi dan aktif secara realtime di Cloud Firestore.'}
+            </span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl text-xs font-bold text-stone-200 bg-stone-800 hover:bg-stone-700 hover:text-white transition shadow"
-          >
-            Selesai & Tutup
-          </button>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleSaveAllSettings}
+              disabled={isSaving}
+              className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition active:scale-95 shadow-xl ${
+                hasUnsavedChanges
+                  ? 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-amber-500/20 animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/40'
+              }`}
+            >
+              <Save className={`w-4 h-4 ${isSaving ? 'animate-spin' : ''}`} />
+              <span>{isSaving ? 'Menyimpan...' : 'Simpan Pengaturan Hak Akses'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl text-xs font-bold text-stone-300 bg-stone-800 hover:bg-stone-700 transition"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
 
       </div>
