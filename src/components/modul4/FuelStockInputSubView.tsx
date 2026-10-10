@@ -106,8 +106,15 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
   const [flowmeterStart, setFlowmeterStart] = useState<number | ''>('');
   const [flowmeterEnd, setFlowmeterEnd] = useState<number | ''>('');
   const [actualQtyFlowmeter, setActualQtyFlowmeter] = useState<number | ''>('');
-  const [hasilUkurStickSebelum, setHasilUkurStickSebelum] = useState<string>('');
-  const [hasilUkurStickSesudah, setHasilUkurStickSesudah] = useState<string>('');
+  
+  // i. Hasil Ukur Tangki Utama (Level Sounding)
+  const [hasilUkurTangkiUtama, setHasilUkurTangkiUtama] = useState<string>('');
+  
+  // j. Hasil Timbang (Gross, Tare, Nett) - Proses Timbang Sebelum & Sesudah di PT BKWA
+  const [timbangGross, setTimbangGross] = useState<number | ''>('');
+  const [timbangTare, setTimbangTare] = useState<number | ''>('');
+  const [timbangNett, setTimbangNett] = useState<number | ''>('');
+  
   const [picFogName, setPicFogName] = useState('');
   const [picFogJabatan, setPicFogJabatan] = useState('');
   const [tanggal, setTanggal] = useState('');
@@ -129,6 +136,18 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     });
   }, [manpowerList]);
 
+  // Kalkulasi otomatis Timbang Nett = Gross - Tare
+  const handleGrossTareChange = (grossVal: number | '', tareVal: number | '') => {
+    setTimbangGross(grossVal);
+    setTimbangTare(tareVal);
+    if (typeof grossVal === 'number' && typeof tareVal === 'number') {
+      const diff = grossVal - tareVal;
+      setTimbangNett(diff >= 0 ? diff : 0);
+    } else {
+      setTimbangNett('');
+    }
+  };
+
   const handleOpenAdd = () => {
     if (!canEdit) return;
     setEditingId(null);
@@ -140,8 +159,10 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     setFlowmeterStart('');
     setFlowmeterEnd('');
     setActualQtyFlowmeter('');
-    setHasilUkurStickSebelum('');
-    setHasilUkurStickSesudah('');
+    setHasilUkurTangkiUtama('');
+    setTimbangGross('');
+    setTimbangTare('');
+    setTimbangNett('');
     
     // Default PIC dari manpower
     const defaultPic = manpowerList[0];
@@ -167,8 +188,10 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     setFlowmeterStart(record.flowmeterStart);
     setFlowmeterEnd(record.flowmeterEnd);
     setActualQtyFlowmeter(record.actualQtyFlowmeter);
-    setHasilUkurStickSebelum(record.hasilUkurStickSebelum?.toString() || '');
-    setHasilUkurStickSesudah(record.hasilUkurStickSesudah?.toString() || '');
+    setHasilUkurTangkiUtama(record.hasilUkurTangkiUtama?.toString() || record.hasilUkurStickSebelum?.toString() || '');
+    setTimbangGross(record.timbangGross !== undefined && record.timbangGross !== '' ? Number(record.timbangGross) : '');
+    setTimbangTare(record.timbangTare !== undefined && record.timbangTare !== '' ? Number(record.timbangTare) : '');
+    setTimbangNett(record.timbangNett !== undefined && record.timbangNett !== '' ? Number(record.timbangNett) : '');
     setPicFogName(record.picFogName);
     setPicFogJabatan(record.picFogJabatan || '');
     setTanggal(record.tanggal);
@@ -221,6 +244,10 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
       return;
     }
 
+    const formattedTimbang = (timbangGross !== '' || timbangTare !== '')
+      ? `Gross: ${Number(timbangGross || 0).toLocaleString('id-ID')} kg | Tare: ${Number(timbangTare || 0).toLocaleString('id-ID')} kg | Nett: ${Number(timbangNett || 0).toLocaleString('id-ID')} kg`
+      : '';
+
     const res = onSave(
       {
         distributor,
@@ -231,8 +258,13 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
         flowmeterStart: Number(flowmeterStart) || 0,
         flowmeterEnd: Number(flowmeterEnd) || 0,
         actualQtyFlowmeter: Number(actualQtyFlowmeter),
-        hasilUkurStickSebelum: hasilUkurStickSebelum.trim(),
-        hasilUkurStickSesudah: hasilUkurStickSesudah.trim(),
+        hasilUkurStickSebelum: hasilUkurTangkiUtama.trim(),
+        hasilUkurTangkiUtama: hasilUkurTangkiUtama.trim(),
+        hasilUkurStickSesudah: formattedTimbang,
+        timbangGross: timbangGross !== '' ? Number(timbangGross) : undefined,
+        timbangTare: timbangTare !== '' ? Number(timbangTare) : undefined,
+        timbangNett: timbangNett !== '' ? Number(timbangNett) : undefined,
+        hasilTimbang: formattedTimbang,
         picFogName,
         picFogJabatan,
         tanggal,
@@ -564,7 +596,8 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                 <th className="py-3 px-3">Tanggal / Jam</th>
                 <th className="py-3 px-3">Distributor / Reff</th>
                 <th className="py-3 px-3">Armada & Supir</th>
-                <th className="py-3 px-3">Stick Ukur (Sblm / Ssdh)</th>
+                <th className="py-3 px-3">Hasil Ukur Tangki Utama</th>
+                <th className="py-3 px-3">Hasil Timbang (Gross, Tare, Nett)</th>
                 <th className="py-3 px-3">Flowmeter (Start / End)</th>
                 <th className="py-3 px-3 text-right">Qty Suplier</th>
                 <th className="py-3 px-3 text-right">Actual Flowmeter</th>
@@ -587,11 +620,33 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                     <div className="text-stone-200">Plat: {item.platNomor || '-'}</div>
                     <div className="text-stone-400">Supir: {item.driverName || '-'}</div>
                   </td>
+                  {/* i. Hasil Ukur Tangki Utama */}
                   <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
-                    <div className="flex items-center gap-1">
-                      <Ruler className="w-3 h-3 text-stone-500" />
-                      <span>{item.hasilUkurStickSebelum || '-'} cm → {item.hasilUkurStickSesudah || '-'} cm</span>
+                    <div className="flex items-center gap-1.5">
+                      <Ruler className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span className="font-semibold text-stone-200">
+                        {item.hasilUkurTangkiUtama || item.hasilUkurStickSebelum || '-'}
+                      </span>
                     </div>
+                  </td>
+                  {/* j. Hasil Timbang (Gross, Tare, Nett) */}
+                  <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                    {item.timbangGross !== undefined && item.timbangGross !== '' ? (
+                      <div className="space-y-0.5">
+                        <div className="text-[10px] text-stone-400">
+                          G: {Number(item.timbangGross).toLocaleString('id-ID')} kg | T: {Number(item.timbangTare || 0).toLocaleString('id-ID')} kg
+                        </div>
+                        <div className="text-emerald-400 font-bold">
+                          Nett: {Number(item.timbangNett || (Number(item.timbangGross) - Number(item.timbangTare || 0))).toLocaleString('id-ID')} kg
+                        </div>
+                      </div>
+                    ) : item.hasilTimbang ? (
+                      <span className="text-stone-300 font-semibold">{item.hasilTimbang}</span>
+                    ) : item.hasilUkurStickSesudah ? (
+                      <span className="text-stone-400">{item.hasilUkurStickSesudah}</span>
+                    ) : (
+                      <span className="text-stone-500">-</span>
+                    )}
                   </td>
                   <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
                     <div>Start: {(item.flowmeterStart ?? 0).toLocaleString('id-ID')}</div>
@@ -642,7 +697,7 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
 
               {filteredList.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-stone-500">
+                  <td colSpan={10} className="py-8 text-center text-stone-500">
                     Tidak ada catatan Input Stock Fuel yang sesuai filter pencarian.
                   </td>
                 </tr>
@@ -815,32 +870,84 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                 </div>
               </div>
 
-              {/* Baris 4: i. Hasil Ukur Stick (Sebelum) & j. Hasil Ukur Stick (Sesudah) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Baris 4: i. Hasil Ukur Tangki Utama & j. Hasil Timbang (Gross, Tare, Nett) */}
+              <div className="p-3.5 bg-stone-950/70 rounded-xl border border-stone-800/80 space-y-3.5">
+                {/* i. Hasil Ukur Tangki Utama */}
                 <div>
                   <label className="block text-stone-300 font-semibold mb-1">
-                    i. Hasil Ukur Stick (Sebelum)
+                    i. Hasil Ukur Tangki Utama
                   </label>
                   <input
                     type="text"
-                    placeholder="Contoh: 45 cm / level awal"
-                    value={hasilUkurStickSebelum}
-                    onChange={(e) => setHasilUkurStickSebelum(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500/60 font-mono"
+                    placeholder="Keterangan Hasil Ukur Tangki Utama (contoh: 185 cm / Level Sounding)"
+                    value={hasilUkurTangkiUtama}
+                    onChange={(e) => setHasilUkurTangkiUtama(e.target.value)}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500/60 font-mono"
                   />
+                  <span className="text-[10.5px] text-stone-400 mt-1 block">
+                    * Keterangan hasil ukur / sounding level solar di Tangki Utama sebelum &amp; sesudah pembongkaran.
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-stone-300 font-semibold mb-1">
-                    j. Hasil Ukur Stick (Sesudah)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: 185 cm / level akhir"
-                    value={hasilUkurStickSesudah}
-                    onChange={(e) => setHasilUkurStickSesudah(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500/60 font-mono"
-                  />
+                {/* j. Hasil Timbang (Gross, Tare, Nett) */}
+                <div className="pt-3 border-t border-stone-800/70 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <label className="text-stone-300 font-semibold text-xs flex items-center gap-1.5">
+                      <span className="text-amber-400 font-bold">j. Hasil Timbang (Gross, Tare, Nett)</span>
+                    </label>
+                    <span className="text-[10px] text-stone-400 font-mono">
+                      * Proses timbang sebelum &amp; sesudah bongkar muatan di jembatan timbang BKWA
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-stone-400 font-mono mb-1">
+                        Gross (Truk + Solar) - Kg
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="Berat Isi (Kg)"
+                        value={timbangGross}
+                        onChange={(e) => handleGrossTareChange(e.target.value === '' ? '' : Number(e.target.value), timbangTare)}
+                        className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-200 font-mono focus:outline-none focus:border-amber-500/60"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-stone-400 font-mono mb-1">
+                        Tare (Truk Kosong) - Kg
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="Berat Kosong (Kg)"
+                        value={timbangTare}
+                        onChange={(e) => handleGrossTareChange(timbangGross, e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-200 font-mono focus:outline-none focus:border-amber-500/60"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-emerald-400 font-mono font-bold mb-1">
+                        Nett (Berat Bersih) - Kg
+                      </label>
+                      <input
+                        type="number"
+                        readOnly
+                        placeholder="Gross − Tare"
+                        value={timbangNett}
+                        className="w-full px-3 py-2 bg-stone-900/90 border border-emerald-500/40 rounded-xl text-emerald-400 font-mono font-black focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-[10px] font-mono text-stone-500 flex items-center justify-between">
+                    <span>Kalkulasi Otomatis: Nett = Gross − Tare</span>
+                    {timbangGross !== '' && timbangTare !== '' && (
+                      <span className="text-emerald-400 font-bold">
+                        Nett: {Number(timbangNett || 0).toLocaleString('id-ID')} Kg
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

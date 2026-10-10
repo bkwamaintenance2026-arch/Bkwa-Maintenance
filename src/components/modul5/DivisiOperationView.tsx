@@ -109,7 +109,7 @@ export const DivisiOperationView: React.FC<DivisiOperationViewProps> = ({
               </span>
             </button>
 
-            {/* Sub Modul 2: Setting Fleet */}
+            {/* Sub Modul 2: Setting Fleet & Tally Checker Tambang */}
             <button
               id="tab-submodul-5-fleet"
               type="button"
@@ -121,7 +121,7 @@ export const DivisiOperationView: React.FC<DivisiOperationViewProps> = ({
               }`}
             >
               <Truck className="w-4 h-4" />
-              <span>Sub Modul 2: Setting Fleet</span>
+              <span>Sub Modul 2: Setting Fleet &amp; Tally Checker</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
                   activeSubModule === 2
@@ -129,7 +129,7 @@ export const DivisiOperationView: React.FC<DivisiOperationViewProps> = ({
                     : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                 }`}
               >
-                Fleet
+                Ritase
               </span>
             </button>
           </div>

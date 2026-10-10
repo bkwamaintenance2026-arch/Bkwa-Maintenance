@@ -4,7 +4,9 @@ import {
   ManpowerData, 
   P2HRecord, 
   FleetSettingRecord, 
-  UserAccount 
+  UserAccount,
+  KategoriRitaseTambang,
+  KATEGORI_RITASE_TAMBANG
 } from '../../types';
 import { 
   getAllFleetSettings, 
@@ -12,13 +14,15 @@ import {
   addOrUpdateFleetSetting, 
   deleteFleetSetting, 
   syncFleetFromP2H,
-  getAllP2HRecords
+  getAllP2HRecords,
+  updateFleetRitaseCounter
 } from '../../utils/storage';
 import { 
   Truck, 
   Users, 
   MapPin, 
   Plus, 
+  Minus,
   RefreshCw, 
   Search, 
   Filter, 
@@ -39,7 +43,10 @@ import {
   Check,
   ChevronRight,
   ShieldAlert,
-  FileText
+  FileText,
+  Mountain,
+  BarChart3,
+  CheckSquare
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 
@@ -90,12 +97,21 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Modal Print Preview
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [showCheckerPrintModal, setShowCheckerPrintModal] = useState<boolean>(false);
+
+  // Quick Tally Modal & Toast
+  const [quickTallyTarget, setQuickTallyTarget] = useState<FleetSettingRecord | null>(null);
+  const [tallyToast, setTallyToast] = useState<{ message: string; unit: string } | null>(null);
+  const [checkerOnlyDumpTruck, setCheckerOnlyDumpTruck] = useState<boolean>(true);
 
   // Opsi Mode Pengisian Penugasan Fleet (MANUAL | SYNC | COLLAPSED)
   const [activeEntryMode, setActiveEntryMode] = useState<'MANUAL' | 'SYNC' | 'COLLAPSED'>('MANUAL');
   const [inlineFeedback, setInlineFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Form State Manual sesuai 8 Spesifikasi Menu Setting Fleet:
+  // Mode View: 'FLEET' (Alokasi Penugasan Fleet) vs 'CHECKER' (Tally Checker Tambang & Rekap Ritase)
+  const [activeViewTab, setActiveViewTab] = useState<'FLEET' | 'CHECKER'>('FLEET');
+
+  // Form State Manual sesuai 8 Spesifikasi Menu Setting Fleet + Fitur Hitung Ritase Checker Tambang:
   // 1. Tanggal
   // 2. Jam Start Operasi
   // 3. Jam Finish Operasi
@@ -104,6 +120,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   // 6. Nama Operator (Dropdown Jabatan Operator dan Sopir saja)
   // 7. Lokasi Kerja
   // 8. Catatan
+  // + FITUR HITUNG RITASE DUMP TRUCK (CHECKER TAMBANG)
+  //   - Batu Baik
+  //   - Batu Pecelan
+  //   - Imbal Plant
+  //   - Imbal Tanah
+  //   - Lokasian
+  //   - Nama Checker & Catatan Checker
   const [formData, setFormData] = useState({
     tanggal: todayStr,
     jamStartOperasi: '07:00',
@@ -118,6 +141,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     fleetGroup: 'Fleet Operasi 01',
     statusFleet: 'OPERASI',
     catatan: '',
+    ritaseBatuBaik: 0,
+    ritaseBatuPecelan: 0,
+    ritaseImbalPlant: 0,
+    ritaseImbalTanah: 0,
+    ritaseLokasian: 0,
+    namaChecker: '',
+    catatanChecker: '',
   });
 
   const refreshFleetData = () => {
@@ -213,6 +243,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       fleetGroup: 'Fleet Operasi 01',
       statusFleet: 'OPERASI',
       catatan: '',
+      ritaseBatuBaik: 0,
+      ritaseBatuPecelan: 0,
+      ritaseImbalPlant: 0,
+      ritaseImbalTanah: 0,
+      ritaseLokasian: 0,
+      namaChecker: currentUser.fullName || currentUser.username || '',
+      catatanChecker: '',
     });
     setShowManualModal(true);
   };
@@ -234,6 +271,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       fleetGroup: rec.fleetGroup || 'Fleet Operasi 01',
       statusFleet: rec.statusFleet || 'OPERASI',
       catatan: rec.catatan || '',
+      ritaseBatuBaik: rec.ritaseBatuBaik || 0,
+      ritaseBatuPecelan: rec.ritaseBatuPecelan || 0,
+      ritaseImbalPlant: rec.ritaseImbalPlant || 0,
+      ritaseImbalTanah: rec.ritaseImbalTanah || 0,
+      ritaseLokasian: rec.ritaseLokasian || 0,
+      namaChecker: rec.namaChecker || currentUser.fullName || currentUser.username || '',
+      catatanChecker: rec.catatanChecker || '',
     });
     setShowManualModal(true);
   };
@@ -245,6 +289,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       alert('Harap lengkapi No Unit dan Nama Operator!');
       return;
     }
+
+    const totalRit = 
+      Number(formData.ritaseBatuBaik || 0) +
+      Number(formData.ritaseBatuPecelan || 0) +
+      Number(formData.ritaseImbalPlant || 0) +
+      Number(formData.ritaseImbalTanah || 0) +
+      Number(formData.ritaseLokasian || 0);
 
     const payload = {
       tanggal: formData.tanggal,
@@ -260,6 +311,14 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       fleetGroup: formData.fleetGroup.trim() || 'Fleet Operasi',
       statusFleet: formData.statusFleet,
       catatan: formData.catatan.trim(),
+      ritaseBatuBaik: Number(formData.ritaseBatuBaik || 0),
+      ritaseBatuPecelan: Number(formData.ritaseBatuPecelan || 0),
+      ritaseImbalPlant: Number(formData.ritaseImbalPlant || 0),
+      ritaseImbalTanah: Number(formData.ritaseImbalTanah || 0),
+      ritaseLokasian: Number(formData.ritaseLokasian || 0),
+      totalRitase: totalRit,
+      namaChecker: formData.namaChecker.trim(),
+      catatanChecker: formData.catatanChecker.trim(),
       source: 'MANUAL' as const,
     };
 
@@ -295,6 +354,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       return;
     }
 
+    const totalRit = 
+      Number(formData.ritaseBatuBaik || 0) +
+      Number(formData.ritaseBatuPecelan || 0) +
+      Number(formData.ritaseImbalPlant || 0) +
+      Number(formData.ritaseImbalTanah || 0) +
+      Number(formData.ritaseLokasian || 0);
+
     const payload = {
       tanggal: formData.tanggal,
       jamStartOperasi: formData.jamStartOperasi || '07:00',
@@ -309,6 +375,14 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       fleetGroup: formData.fleetGroup.trim() || 'Fleet Operasi',
       statusFleet: formData.statusFleet,
       catatan: formData.catatan.trim(),
+      ritaseBatuBaik: Number(formData.ritaseBatuBaik || 0),
+      ritaseBatuPecelan: Number(formData.ritaseBatuPecelan || 0),
+      ritaseImbalPlant: Number(formData.ritaseImbalPlant || 0),
+      ritaseImbalTanah: Number(formData.ritaseImbalTanah || 0),
+      ritaseLokasian: Number(formData.ritaseLokasian || 0),
+      totalRitase: totalRit,
+      namaChecker: formData.namaChecker.trim(),
+      catatanChecker: formData.catatanChecker.trim(),
       source: 'MANUAL' as const,
     };
 
@@ -317,7 +391,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       refreshFleetData();
       setInlineFeedback({
         type: 'success',
-        message: `Setting Fleet unit ${formData.noUnit} (Operator: ${formData.namaOperator}) jam ${payload.jamStartOperasi}-${payload.jamFinishOperasi} di ${formData.lokasiKerja} berhasil disimpan!`,
+        message: `Setting Fleet unit ${formData.noUnit} (Operator: ${formData.namaOperator}) jam ${payload.jamStartOperasi}-${payload.jamFinishOperasi} di ${formData.lokasiKerja} berhasil disimpan! ${totalRit > 0 ? `(Total Ritase: ${totalRit} Rit)` : ''}`,
       });
       // Reset input unit & operator untuk kemudahan penambahan unit berikutnya
       setFormData((prev) => ({
@@ -327,6 +401,12 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
         namaOperator: '',
         operatorJabatan: '',
         catatan: '',
+        ritaseBatuBaik: 0,
+        ritaseBatuPecelan: 0,
+        ritaseImbalPlant: 0,
+        ritaseImbalTanah: 0,
+        ritaseLokasian: 0,
+        catatanChecker: '',
       }));
       setEditingFleetId(null);
     } else {
@@ -336,6 +416,113 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       });
     }
   };
+
+  // Quick increment ritase dari tampilan Checker Tambang
+  const handleQuickIncrementRitase = (
+    fleetId: string,
+    kategoriKey: 'ritaseBatuBaik' | 'ritaseBatuPecelan' | 'ritaseImbalPlant' | 'ritaseImbalTanah' | 'ritaseLokasian',
+    delta: number = 1
+  ) => {
+    const checkerName = currentUser.fullName || currentUser.username || 'Checker Tambang';
+    const res = updateFleetRitaseCounter(fleetId, kategoriKey, delta, false, checkerName);
+    if (res.success) {
+      refreshFleetData();
+      if (quickTallyTarget && quickTallyTarget.id === fleetId && res.record) {
+        setQuickTallyTarget(res.record);
+      }
+      const labelMap: Record<string, string> = {
+        ritaseBatuBaik: 'Batu Baik',
+        ritaseBatuPecelan: 'Batu Pecelan',
+        ritaseImbalPlant: 'Imbal Plant',
+        ritaseImbalTanah: 'Imbal Tanah',
+        ritaseLokasian: 'Lokasian',
+      };
+      setTallyToast({
+        unit: res.record?.noUnit || 'Dump Truck',
+        message: `${delta > 0 ? '+' : ''}${delta} Rit ${labelMap[kategoriKey] || 'Ritase'} (Total: ${res.record?.totalRitase || 0} Rit)`,
+      });
+      setTimeout(() => setTallyToast(null), 2500);
+    }
+  };
+
+  // Helper cek apakah unit yang dipilih adalah Dump Truck
+  const isDumpTruckForm = useMemo(() => {
+    const j = (formData.jenisAlat || '').toLowerCase();
+    const u = (formData.noUnit || '').toLowerCase();
+    const n = (formData.namaAlat || '').toLowerCase();
+    return j.includes('dump') || j.includes('dt') || u.startsWith('dt') || n.includes('dump');
+  }, [formData.jenisAlat, formData.noUnit, formData.namaAlat]);
+
+  // Render Box Input Ritase dengan Tombol [+] dan [-] serta Direct Number
+  const renderCounterBox = (
+    title: string,
+    subtitle: string,
+    textColor: string,
+    borderColor: string,
+    value: number,
+    onChange: (val: number) => void
+  ) => (
+    <div className={`p-3 rounded-2xl border ${borderColor} bg-stone-900/90 flex flex-col justify-between gap-2 shadow-md hover:border-amber-500/50 transition`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <span className={`text-xs font-mono font-bold ${textColor}`}>{title}</span>
+          <p className="text-[10px] text-stone-400 truncate max-w-[150px]">{subtitle}</p>
+        </div>
+        <div className="text-right">
+          <span className="text-sm font-mono font-black text-stone-100">
+            {value || 0}
+          </span>
+          <span className="text-[10px] text-stone-400 font-mono ml-1">Rit</span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 pt-1">
+        {/* Tombol [-] */}
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(0, (value || 0) - 1))}
+          disabled={(value || 0) <= 0}
+          className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 transition active:scale-95"
+          title="Kurangi 1 Rit (-)"
+        >
+          <Minus className="w-3.5 h-3.5" />
+        </button>
+
+        {/* Input number langsung */}
+        <input
+          type="number"
+          min={0}
+          value={value === 0 ? '' : value}
+          placeholder="0"
+          onChange={(e) => {
+            const parsed = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value) || 0);
+            onChange(parsed);
+          }}
+          className="w-full text-center px-2 py-1.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+        />
+
+        {/* Tombol [+] besar sesuai permintaan user */}
+        <button
+          type="button"
+          onClick={() => onChange((value || 0) + 1)}
+          className="flex items-center justify-center p-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-amber-500/20"
+          title="Tambah 1 Rit (+)"
+        >
+          <Plus className="w-4 h-4 stroke-[3]" />
+        </button>
+
+        {/* Tombol [+5] quick add */}
+        <button
+          type="button"
+          onClick={() => onChange((value || 0) + 5)}
+          className="px-2 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-mono font-bold transition active:scale-95"
+          title="Tambah 5 Rit (+5)"
+        >
+          +5
+        </button>
+      </div>
+    </div>
+  );
 
   // Sync P2H Execution
   const handleExecuteSync = () => {
@@ -403,7 +590,45 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     };
   }, [filteredFleetList]);
 
-  // Export CSV
+  // Metrics Ritase Checker Tambang (Khususnya Dump Truck & Hasil Pekerjaan Tambang)
+  const ritaseMetrics = useMemo(() => {
+    let totalRitase = 0;
+    let totalBatuBaik = 0;
+    let totalBatuPecelan = 0;
+    let totalImbalPlant = 0;
+    let totalImbalTanah = 0;
+    let totalLokasian = 0;
+
+    const dumpTrucks = filteredFleetList.filter((f) => {
+      const isDT = (f.jenisAlat || '').toLowerCase().includes('dump') || 
+                   (f.jenisAlat || '').toLowerCase().includes('dt') ||
+                   (f.namaAlat || '').toLowerCase().includes('dump') ||
+                   f.noUnit.toLowerCase().startsWith('dt');
+      return isDT;
+    });
+
+    filteredFleetList.forEach((f) => {
+      totalRitase += Number(f.totalRitase || 0);
+      totalBatuBaik += Number(f.ritaseBatuBaik || 0);
+      totalBatuPecelan += Number(f.ritaseBatuPecelan || 0);
+      totalImbalPlant += Number(f.ritaseImbalPlant || 0);
+      totalImbalTanah += Number(f.ritaseImbalTanah || 0);
+      totalLokasian += Number(f.ritaseLokasian || 0);
+    });
+
+    return {
+      totalRitase,
+      totalBatuBaik,
+      totalBatuPecelan,
+      totalImbalPlant,
+      totalImbalTanah,
+      totalLokasian,
+      dumpTrucksCount: dumpTrucks.length,
+      dumpTrucks,
+    };
+  }, [filteredFleetList]);
+
+  // Export CSV Setting Fleet & Ritase
   const handleExportCSV = () => {
     if (filteredFleetList.length === 0) {
       alert('Tidak ada data setting fleet untuk diexport.');
@@ -422,7 +647,15 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       'Nama Operator',
       'Jabatan Operator',
       'Lokasi Kerja',
-      'Catatan',
+      'Batu Baik (Rit)',
+      'Batu Pecelan (Rit)',
+      'Imbal Plant (Rit)',
+      'Imbal Tanah (Rit)',
+      'Lokasian (Rit)',
+      'Total Ritase (Rit)',
+      'Nama Checker',
+      'Catatan Checker',
+      'Catatan Fleet',
       'Sumber Data',
       'Status',
       'No Reff P2H',
@@ -440,6 +673,14 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       `"${f.namaOperator}"`,
       `"${f.operatorJabatan || '-'}"`,
       `"${f.lokasiKerja}"`,
+      f.ritaseBatuBaik || 0,
+      f.ritaseBatuPecelan || 0,
+      f.ritaseImbalPlant || 0,
+      f.ritaseImbalTanah || 0,
+      f.ritaseLokasian || 0,
+      f.totalRitase || 0,
+      `"${f.namaChecker ? f.namaChecker.replace(/"/g, '""') : '-'}"`,
+      `"${f.catatanChecker ? f.catatanChecker.replace(/"/g, '""') : '-'}"`,
       `"${f.catatan ? f.catatan.replace(/"/g, '""') : '-'}"`,
       `"${f.source === 'SYNC_P2H' ? 'SINKRONISASI P2H' : 'INPUT MANUAL'}"`,
       `"${f.statusFleet || 'OPERASI'}"`,
@@ -447,8 +688,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     ]);
 
     const csvContent = '\uFEFF' + [
-      `"PT BATU KALI WELANG AMPUH - LAPORAN SETTING FLEET OPERASI TAMBANG & QUARRY"`,
-      `"Tanggal Filter: ${filterDate || 'Semua Tanggal'} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Armada: ${filteredFleetList.length}"`,
+      `"PT BATU KALI WELANG AMPUH - LAPORAN SETTING FLEET & HASIL RITASE CHECKER TAMBANG"`,
+      `"Tanggal Filter: ${filterDate || 'Semua Tanggal'} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Armada: ${filteredFleetList.length} | Total Ritase: ${ritaseMetrics.totalRitase} Rit"`,
       '',
       headers.join(','), 
       ...rows.map((r) => r.join(','))
@@ -570,13 +811,68 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               <span className="text-teal-400 font-bold">{metrics.totalSync} Sync P2H</span>
             </div>
           </div>
+      </div>
+
+      {/* NAVIGATION TABS: SETTING FLEET vs MENU CHECKER TAMBANG */}
+        <div className="flex items-center gap-1.5 p-1 bg-stone-950 rounded-xl border border-stone-800/80">
+          <button
+            id="tab-view-fleet"
+            type="button"
+            onClick={() => setActiveViewTab('FLEET')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition font-mono ${
+              activeViewTab === 'FLEET'
+                ? 'bg-amber-500 text-stone-950 shadow-md font-black shadow-amber-500/20'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>1. Penugasan Armada (Setting Fleet)</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-stone-900 text-stone-300 font-bold border border-stone-800">
+              {filteredFleetList.length} Unit
+            </span>
+          </button>
+
+          <button
+            id="tab-view-checker"
+            type="button"
+            onClick={() => setActiveViewTab('CHECKER')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition font-mono ${
+              activeViewTab === 'CHECKER'
+                ? 'bg-teal-500 text-stone-950 shadow-md font-black shadow-teal-500/20'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+            }`}
+          >
+            <CheckSquare className="w-4 h-4" />
+            <span>2. Menu Checker Tambang (Tally Ritase)</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-teal-500/20 text-teal-300 font-black border border-teal-500/30">
+              {ritaseMetrics.totalRitase} Rit
+            </span>
+          </button>
+        </div>
+
+        {/* View Description */}
+        <div className="flex items-center gap-2 px-3 text-xs font-mono">
+          {activeViewTab === 'FLEET' ? (
+            <span className="text-stone-400 flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span>Mode Dispatcher / Supervisor: Pengaturan Penempatan &amp; Alokasi Alat</span>
+            </span>
+          ) : (
+            <span className="text-teal-400 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-teal-400 animate-ping" />
+              <span>Mode Checker Tambang: Tap tombol [+] untuk Tally Ritase Cepat di Lapangan</span>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* OPSI METODE PENGATURAN FLEET: INPUT MANUAL & SINKRONISASI P2H */}
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800/80 pb-4">
-          <div>
+      {/* VIEW 1: SETTING FLEET (PENUGASAN ARMADA & OPERATOR) */}
+      {activeViewTab === 'FLEET' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* OPSI METODE PENGATURAN FLEET: INPUT MANUAL & SINKRONISASI P2H */}
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800/80 pb-4">
+              <div>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
               <h2 className="text-sm font-mono font-bold uppercase tracking-wider text-stone-100 flex items-center gap-2">
@@ -879,7 +1175,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
             <div className="bg-stone-950/70 p-4 rounded-2xl border border-stone-800 space-y-1.5">
               <label className="block text-xs font-mono font-bold text-stone-300 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-amber-400" />
-                <span>8. Catatan</span>
+                <span>8. Catatan Tugas Operasional</span>
               </label>
               <textarea
                 rows={2}
@@ -888,6 +1184,128 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 placeholder="Catatan tugas operasional, target ritase, kondisi jalan / front loading, instruksi khusus..."
                 className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
               />
+            </div>
+
+            {/* FITUR HITUNG RITASE OLEH CHECKER TAMBANG (KHUSUSNYA DUMP TRUCK) */}
+            <div className="bg-stone-950/90 p-4 sm:p-5 rounded-2xl border border-amber-500/30 space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                    <Truck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-mono font-bold uppercase text-amber-400 tracking-wider">
+                        Fitur Hitung Ritase (Khusus Dump Truck &bull; Checker Tambang)
+                      </h4>
+                      {isDumpTruckForm && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Dump Truck Terdeteksi
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      Kategori muat: <strong>Batu Baik</strong>, <strong>Batu Pecelan</strong>, <strong>Imbal Plant</strong>, <strong>Imbal Tanah</strong>, dan <strong>Lokasian</strong>. Gunakan tombol <strong className="text-amber-400 font-mono">[+]</strong> di sampingnya untuk memasukkan jumlah ritase.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Total Ritase Summary Badge */}
+                <div className="flex items-center gap-2.5 bg-stone-900 px-3.5 py-2 rounded-xl border border-stone-800 shrink-0 self-start sm:self-auto">
+                  <span className="text-[11px] font-mono uppercase text-stone-400">Total Akumulasi:</span>
+                  <span className="text-lg font-mono font-black text-amber-400">
+                    {(Number(formData.ritaseBatuBaik || 0) +
+                      Number(formData.ritaseBatuPecelan || 0) +
+                      Number(formData.ritaseImbalPlant || 0) +
+                      Number(formData.ritaseImbalTanah || 0) +
+                      Number(formData.ritaseLokasian || 0))} Rit
+                  </span>
+                </div>
+              </div>
+
+              {/* 5 Kategori Muat dengan Tombol [+] dan [-] serta Direct Input */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* 1. Batu Baik */}
+                {renderCounterBox(
+                  '1. Batu Baik',
+                  'Batu Belah Standar / Berkualitas',
+                  'text-amber-400',
+                  'border-amber-500/30',
+                  formData.ritaseBatuBaik,
+                  (val) => setFormData({ ...formData, ritaseBatuBaik: val })
+                )}
+
+                {/* 2. Batu Pecelan */}
+                {renderCounterBox(
+                  '2. Batu Pecelan',
+                  'Batu Pecelan / Reject Crusher',
+                  'text-orange-400',
+                  'border-orange-500/30',
+                  formData.ritaseBatuPecelan,
+                  (val) => setFormData({ ...formData, ritaseBatuPecelan: val })
+                )}
+
+                {/* 3. Imbal Plant */}
+                {renderCounterBox(
+                  '3. Imbal Plant',
+                  'Material Imbal ke Plant Crusher',
+                  'text-teal-400',
+                  'border-teal-500/30',
+                  formData.ritaseImbalPlant,
+                  (val) => setFormData({ ...formData, ritaseImbalPlant: val })
+                )}
+
+                {/* 4. Imbal Tanah */}
+                {renderCounterBox(
+                  '4. Imbal Tanah',
+                  'Overburden / Kupasan Tanah',
+                  'text-emerald-400',
+                  'border-emerald-500/30',
+                  formData.ritaseImbalTanah,
+                  (val) => setFormData({ ...formData, ritaseImbalTanah: val })
+                )}
+
+                {/* 5. Lokasian */}
+                {renderCounterBox(
+                  '5. Lokasian',
+                  'Pekerjaan Angkut Lokasian Quarry',
+                  'text-purple-400',
+                  'border-purple-500/30',
+                  formData.ritaseLokasian,
+                  (val) => setFormData({ ...formData, ritaseLokasian: val })
+                )}
+              </div>
+
+              {/* Checker Tambang Identity & Catatan Checker */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-stone-800/80">
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                    <Users className="w-3 h-3 text-teal-400" />
+                    <span>Petugas Checker Tambang:</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nama Checker Tambang bertugas (contoh: Pos Front Pit)..."
+                    value={formData.namaChecker}
+                    onChange={(e) => setFormData({ ...formData, namaChecker: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                    <FileText className="w-3 h-3 text-amber-400" />
+                    <span>Catatan Checker Tambang:</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Kondisi loading, antrian ritase, material basah/kering, dll..."
+                    value={formData.catatanChecker}
+                    onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Buttons */}
@@ -1215,15 +1633,16 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 <th className="py-3 px-3">CN_NEW (No Unit)</th>
                 <th className="py-3 px-3">Nama Operator &amp; Jabatan</th>
                 <th className="py-3 px-3">Lokasi Kerja</th>
+                <th className="py-3 px-3">Ritase (Checker Tambang)</th>
                 <th className="py-3 px-3">Catatan</th>
                 <th className="py-3 px-3 text-center">Sumber</th>
-                <th className="py-3 px-3 text-center w-20">Aksi</th>
+                <th className="py-3 px-3 text-center w-24">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/80">
               {filteredFleetList.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-stone-500 font-mono">
+                  <td colSpan={10} className="py-12 text-center text-stone-500 font-mono">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-stone-600 stroke-[1.5]" />
                       <span>Belum ada data Setting Fleet untuk kriteria tanggal / filter ini.</span>
@@ -1250,109 +1669,725 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredFleetList.map((item, idx) => (
-                  <tr key={item.id} className="hover:bg-stone-800/40 transition">
-                    <td className="py-3 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
-                    
-                    {/* Tanggal & Jam Operasi */}
-                    <td className="py-3 px-3 font-mono">
-                      <div className="text-stone-200 font-bold">{item.tanggal}</div>
-                      <div className="text-[11px] text-amber-400 font-mono flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3 text-blue-400" />
-                        <span>{item.jamStartOperasi || '07:00'} - {item.jamFinishOperasi || '17:00'}</span>
-                      </div>
-                    </td>
+                filteredFleetList.map((item, idx) => {
+                  const isDT = (item.jenisAlat || '').toLowerCase().includes('dump') || 
+                               (item.jenisAlat || '').toLowerCase().includes('dt') ||
+                               (item.namaAlat || '').toLowerCase().includes('dump') ||
+                               item.noUnit.toLowerCase().startsWith('dt');
+                  const totalRit = item.totalRitase || 0;
 
-                    {/* Jenis (Modul 1) */}
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded bg-stone-800/90 text-stone-300 font-mono font-medium text-[11px] border border-stone-700/60">
-                        {item.jenisAlat || 'Alat Berat'}
-                      </span>
-                    </td>
+                  return (
+                    <tr key={item.id} className="hover:bg-stone-800/40 transition">
+                      <td className="py-3 px-3 text-center text-stone-500 font-mono">{idx + 1}</td>
+                      
+                      {/* Tanggal & Jam Operasi */}
+                      <td className="py-3 px-3 font-mono">
+                        <div className="text-stone-200 font-bold">{item.tanggal}</div>
+                        <div className="text-[11px] text-amber-400 font-mono flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3 text-blue-400" />
+                          <span>{item.jamStartOperasi || '07:00'} - {item.jamFinishOperasi || '17:00'}</span>
+                        </div>
+                      </td>
 
-                    {/* CN_NEW (No Unit) & Nama Alat */}
-                    <td className="py-3 px-3">
-                      <div className="font-mono font-black text-amber-400 text-sm tracking-wide">
-                        {item.noUnit}
-                      </div>
-                      <div className="text-[11px] text-stone-400 truncate max-w-[170px]">
-                        {item.namaAlat || item.noUnit}
-                      </div>
-                    </td>
-
-                    {/* Operator & Jabatan */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-1.5 font-bold text-stone-100">
-                        <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <span>{item.namaOperator}</span>
-                      </div>
-                      <div className="pl-5 mt-0.5">
-                        <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-mono">
-                          {item.operatorJabatan || 'OPERATOR'}
+                      {/* Jenis (Modul 1) */}
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded bg-stone-800/90 text-stone-300 font-mono font-medium text-[11px] border border-stone-700/60">
+                          {item.jenisAlat || 'Alat Berat'}
                         </span>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Lokasi Kerja */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-1.5 text-stone-200 font-medium">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>{item.lokasiKerja}</span>
-                      </div>
-                    </td>
+                      {/* CN_NEW (No Unit) & Nama Alat */}
+                      <td className="py-3 px-3">
+                        <div className="font-mono font-black text-amber-400 text-sm tracking-wide">
+                          {item.noUnit}
+                        </div>
+                        <div className="text-[11px] text-stone-400 truncate max-w-[170px]">
+                          {item.namaAlat || item.noUnit}
+                        </div>
+                      </td>
 
-                    {/* Catatan */}
-                    <td className="py-3 px-3 text-stone-300 text-[11px] max-w-[200px]" title={item.catatan || ''}>
-                      {item.catatan || <span className="text-stone-600">-</span>}
-                    </td>
+                      {/* Operator & Jabatan */}
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-1.5 font-bold text-stone-100">
+                          <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span>{item.namaOperator}</span>
+                        </div>
+                        <div className="pl-5 mt-0.5">
+                          <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-mono">
+                            {item.operatorJabatan || 'OPERATOR'}
+                          </span>
+                        </div>
+                      </td>
 
-                    {/* Sumber: Manual vs Sync P2H */}
-                    <td className="py-3 px-3 text-center">
-                      {item.source === 'SYNC_P2H' ? (
-                        <span 
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30"
-                          title={`Disinkronkan otomatis dari P2H No. ${item.p2hNo || '-'}`}
-                        >
-                          <RefreshCw className="w-2.5 h-2.5 animate-spin-slow" />
-                          <span>SYNC P2H</span>
-                        </span>
-                      ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                          MANUAL
-                        </span>
-                      )}
-                    </td>
+                      {/* Lokasi Kerja */}
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-1.5 text-stone-200 font-medium">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>{item.lokasiKerja}</span>
+                        </div>
+                      </td>
 
-                    {/* Aksi */}
-                    <td className="py-3 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
-                          title="Edit Setting Fleet"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(item.id, item.noUnit)}
-                          className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-700 transition"
-                          title="Hapus Setting Fleet"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      {/* Ritase (Checker Tambang) */}
+                      <td className="py-3 px-3">
+                        {isDT || totalRit > 0 ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-md font-mono font-bold text-xs ${
+                                  totalRit > 0
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-stone-800/80 text-stone-400 border border-stone-700/60'
+                                }`}
+                              >
+                                {totalRit} Rit
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setQuickTallyTarget(item)}
+                                className="px-2 py-0.5 rounded-md bg-stone-800 hover:bg-stone-700 text-teal-400 hover:text-teal-300 font-mono text-[10.5px] font-bold border border-stone-700 transition active:scale-95 flex items-center gap-1 shadow-sm"
+                                title="Tally Ritase Cepat (+)"
+                              >
+                                <Plus className="w-3 h-3 stroke-[3]" />
+                                <span>Rit</span>
+                              </button>
+                            </div>
+                            {totalRit > 0 && (
+                              <div className="text-[9.5px] font-mono text-stone-400 flex flex-wrap gap-1 max-w-[200px]">
+                                {item.ritaseBatuBaik ? <span className="text-amber-400">Baik:{item.ritaseBatuBaik}</span> : null}
+                                {item.ritaseBatuPecelan ? <span className="text-orange-400">Pcl:{item.ritaseBatuPecelan}</span> : null}
+                                {item.ritaseImbalPlant ? <span className="text-teal-400">Plt:{item.ritaseImbalPlant}</span> : null}
+                                {item.ritaseImbalTanah ? <span className="text-emerald-400">Tnh:{item.ritaseImbalTanah}</span> : null}
+                                {item.ritaseLokasian ? <span className="text-purple-400">Lok:{item.ritaseLokasian}</span> : null}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-stone-600 font-mono text-[11px]">-</span>
+                        )}
+                      </td>
+
+                      {/* Catatan */}
+                      <td className="py-3 px-3 text-stone-300 text-[11px] max-w-[180px]" title={item.catatan || ''}>
+                        {item.catatan || <span className="text-stone-600">-</span>}
+                      </td>
+
+                      {/* Sumber: Manual vs Sync P2H */}
+                      <td className="py-3 px-3 text-center">
+                        {item.source === 'SYNC_P2H' ? (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-teal-500/15 text-teal-300 border border-teal-500/30"
+                            title={`Disinkronkan otomatis dari P2H No. ${item.p2hNo || '-'}`}
+                          >
+                            <RefreshCw className="w-2.5 h-2.5 animate-spin-slow" />
+                            <span>SYNC P2H</span>
+                          </span>
+                        ) : (
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            MANUAL
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Aksi */}
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
+                            title="Edit Setting Fleet"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item.id, item.noUnit)}
+                            className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-700 transition"
+                            title="Hapus Setting Fleet"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+  )}
 
-      {/* ========================================================= */}
+  {/* ========================================================= */}
+  {/* VIEW 2: MENU CHECKER TAMBANG (HITUNG & MONITORING RITASE PEKERJAAN) */}
+  {/* ========================================================= */}
+  {activeViewTab === 'CHECKER' && (
+    <div className="space-y-6 animate-fadeIn">
+      {/* Banner Khusus Pos Checker Tambang */}
+      <div className="bg-gradient-to-r from-stone-900 via-stone-900 to-teal-950/60 border border-teal-500/30 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden backdrop-blur-md">
+        <div className="absolute -right-16 -top-16 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-16 -bottom-16 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <div className="p-2.5 rounded-2xl bg-teal-500/20 border border-teal-500/40 text-teal-300 shadow-md shadow-teal-500/10">
+                <CheckSquare className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide uppercase">
+                    POS CHECKER TAMBANG &bull; MONITORING RITASE
+                  </h2>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-500/20 text-teal-300 border border-teal-500/40 animate-pulse">
+                    LIVE TALLY
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400 mt-0.5">
+                  Menu penginputan ritase armada Dump Truck di lapangan &bull; Tap tombol <strong className="text-amber-400 font-mono">[+]</strong> untuk mencatat ritase muatan per kategori secara instan.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons checker */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCheckerPrintModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Cetak Rekap Ritase Checker</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenAddManual}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono shadow-lg shadow-amber-500/20 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Setting DT Baru</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Pos Checker */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-4 border-t border-stone-800/80">
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-stone-400 mb-1 flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-amber-400" />
+              <span>Tanggal Kerja:</span>
+            </label>
+            <input
+              type="date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-xs font-mono text-stone-200 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-stone-400 mb-1 flex items-center gap-1">
+              <Clock className="w-3 h-3 text-blue-400" />
+              <span>Shift Operasi:</span>
+            </label>
+            <select
+              value={filterShift}
+              onChange={(e) => setFilterShift(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            >
+              <option value="ALL">Semua Shift</option>
+              {SHIFT_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-stone-400 mb-1 flex items-center gap-1">
+              <MapPin className="w-3 h-3 text-emerald-400" />
+              <span>Pos / Lokasi Loading:</span>
+            </label>
+            <select
+              value={filterLokasi}
+              onChange={(e) => setFilterLokasi(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-xs text-emerald-400 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="ALL">Semua Titik Loading</option>
+              {LOKASI_KERJA_PRESETS.map((loc) => (
+                <option key={loc} value={loc}>{loc}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* RITASE KPI DASHBOARD: 5 KATEGORI MUAT */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* Total Ritase */}
+        <div className="bg-gradient-to-br from-amber-500/20 via-stone-900 to-stone-950 p-4 rounded-2xl border-2 border-amber-500/40 shadow-xl">
+          <span className="text-[10px] font-mono uppercase text-amber-300 font-bold block">TOTAL RITASE HARI INI</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-amber-400">
+              {ritaseMetrics.totalRitase}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block">
+            {filteredFleetList.length} Dump Truck
+          </span>
+        </div>
+
+        {/* 1. Batu Baik */}
+        <div className="bg-stone-900/90 p-4 rounded-2xl border border-amber-500/30">
+          <span className="text-[10px] font-mono uppercase text-amber-400 font-bold block">1. BATU BAIK</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl font-mono font-black text-stone-100">
+              {ritaseMetrics.totalBatuBaik}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block truncate">
+            Batu Berkualitas
+          </span>
+        </div>
+
+        {/* 2. Batu Pecelan */}
+        <div className="bg-stone-900/90 p-4 rounded-2xl border border-orange-500/30">
+          <span className="text-[10px] font-mono uppercase text-orange-400 font-bold block">2. BATU PECELAN</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl font-mono font-black text-stone-100">
+              {ritaseMetrics.totalBatuPecelan}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block truncate">
+            Reject / Pecelan
+          </span>
+        </div>
+
+        {/* 3. Imbal Plant */}
+        <div className="bg-stone-900/90 p-4 rounded-2xl border border-teal-500/30">
+          <span className="text-[10px] font-mono uppercase text-teal-400 font-bold block">3. IMBAL PLANT</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl font-mono font-black text-stone-100">
+              {ritaseMetrics.totalImbalPlant}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block truncate">
+            Stock ke Crusher
+          </span>
+        </div>
+
+        {/* 4. Imbal Tanah */}
+        <div className="bg-stone-900/90 p-4 rounded-2xl border border-emerald-500/30">
+          <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold block">4. IMBAL TANAH</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl font-mono font-black text-stone-100">
+              {ritaseMetrics.totalImbalTanah}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block truncate">
+            Overburden / Tanah
+          </span>
+        </div>
+
+        {/* 5. Lokasian */}
+        <div className="bg-stone-900/90 p-4 rounded-2xl border border-purple-500/30">
+          <span className="text-[10px] font-mono uppercase text-purple-400 font-bold block">5. LOKASIAN</span>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-2xl font-mono font-black text-stone-100">
+              {ritaseMetrics.totalLokasian}
+            </span>
+            <span className="text-xs font-mono text-stone-400">Rit</span>
+          </div>
+          <span className="text-[10px] text-stone-500 font-mono mt-1 block truncate">
+            Angkut Quarry
+          </span>
+        </div>
+      </div>
+
+      {/* SECTION 1: KARTU TALLY INSTAN LAPANGAN UNTUK SETIAP DUMP TRUCK */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-pulse" />
+            <h3 className="text-sm font-mono font-bold uppercase tracking-wider text-stone-100 flex items-center gap-2">
+              <span>Kartu Tally Lapangan Dump Truck (Tombol Cepat [+])</span>
+            </h3>
+          </div>
+          <p className="text-xs text-stone-400">
+            Tap tombol <strong className="text-amber-400 font-mono">[+]</strong> untuk menambahkan 1 ritase secara langsung saat unit melintas pos checker.
+          </p>
+        </div>
+
+        {filteredFleetList.length === 0 ? (
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl p-8 text-center text-stone-500 space-y-3">
+            <Truck className="w-10 h-10 mx-auto text-stone-600" />
+            <p className="text-sm font-medium">Belum ada unit Dump Truck yang terdaftar untuk filter ini.</p>
+            <button
+              type="button"
+              onClick={handleOpenAddManual}
+              className="px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
+            >
+              + Input Manual Setting Fleet Unit
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredFleetList.map((dt) => {
+              const totalDtRit = (dt.ritaseBatuBaik || 0) +
+                (dt.ritaseBatuPecelan || 0) +
+                (dt.ritaseImbalPlant || 0) +
+                (dt.ritaseImbalTanah || 0) +
+                (dt.ritaseLokasian || 0);
+
+              return (
+                <div
+                  key={dt.id}
+                  className="bg-stone-900 border border-stone-800 hover:border-teal-500/40 rounded-3xl p-4 sm:p-5 shadow-xl transition space-y-3.5 flex flex-col justify-between"
+                >
+                  {/* Card Header: Unit & Total Rit */}
+                  <div>
+                    <div className="flex items-start justify-between gap-2 border-b border-stone-800/80 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                          <Truck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-base font-black font-mono text-amber-400 tracking-wide">
+                              {dt.noUnit}
+                            </h4>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-800 text-stone-300 border border-stone-700">
+                              {dt.jenisAlat || 'Dump Truck'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-stone-400 truncate max-w-[170px]">
+                            {dt.namaAlat || 'Hino 500'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Badge Total Rit */}
+                      <div className="text-right">
+                        <span className="text-[10px] font-mono uppercase text-stone-500 block">TOTAL RIT</span>
+                        <div className="px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-black text-lg inline-block">
+                          {totalDtRit} <span className="text-xs font-normal text-amber-400">Rit</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Driver & Location info */}
+                    <div className="grid grid-cols-2 gap-2 mt-2.5 text-xs">
+                      <div className="bg-stone-950/70 p-2 rounded-xl border border-stone-800">
+                        <span className="text-[9.5px] font-mono uppercase text-stone-500 block">Sopir / Operator</span>
+                        <span className="font-bold text-stone-200 block truncate mt-0.5">{dt.namaOperator}</span>
+                      </div>
+                      <div className="bg-stone-950/70 p-2 rounded-xl border border-stone-800">
+                        <span className="text-[9.5px] font-mono uppercase text-stone-500 block">Lokasi Kerja</span>
+                        <span className="font-bold text-emerald-400 block truncate mt-0.5">{dt.lokasiKerja}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 5 Row Tally Counters */}
+                  <div className="space-y-2 bg-stone-950/90 p-3 rounded-2xl border border-stone-800/90">
+                    {/* 1. Batu Baik */}
+                    <div className="flex items-center justify-between gap-2 p-1.5 px-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <div className="truncate">
+                        <span className="text-[11px] font-mono font-bold text-amber-400 block truncate">1. Batu Baik</span>
+                        <span className="text-[9px] text-stone-500 block">Batu Belah</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-stone-100 text-sm w-7 text-center">
+                          {dt.ritaseBatuBaik || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuBaik', -1)}
+                          disabled={(dt.ritaseBatuBaik || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          title="Kurangi 1 rit"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuBaik', 1)}
+                          className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-amber-500/20 active:scale-95 transition"
+                          title="Tambah 1 rit Batu Baik"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>+1</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 2. Batu Pecelan */}
+                    <div className="flex items-center justify-between gap-2 p-1.5 px-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <div className="truncate">
+                        <span className="text-[11px] font-mono font-bold text-orange-400 block truncate">2. Pecelan</span>
+                        <span className="text-[9px] text-stone-500 block">Reject</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-stone-100 text-sm w-7 text-center">
+                          {dt.ritaseBatuPecelan || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuPecelan', -1)}
+                          disabled={(dt.ritaseBatuPecelan || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          title="Kurangi 1 rit"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuPecelan', 1)}
+                          className="h-7 px-2.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-orange-500/20 active:scale-95 transition"
+                          title="Tambah 1 rit Pecelan"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>+1</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 3. Imbal Plant */}
+                    <div className="flex items-center justify-between gap-2 p-1.5 px-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <div className="truncate">
+                        <span className="text-[11px] font-mono font-bold text-teal-400 block truncate">3. Imbal Plant</span>
+                        <span className="text-[9px] text-stone-500 block">Crusher</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-stone-100 text-sm w-7 text-center">
+                          {dt.ritaseImbalPlant || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalPlant', -1)}
+                          disabled={(dt.ritaseImbalPlant || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          title="Kurangi 1 rit"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalPlant', 1)}
+                          className="h-7 px-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-teal-500/20 active:scale-95 transition"
+                          title="Tambah 1 rit Imbal Plant"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>+1</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 4. Imbal Tanah */}
+                    <div className="flex items-center justify-between gap-2 p-1.5 px-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <div className="truncate">
+                        <span className="text-[11px] font-mono font-bold text-emerald-400 block truncate">4. Imbal Tanah</span>
+                        <span className="text-[9px] text-stone-500 block">Overburden</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-stone-100 text-sm w-7 text-center">
+                          {dt.ritaseImbalTanah || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalTanah', -1)}
+                          disabled={(dt.ritaseImbalTanah || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          title="Kurangi 1 rit"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalTanah', 1)}
+                          className="h-7 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-emerald-500/20 active:scale-95 transition"
+                          title="Tambah 1 rit Imbal Tanah"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>+1</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 5. Lokasian */}
+                    <div className="flex items-center justify-between gap-2 p-1.5 px-2 rounded-xl bg-stone-900 border border-stone-800">
+                      <div className="truncate">
+                        <span className="text-[11px] font-mono font-bold text-purple-400 block truncate">5. Lokasian</span>
+                        <span className="text-[9px] text-stone-500 block">Quarry</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-stone-100 text-sm w-7 text-center">
+                          {dt.ritaseLokasian || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseLokasian', -1)}
+                          disabled={(dt.ritaseLokasian || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          title="Kurangi 1 rit"
+                        >
+                          -
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseLokasian', 1)}
+                          className="h-7 px-2.5 rounded-lg bg-purple-500 hover:bg-purple-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-purple-500/20 active:scale-95 transition"
+                          title="Tambah 1 rit Lokasian"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>+1</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer Card: Catatan & Tombol Modal */}
+                  <div className="pt-2 border-t border-stone-800 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-stone-400 truncate max-w-[170px]" title={dt.catatanChecker || dt.catatan || ''}>
+                      {dt.catatanChecker ? `📝 ${dt.catatanChecker}` : (dt.catatan || 'Tanpa catatan')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(dt)}
+                      className="text-[10.5px] font-mono font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2 shrink-0"
+                    >
+                      Edit Form Lengkap &rarr;
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 2: TABEL REKAPITULASI HASIL PEKERJAAN CHECKER TAMBANG */}
+      <div className="bg-stone-900 border border-stone-800 rounded-3xl p-5 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800 pb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-teal-400" />
+            <h3 className="text-sm font-mono font-bold uppercase text-stone-100">
+              Tabel Rekapitulasi Ritase Tambang (Hasil Kerja Lapangan)
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-mono text-stone-400">
+            <span>Checker: <strong className="text-teal-400">{currentUser.fullName || currentUser.username || 'Checker'}</strong></span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-stone-800 text-[11px] font-mono uppercase text-stone-400 bg-stone-950/60">
+                <th className="py-3 px-3 w-10 text-center">No</th>
+                <th className="py-3 px-3">No Unit (CN_NEW)</th>
+                <th className="py-3 px-3">Nama Sopir</th>
+                <th className="py-3 px-3">Lokasi Kerja</th>
+                <th className="py-3 px-3 text-right text-amber-400">Batu Baik</th>
+                <th className="py-3 px-3 text-right text-orange-400">Pecelan</th>
+                <th className="py-3 px-3 text-right text-teal-400">Imbal Plant</th>
+                <th className="py-3 px-3 text-right text-emerald-400">Imbal Tanah</th>
+                <th className="py-3 px-3 text-right text-purple-400">Lokasian</th>
+                <th className="py-3 px-3 text-right text-amber-400 font-bold">Total Rit</th>
+                <th className="py-3 px-3">Catatan Checker</th>
+                <th className="py-3 px-3 text-center">Aksi Tally</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-800/60">
+              {filteredFleetList.length === 0 ? (
+                <tr>
+                  <td colSpan={12} className="py-8 text-center text-stone-500 font-mono">
+                    Tidak ada data ritase untuk filter saat ini.
+                  </td>
+                </tr>
+              ) : (
+                filteredFleetList.map((dt, idx) => {
+                  const totalDtRit = (dt.ritaseBatuBaik || 0) +
+                    (dt.ritaseBatuPecelan || 0) +
+                    (dt.ritaseImbalPlant || 0) +
+                    (dt.ritaseImbalTanah || 0) +
+                    (dt.ritaseLokasian || 0);
+
+                  return (
+                    <tr key={dt.id} className="hover:bg-stone-800/40 transition">
+                      <td className="py-3 px-3 text-center font-mono text-stone-500">{idx + 1}</td>
+                      <td className="py-3 px-3">
+                        <span className="font-mono font-black text-amber-400 block">{dt.noUnit}</span>
+                        <span className="text-[10px] text-stone-500">{dt.namaAlat || 'Dump Truck'}</span>
+                      </td>
+                      <td className="py-3 px-3 font-medium text-stone-200">{dt.namaOperator}</td>
+                      <td className="py-3 px-3 text-emerald-400">{dt.lokasiKerja}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-amber-300">{dt.ritaseBatuBaik || 0}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-orange-300">{dt.ritaseBatuPecelan || 0}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-teal-300">{dt.ritaseImbalPlant || 0}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-300">{dt.ritaseImbalTanah || 0}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-purple-300">{dt.ritaseLokasian || 0}</td>
+                      <td className="py-3 px-3 text-right">
+                        <span className="px-2 py-0.5 rounded font-mono font-black text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          {totalDtRit} Rit
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-stone-400 text-[11px] max-w-[160px] truncate" title={dt.catatanChecker || dt.catatan || ''}>
+                        {dt.catatanChecker || dt.catatan || '-'}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setQuickTallyTarget(dt)}
+                          className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-stone-100 font-mono text-[11px] font-bold shadow transition active:scale-95 inline-flex items-center gap-1"
+                          title="Buka Popup Tally Cepat (+)"
+                        >
+                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          <span>Tally (+)</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {filteredFleetList.length > 0 && (
+              <tfoot>
+                <tr className="bg-stone-950 font-mono font-bold border-t-2 border-stone-800 text-stone-200">
+                  <td colSpan={4} className="py-3 px-3 text-right uppercase tracking-wider text-stone-400">
+                    TOTAL HASIL RITASE:
+                  </td>
+                  <td className="py-3 px-3 text-right text-amber-400">{ritaseMetrics.totalBatuBaik}</td>
+                  <td className="py-3 px-3 text-right text-orange-400">{ritaseMetrics.totalBatuPecelan}</td>
+                  <td className="py-3 px-3 text-right text-teal-400">{ritaseMetrics.totalImbalPlant}</td>
+                  <td className="py-3 px-3 text-right text-emerald-400">{ritaseMetrics.totalImbalTanah}</td>
+                  <td className="py-3 px-3 text-right text-purple-400">{ritaseMetrics.totalLokasian}</td>
+                  <td className="py-3 px-3 text-right">
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500 text-stone-950 font-black text-xs shadow-md shadow-amber-500/20">
+                      {ritaseMetrics.totalRitase} Rit
+                    </span>
+                  </td>
+                  <td colSpan={2} className="py-3 px-3 text-stone-500 text-[10px]">
+                    ({filteredFleetList.length} Unit Dump Truck)
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* ========================================================= */}
       {/* MODAL 1: FORM INPUT / EDIT MANUAL SETTING FLEET */}
       {/* ========================================================= */}
       {showManualModal && (
@@ -1571,7 +2606,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               <div className="bg-stone-950 p-3.5 rounded-2xl border border-stone-800 space-y-1">
                 <label className="block text-[11px] font-mono font-bold text-stone-300 flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-amber-400" />
-                  <span>8. Catatan</span>
+                  <span>8. Catatan Tugas Operasional</span>
                 </label>
                 <textarea
                   rows={2}
@@ -1580,6 +2615,127 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   placeholder="Catatan tugas, target ritase, kondisi jalan / front loading, instruksi operasional..."
                   className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
                 />
+              </div>
+
+              {/* FITUR HITUNG RITASE DUMP TRUCK (CHECKER TAMBANG) */}
+              <div className="bg-stone-950 p-4 rounded-2xl border border-amber-500/30 space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      <Truck className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-mono font-bold uppercase text-amber-400 tracking-wider flex items-center gap-1.5">
+                        <span>Fitur Hitung Ritase (Khusus Dump Truck)</span>
+                        {isDumpTruckForm && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Dump Truck
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-[10.5px] text-stone-400">
+                        Tekan tombol <strong className="text-amber-400 font-mono">[+]</strong> di samping setiap kategori muatan untuk memasukkan ritase.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-stone-900 px-3 py-1.5 rounded-xl border border-stone-800 shrink-0 self-start sm:self-auto">
+                    <span className="text-[10.5px] font-mono uppercase text-stone-400">Total Ritase:</span>
+                    <span className="text-base font-mono font-black text-amber-400">
+                      {(Number(formData.ritaseBatuBaik || 0) +
+                        Number(formData.ritaseBatuPecelan || 0) +
+                        Number(formData.ritaseImbalPlant || 0) +
+                        Number(formData.ritaseImbalTanah || 0) +
+                        Number(formData.ritaseLokasian || 0))} Rit
+                    </span>
+                  </div>
+                </div>
+
+                {/* 5 Kategori Muat */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* 1. Batu Baik */}
+                  {renderCounterBox(
+                    '1. Batu Baik',
+                    'Batu Belah Standar / Berkualitas',
+                    'text-amber-400',
+                    'border-amber-500/30',
+                    formData.ritaseBatuBaik,
+                    (val) => setFormData({ ...formData, ritaseBatuBaik: val })
+                  )}
+
+                  {/* 2. Batu Pecelan */}
+                  {renderCounterBox(
+                    '2. Batu Pecelan',
+                    'Batu Pecelan / Reject Crusher',
+                    'text-orange-400',
+                    'border-orange-500/30',
+                    formData.ritaseBatuPecelan,
+                    (val) => setFormData({ ...formData, ritaseBatuPecelan: val })
+                  )}
+
+                  {/* 3. Imbal Plant */}
+                  {renderCounterBox(
+                    '3. Imbal Plant',
+                    'Material Imbal ke Plant Crusher',
+                    'text-teal-400',
+                    'border-teal-500/30',
+                    formData.ritaseImbalPlant,
+                    (val) => setFormData({ ...formData, ritaseImbalPlant: val })
+                  )}
+
+                  {/* 4. Imbal Tanah */}
+                  {renderCounterBox(
+                    '4. Imbal Tanah',
+                    'Overburden / Kupasan Tanah',
+                    'text-emerald-400',
+                    'border-emerald-500/30',
+                    formData.ritaseImbalTanah,
+                    (val) => setFormData({ ...formData, ritaseImbalTanah: val })
+                  )}
+
+                  {/* 5. Lokasian */}
+                  <div className="sm:col-span-2">
+                    {renderCounterBox(
+                      '5. Lokasian',
+                      'Pekerjaan Angkut Lokasian Quarry',
+                      'text-purple-400',
+                      'border-purple-500/30',
+                      formData.ritaseLokasian,
+                      (val) => setFormData({ ...formData, ritaseLokasian: val })
+                    )}
+                  </div>
+                </div>
+
+                {/* Checker Information */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-stone-800">
+                  <div>
+                    <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                      <Users className="w-3 h-3 text-teal-400" />
+                      <span>Nama Checker Tambang:</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nama Checker Tambang..."
+                      value={formData.namaChecker}
+                      onChange={(e) => setFormData({ ...formData, namaChecker: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                      <FileText className="w-3 h-3 text-amber-400" />
+                      <span>Catatan Checker Tambang:</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Catatan hasil muatan / antrian..."
+                      value={formData.catatanChecker}
+                      onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2.5 pt-4 border-t border-stone-800">
@@ -1875,6 +3031,359 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 <span>Cetak Lembar Dokumen</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 4: QUICK TALLY POPUP (CEPAT TAP DI LAPANGAN) */}
+      {/* ========================================================= */}
+      {quickTallyTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-stone-900 border border-teal-500/50 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                  <Truck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-amber-400 font-mono tracking-wide">
+                      {quickTallyTarget.noUnit}
+                    </h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-stone-300 border border-stone-700">
+                      {quickTallyTarget.jenisAlat || 'Dump Truck'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-stone-400 font-medium">
+                    Sopir: <strong className="text-stone-200">{quickTallyTarget.namaOperator}</strong> &bull; {quickTallyTarget.lokasiKerja}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickTallyTarget(null)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Grand Total Counter Header */}
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-stone-950 border border-amber-500/30">
+                <span className="text-xs font-mono uppercase text-stone-400">Total Akumulasi Ritase:</span>
+                <span className="text-2xl font-mono font-black text-amber-400">
+                  {quickTallyTarget.totalRitase || 0} <span className="text-xs text-stone-500 font-normal">Rit</span>
+                </span>
+              </div>
+
+              {/* 5 Tombol Hitung Ritase Cepat dengan [+] dan [-] */}
+              <div className="space-y-2.5">
+                {/* 1. Batu Baik */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-950 border border-amber-500/30">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-amber-300 block">1. Batu Baik</span>
+                    <span className="text-[10px] text-stone-500">Batu Belah Berkualitas</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-stone-100 text-lg w-10 text-center">
+                      {quickTallyTarget.ritaseBatuBaik || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseBatuBaik', -1)}
+                      disabled={(quickTallyTarget.ritaseBatuBaik || 0) <= 0}
+                      className="p-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 font-bold transition active:scale-95"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseBatuBaik', 1)}
+                      className="flex items-center gap-1.5 p-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-amber-500/20"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span className="font-mono text-sm">+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Batu Pecelan */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-950 border border-orange-500/30">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-orange-300 block">2. Batu Pecelan</span>
+                    <span className="text-[10px] text-stone-500">Reject Crusher</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-stone-100 text-lg w-10 text-center">
+                      {quickTallyTarget.ritaseBatuPecelan || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseBatuPecelan', -1)}
+                      disabled={(quickTallyTarget.ritaseBatuPecelan || 0) <= 0}
+                      className="p-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 font-bold transition active:scale-95"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseBatuPecelan', 1)}
+                      className="flex items-center gap-1.5 p-2 px-4 rounded-xl bg-orange-500 hover:bg-orange-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-orange-500/20"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span className="font-mono text-sm">+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Imbal Plant */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-950 border border-teal-500/30">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-teal-300 block">3. Imbal Plant</span>
+                    <span className="text-[10px] text-stone-500">Material Stock ke Crusher</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-stone-100 text-lg w-10 text-center">
+                      {quickTallyTarget.ritaseImbalPlant || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseImbalPlant', -1)}
+                      disabled={(quickTallyTarget.ritaseImbalPlant || 0) <= 0}
+                      className="p-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 font-bold transition active:scale-95"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseImbalPlant', 1)}
+                      className="flex items-center gap-1.5 p-2 px-4 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-teal-500/20"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span className="font-mono text-sm">+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. Imbal Tanah */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-950 border border-emerald-500/30">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-emerald-300 block">4. Imbal Tanah</span>
+                    <span className="text-[10px] text-stone-500">Overburden / Tanah</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-stone-100 text-lg w-10 text-center">
+                      {quickTallyTarget.ritaseImbalTanah || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseImbalTanah', -1)}
+                      disabled={(quickTallyTarget.ritaseImbalTanah || 0) <= 0}
+                      className="p-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 font-bold transition active:scale-95"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseImbalTanah', 1)}
+                      className="flex items-center gap-1.5 p-2 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-emerald-500/20"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span className="font-mono text-sm">+1</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 5. Lokasian */}
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-stone-950 border border-purple-500/30">
+                  <div>
+                    <span className="text-xs font-mono font-bold text-purple-300 block">5. Lokasian</span>
+                    <span className="text-[10px] text-stone-500">Angkut Lokasian Quarry</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-stone-100 text-lg w-10 text-center">
+                      {quickTallyTarget.ritaseLokasian || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseLokasian', -1)}
+                      disabled={(quickTallyTarget.ritaseLokasian || 0) <= 0}
+                      className="p-2 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 font-bold transition active:scale-95"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickIncrementRitase(quickTallyTarget.id, 'ritaseLokasian', 1)}
+                      className="flex items-center gap-1.5 p-2 px-4 rounded-xl bg-purple-500 hover:bg-purple-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-purple-500/20"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span className="font-mono text-sm">+1</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-stone-800 bg-stone-950 flex items-center justify-between">
+              <span className="text-[11px] text-stone-500 font-mono">
+                Checker: <strong className="text-stone-300">{quickTallyTarget.namaChecker || currentUser.fullName || 'Checker'}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setQuickTallyTarget(null)}
+                className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-md transition active:scale-95"
+              >
+                Selesai / Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 5: CETAK LEMBAR DOKUMEN CHECKER TAMBANG */}
+      {/* ========================================================= */}
+      {showCheckerPrintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-stone-900 border border-teal-500/50 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2">
+                <Printer className="w-4 h-4 text-teal-400" />
+                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
+                  Print Preview: Lembar Hasil Ritase Checker Tambang
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCheckerPrintModal(false)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs">
+              {/* Kop Surat Resmi PT BKWA */}
+              <div className="border-b-2 border-stone-950 pb-3 flex justify-between items-center">
+                <div>
+                  <h2 className="text-base font-black tracking-wider uppercase">PT. BUKIT KELAM WANA AGUNG</h2>
+                  <p className="text-[10px] text-stone-600 font-mono">DIVISI OPERATION &bull; QUARRY &amp; MINING PURWOSARI</p>
+                  <h3 className="text-sm font-bold text-teal-800 mt-1 uppercase">
+                    LAPORAN HASIL PEKERJAAN RITASE CHECKER TAMBANG
+                  </h3>
+                </div>
+                <div className="text-right text-[10px] font-mono text-stone-600">
+                  <div>Tanggal: <strong>{filterDate || todayStr}</strong></div>
+                  <div>Shift: <strong>{filterShift}</strong></div>
+                  <div>Pos Lokasi: <strong>{filterLokasi === 'ALL' ? 'Seluruh Pos Tambang' : filterLokasi}</strong></div>
+                  <div>Waktu Cetak: {new Date().toLocaleString('id-ID')}</div>
+                </div>
+              </div>
+
+              {/* Tabel Cetak Ritase */}
+              <table className="w-full border-collapse border border-stone-300 text-[10px]">
+                <thead>
+                  <tr className="bg-stone-100 border-b border-stone-300 font-mono font-bold text-stone-800">
+                    <th className="border border-stone-300 p-1.5 text-center w-8">No</th>
+                    <th className="border border-stone-300 p-1.5">No Unit (CN_NEW)</th>
+                    <th className="border border-stone-300 p-1.5">Nama Sopir</th>
+                    <th className="border border-stone-300 p-1.5">Lokasi Kerja</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Batu Baik</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Pecelan</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Imbal Plant</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Imbal Tanah</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Lokasian</th>
+                    <th className="border border-stone-300 p-1.5 text-right font-black">Total Rit</th>
+                    <th className="border border-stone-300 p-1.5">Checker</th>
+                    <th className="border border-stone-300 p-1.5">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredFleetList.map((f, i) => (
+                    <tr key={f.id} className="border-b border-stone-200">
+                      <td className="border border-stone-300 p-1.5 text-center font-mono">{i + 1}</td>
+                      <td className="border border-stone-300 p-1.5 font-mono font-bold">{f.noUnit}</td>
+                      <td className="border border-stone-300 p-1.5 font-bold">{f.namaOperator}</td>
+                      <td className="border border-stone-300 p-1.5">{f.lokasiKerja}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseBatuBaik || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseBatuPecelan || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseImbalPlant || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseImbalTanah || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseLokasian || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono font-black">{f.totalRitase || 0}</td>
+                      <td className="border border-stone-300 p-1.5">{f.namaChecker || '-'}</td>
+                      <td className="border border-stone-300 p-1.5">{f.catatanChecker || f.catatan || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-stone-100 font-bold border-t-2 border-stone-950 font-mono">
+                    <td colSpan={4} className="border border-stone-300 p-1.5 text-right">
+                      TOTAL HASIL PEKERJAAN:
+                    </td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalBatuBaik}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalBatuPecelan}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalImbalPlant}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalImbalTanah}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalLokasian}</td>
+                    <td className="border border-stone-300 p-1.5 text-right font-black text-xs">
+                      {ritaseMetrics.totalRitase} Rit
+                    </td>
+                    <td colSpan={2} className="border border-stone-300 p-1.5 text-stone-500 text-[9px] font-normal">
+                      ({filteredFleetList.length} Armada)
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              {/* Tanda Tangan */}
+              <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[10px]">
+                <div>
+                  <p className="text-stone-600 mb-12">Petugas Checker Tambang:</p>
+                  <p className="font-bold underline uppercase">{currentUser.fullName || currentUser.username || 'Checker'}</p>
+                </div>
+                <div>
+                  <p className="text-stone-600 mb-12">Pengawas Lapangan (Pit Supervisor):</p>
+                  <p className="font-bold underline">___________________________</p>
+                </div>
+                <div>
+                  <p className="text-stone-600 mb-12">Mengetahui (Kabag Operasi):</p>
+                  <p className="font-bold underline">___________________________</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2.5 p-4 border-t border-stone-800 bg-stone-950">
+              <button
+                type="button"
+                onClick={() => setShowCheckerPrintModal(false)}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 font-bold text-xs shadow-lg shadow-teal-600/20 transition active:scale-95"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Lembar Dokumen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Realtime Toast Notification saat Menambah Ritase */}
+      {tallyToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-amber-500 text-stone-950 px-4 py-3 rounded-2xl shadow-2xl font-mono text-xs font-bold flex items-center gap-2.5 animate-bounce border-2 border-stone-950">
+          <CheckCircle2 className="w-5 h-5 text-stone-950 shrink-0" />
+          <div>
+            <span className="font-black text-sm block">{tallyToast.unit}</span>
+            <span className="text-[11px] font-medium">{tallyToast.message}</span>
           </div>
         </div>
       )}

@@ -80,13 +80,14 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
   }, [breakdowns, filterStartDate, filterEndDate, filterBulan, filterTahun]);
 
   // 1. Perhitungan PA Unit (Physical Availability)
-  // Rumus PA Standar Tambang/Heavy Equipment:
-  // Total Jam Kalender Periode (contoh: 720 jam / bulan per unit)
-  // PA (%) = ((Total Jam Kalender - Total Jam DownTime) / Total Jam Kalender) * 100
+  // Standar Operasional Tambang PT BKWA (MOHH):
+  // Standar jam operasional kalender MOHH (Man On Hand Hour) = 8 Jam/Hari x 30 Hari = 240 Jam per unit / bulan
+  // (Hari kerja di PT BKWA hanya 8 jam/hari dan tidak ada kerja shift malam)
+  // PA (%) = ((Total Jam Kalender MOHH - Total Jam DownTime) / Total Jam Kalender MOHH) * 100
   const paStats = useMemo(() => {
     const totalUnitsCount = Math.max(1, units.length);
-    // Asumsi jam operasional kalender per unit = 24 jam x 30 hari = 720 jam (atau estimasi terfilter)
-    const standardCalendarHours = totalUnitsCount * 720;
+    // Standar MOHH operasional PT BKWA: 8 jam x 30 hari = 240 jam per unit
+    const standardCalendarHours = totalUnitsCount * 240;
 
     // Hitung total downtime hours dari data
     const totalDowntime = filteredBreakdowns.reduce((acc, curr) => {
@@ -123,7 +124,8 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
         return acc + (isNaN(diffHrs) ? 8 : diffHrs);
       }, 0);
 
-      const calendarHours = 720;
+      // Standar MOHH PT BKWA: 8 jam/hari x 30 hari = 240 jam per unit per bulan
+      const calendarHours = 240;
       const pa = Math.min(100, Math.max(0, ((calendarHours - unitDowntime) / calendarHours) * 100));
 
       return {
@@ -280,9 +282,10 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
       [`Diexport Oleh:`, `${currentUser?.nama || currentUser?.username || 'User'} (${currentUser?.accountTier || currentUser?.role})`],
       [],
       ['--- RINGKASAN METRIK KPI FLEET AVAILABILITY ---'],
+      ['Standar Jam Kalender', 'MOHH 8 Jam/Hari x 30 Hari = 240 Jam Kalender per Unit per Bulan (PT BKWA Non-Shift)'],
       ['Rata-rata Physical Availability (PA %)', `${paStats.paPercentage}%`],
       ['Total Akumulasi Downtime (Jam)', `${paStats.totalDowntimeHours} Jam`],
-      ['Total Jam Kalender Armada', `${paStats.standardCalendarHours} Jam`],
+      ['Total Jam Kalender Armada', `${paStats.standardCalendarHours} Jam MOHH`],
       ['Total Armada Terdaftar', `${units.length} Unit`],
       ['Total Kasus Breakdown', `${filteredBreakdowns.length} Kejadian`],
       [],
@@ -333,8 +336,10 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
         
         <div class="kpi-card">
           <strong>RINGKASAN EKSEKUTIF KPI:</strong><br>
+          • Standar Kalender: <strong>MOHH 8 Jam/Hari × 30 Hari = 240 Jam / Unit / Bulan (PT BKWA Non-Shift)</strong><br>
           • Rata-rata Physical Availability (PA): <strong>${paStats.paPercentage}%</strong><br>
           • Total Akumulasi Downtime: <strong>${paStats.totalDowntimeHours} Jam</strong><br>
+          • Total Jam Kalender Armada: <strong>${paStats.standardCalendarHours} Jam MOHH</strong><br>
           • Total Armada Terdaftar: <strong>${units.length} Unit</strong><br>
           • Kejadian Kerusakan Terfilter: <strong>${filteredBreakdowns.length} Kasus</strong><br>
           • Filter Periode: <strong>${filterStartDate || 'Semua'} s/d ${filterEndDate || 'Sekarang'} (Bulan: ${filterBulan || 'Semua'}, Tahun: ${filterTahun || 'Semua'})</strong>
@@ -605,7 +610,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
             <span className="text-3xl font-black font-mono text-emerald-400">{paStats.paPercentage}%</span>
             <span className="text-xs text-stone-500 font-mono">Target: ≥ 85%</span>
           </div>
-          <p className="text-[11px] text-stone-400 mt-2">Physical Availability rata-rata seluruh armada</p>
+          <p className="text-[11px] text-stone-400 mt-2">Physical Availability rata-rata armada (Basis MOHH 240 Jam/Unit)</p>
         </div>
 
         {/* DownTime Unit (Hours Jam Dunia) */}
@@ -658,9 +663,9 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
             <div>
               <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
                 <Activity className="w-4 h-4" />
-                <span>PA Unit & Downtime per Unit</span>
+                <span>PA Unit & Downtime per Unit (Basis 240 Jam MOHH)</span>
               </h3>
-              <p className="text-[11px] text-stone-400">Persentase Physical Availability dan jam downtime tiap alat</p>
+              <p className="text-[11px] text-stone-400">Persentase Physical Availability dihitung dari standar 240 jam kerja operasional PT BKWA</p>
             </div>
           </div>
 

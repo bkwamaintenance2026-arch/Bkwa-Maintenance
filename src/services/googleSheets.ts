@@ -319,8 +319,8 @@ export function prepareFuelStockSheetData(records: FuelStockInputRecord[]): any[
     'Flowmeter Start',
     'Flowmeter End',
     'Actual Qty Flowmeter (Liter)',
-    'Ukur Stick Sebelum (cm)',
-    'Ukur Stick Sesudah (cm)',
+    'Hasil Ukur Tangki Utama',
+    'Hasil Timbang (Gross, Tare, Nett)',
     'PIC FOG Penerima',
     'Jabatan PIC FOG',
     'Catatan / Remark'
@@ -337,8 +337,8 @@ export function prepareFuelStockSheetData(records: FuelStockInputRecord[]): any[
     r.flowmeterStart || 0,
     r.flowmeterEnd || 0,
     r.actualQtyFlowmeter || 0,
-    r.hasilUkurStickSebelum || '',
-    r.hasilUkurStickSesudah || '',
+    r.hasilUkurTangkiUtama || r.hasilUkurStickSebelum || '',
+    r.hasilTimbang || (r.timbangGross ? `Gross:${r.timbangGross} Tare:${r.timbangTare} Nett:${r.timbangNett}` : r.hasilUkurStickSesudah || ''),
     r.picFogName || '',
     r.picFogJabatan || '',
     r.remark || ''

@@ -444,13 +444,19 @@ export interface FuelStockInputRecord {
   flowmeterStart: number;         // f. Flowmeter Start
   flowmeterEnd: number;           // g. Flowmeter End
   actualQtyFlowmeter: number;     // h. Actual Qty Flowmeter (End - Start)
-  hasilUkurStickSebelum: number | string; // i. Hasil Ukur Stick (Sebelum)
-  hasilUkurStickSesudah: number | string; // j. Hasil Ukur Stick (Sesudah)
+  hasilUkurStickSebelum: number | string; // i. Hasil Ukur Tangki Utama (Level Sounding)
+  hasilUkurTangkiUtama?: number | string; // Alias / label i keterangan Hasil Ukur Tangki Utama
+  hasilUkurStickSesudah?: number | string; // Backward compatibility
+  // j. Hasil Timbang (Gross, Tare, Nett) - Proses Timbang Sebelum & Sesudah di PT BKWA
+  timbangGross?: number | string; // Timbang Isi / Sebelum (kg)
+  timbangTare?: number | string;  // Timbang Kosong / Sesudah (kg)
+  timbangNett?: number | string;  // Selisih Bersih (Gross - Tare) (kg)
+  hasilTimbang?: string;          // String rekap "Gross: ... kg, Tare: ... kg, Nett: ... kg"
   picFogName: string;             // k. PIC FOG Name : (dropdown reff nama Manpower di modul 2)
   picFogJabatan?: string;
   tanggal: string;                // l. Tanggal
   jam: string;                    //    dan jam Input
-  remark?: string;                // j/m. Remark
+  remark?: string;                // m. Remark
   createdAt: string;
   updatedAt: string;
 }
@@ -729,7 +735,23 @@ export interface P2HRecord {
   updatedAt: string;
 }
 
-// Sub Modul 2: Setting Fleet (Alokasi No Unit, Nama Operator, Lokasi Kerja)
+// Kategori Muatan Ritase Dump Truck (Checker Tambang PT BKWA)
+export type KategoriRitaseTambang = 
+  | 'Batu Baik'
+  | 'Batu Pecelan'
+  | 'Imbal Plant'
+  | 'Imbal Tanah'
+  | 'Lokasian';
+
+export const KATEGORI_RITASE_TAMBANG: KategoriRitaseTambang[] = [
+  'Batu Baik',
+  'Batu Pecelan',
+  'Imbal Plant',
+  'Imbal Tanah',
+  'Lokasian',
+];
+
+// Sub Modul 2: Setting Fleet (Alokasi No Unit, Nama Operator, Lokasi Kerja & Hitung Ritase Checker Tambang)
 export interface FleetSettingRecord {
   id: string;
   tanggal: string;              // YYYY-MM-DD
@@ -745,6 +767,17 @@ export interface FleetSettingRecord {
   fleetGroup?: string;          // Kelompok Fleet (Fleet A, Fleet B, Fleet Crusher, dll)
   statusFleet?: 'OPERASI' | 'STANDBY' | 'BREAKDOWN' | string;
   catatan?: string;             // Catatan tugas / remark
+
+  // FITUR HITUNG RITASE OLEH CHECKER TAMBANG (Khususnya Dump Truck)
+  ritaseBatuBaik?: number;      // 1. Batu Baik (Rit)
+  ritaseBatuPecelan?: number;   // 2. Batu Pecelan (Rit)
+  ritaseImbalPlant?: number;    // 3. Imbal Plant (Rit)
+  ritaseImbalTanah?: number;    // 4. Imbal Tanah (Rit)
+  ritaseLokasian?: number;      // 5. Lokasian (Rit)
+  totalRitase?: number;         // Total seluruh ritase
+  namaChecker?: string;         // Nama Checker Tambang yang bertugas
+  catatanChecker?: string;      // Catatan Checker Tambang
+
   source: 'MANUAL' | 'SYNC_P2H'; // Indikator sumber: input manual atau sinkronisasi dari P2H
   p2hRefId?: string;            // Reff ID record P2H jika disinkronkan
   p2hNo?: string;               // No Dokumen P2H terkait jika hasil sinkronisasi

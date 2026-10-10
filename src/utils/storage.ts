@@ -2997,10 +2997,127 @@ export function deleteP2HRecord(id: string): { success: boolean; message: string
 // Input Manual & Opsi Sinkronisasi Otomatis dari P2H
 // ==========================================
 
+function getInitialFleetSeed(): FleetSettingRecord[] {
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date().toISOString();
+  return [
+    {
+      id: 'fleet-seed-01',
+      tanggal: today,
+      jamStartOperasi: '07:00',
+      jamFinishOperasi: '17:00',
+      shift: 'Shift 1',
+      noUnit: 'DT-01',
+      namaAlat: 'Dump Truck Hino 500',
+      jenisAlat: 'Dump Truck',
+      namaOperator: 'Budi Santoso',
+      operatorJabatan: 'SOPIR',
+      lokasiKerja: 'Tambang -Front Pit',
+      fleetGroup: 'Fleet Operasi 01',
+      statusFleet: 'OPERASI',
+      catatan: 'Hauling batu belah dari Front Pit ke Crusher Plant',
+      ritaseBatuBaik: 8,
+      ritaseBatuPecelan: 3,
+      ritaseImbalPlant: 0,
+      ritaseImbalTanah: 0,
+      ritaseLokasian: 0,
+      totalRitase: 11,
+      namaChecker: 'Checker Tambang Purwosari',
+      catatanChecker: 'Jalur angkut lancar, jalan kering',
+      source: 'MANUAL',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'fleet-seed-02',
+      tanggal: today,
+      jamStartOperasi: '07:00',
+      jamFinishOperasi: '17:00',
+      shift: 'Shift 1',
+      noUnit: 'DT-02',
+      namaAlat: 'Dump Truck Hino 500',
+      jenisAlat: 'Dump Truck',
+      namaOperator: 'Agus Supriyanto',
+      operatorJabatan: 'SOPIR',
+      lokasiKerja: 'Pabrik-Crusher',
+      fleetGroup: 'Fleet Operasi 01',
+      statusFleet: 'OPERASI',
+      catatan: 'Imbal material dari stock plant ke hopper crusher',
+      ritaseBatuBaik: 0,
+      ritaseBatuPecelan: 4,
+      ritaseImbalPlant: 9,
+      ritaseImbalTanah: 0,
+      ritaseLokasian: 0,
+      totalRitase: 13,
+      namaChecker: 'Checker Tambang Purwosari',
+      catatanChecker: 'Crusher beroperasi normal',
+      source: 'MANUAL',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'fleet-seed-03',
+      tanggal: today,
+      jamStartOperasi: '07:00',
+      jamFinishOperasi: '17:00',
+      shift: 'Shift 1',
+      noUnit: 'DT-03',
+      namaAlat: 'Dump Truck Mitsubishi Fuso',
+      jenisAlat: 'Dump Truck',
+      namaOperator: 'Joko Susilo',
+      operatorJabatan: 'SOPIR',
+      lokasiKerja: 'Tambang -Front Pit',
+      fleetGroup: 'Fleet Operasi 02',
+      statusFleet: 'OPERASI',
+      catatan: 'Pengupasan overburden & disposal area',
+      ritaseBatuBaik: 2,
+      ritaseBatuPecelan: 0,
+      ritaseImbalPlant: 0,
+      ritaseImbalTanah: 10,
+      ritaseLokasian: 2,
+      totalRitase: 14,
+      namaChecker: 'Checker Tambang Purwosari',
+      catatanChecker: 'Disposal aman, dumping stabil',
+      source: 'MANUAL',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'fleet-seed-04',
+      tanggal: today,
+      jamStartOperasi: '07:00',
+      jamFinishOperasi: '17:00',
+      shift: 'Shift 1',
+      noUnit: 'EX-01',
+      namaAlat: 'Excavator Komatsu PC200',
+      jenisAlat: 'Excavator',
+      namaOperator: 'Bambang Triyono',
+      operatorJabatan: 'OPERATOR',
+      lokasiKerja: 'Tambang -Front Pit',
+      fleetGroup: 'Fleet Operasi 01',
+      statusFleet: 'OPERASI',
+      catatan: 'Loading batu belah ke DT-01 dan DT-03',
+      ritaseBatuBaik: 0,
+      ritaseBatuPecelan: 0,
+      ritaseImbalPlant: 0,
+      ritaseImbalTanah: 0,
+      ritaseLokasian: 0,
+      totalRitase: 0,
+      source: 'MANUAL',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
 export function getAllFleetSettings(): FleetSettingRecord[] {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.FLEET_SETTINGS);
-    if (!data) return [];
+    if (!data) {
+      const seed = getInitialFleetSeed();
+      localStorage.setItem(STORAGE_KEYS.FLEET_SETTINGS, JSON.stringify(seed));
+      return seed;
+    }
     return JSON.parse(data);
   } catch (e) {
     console.error('Error loading fleet settings', e);
@@ -3094,6 +3211,53 @@ export function deleteFleetSetting(id: string): { success: boolean; message: str
     return { success: true, message: `Setting fleet unit ${target.noUnit} berhasil dihapus.` };
   } catch (e: any) {
     return { success: false, message: `Gagal menghapus setting fleet: ${e?.message || 'Error'}` };
+  }
+}
+
+export function updateFleetRitaseCounter(
+  fleetId: string,
+  kategoriKey: 'ritaseBatuBaik' | 'ritaseBatuPecelan' | 'ritaseImbalPlant' | 'ritaseImbalTanah' | 'ritaseLokasian',
+  deltaOrValue: number,
+  isAbsolute: boolean = false,
+  namaChecker?: string
+): { success: boolean; message: string; record?: FleetSettingRecord } {
+  try {
+    const list = getAllFleetSettings();
+    const idx = list.findIndex((f) => f.id === fleetId);
+    if (idx === -1) {
+      return { success: false, message: 'Data setting fleet tidak ditemukan!' };
+    }
+    const current = list[idx];
+    const oldVal = Number(current[kategoriKey] || 0);
+    const newVal = Math.max(0, isAbsolute ? deltaOrValue : oldVal + deltaOrValue);
+
+    const updated: FleetSettingRecord = {
+      ...current,
+      [kategoriKey]: newVal,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Kalkulasi ulang total ritase
+    updated.totalRitase = 
+      Number(updated.ritaseBatuBaik || 0) +
+      Number(updated.ritaseBatuPecelan || 0) +
+      Number(updated.ritaseImbalPlant || 0) +
+      Number(updated.ritaseImbalTanah || 0) +
+      Number(updated.ritaseLokasian || 0);
+
+    if (namaChecker) {
+      updated.namaChecker = namaChecker;
+    }
+
+    list[idx] = updated;
+    saveAllFleetSettings(list);
+    return { 
+      success: true, 
+      message: `Ritase ${kategoriKey.replace('ritase', '')} unit ${updated.noUnit} diperbarui (${newVal} rit)`, 
+      record: updated 
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal update ritase: ${e?.message || 'Error'}` };
   }
 }
 
