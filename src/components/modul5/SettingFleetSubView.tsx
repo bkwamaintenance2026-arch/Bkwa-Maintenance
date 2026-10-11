@@ -99,6 +99,12 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [showCheckerPrintModal, setShowCheckerPrintModal] = useState<boolean>(false);
 
+  // Validasi Laporan Manual (diketik sendiri oleh Checker: Nama Checker & Nama Kepala Tehnik Tambang)
+  const [validatorChecker, setValidatorChecker] = useState<string>(
+    currentUser.fullName || currentUser.username || 'Checker Lapangan'
+  );
+  const [validatorKTT, setValidatorKTT] = useState<string>('Kepala Tehnik Tambang (KTT)');
+
   // Quick Tally Modal & Toast
   const [quickTallyTarget, setQuickTallyTarget] = useState<FleetSettingRecord | null>(null);
   const [tallyToast, setTallyToast] = useState<{ message: string; unit: string } | null>(null);
@@ -688,7 +694,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     ]);
 
     const csvContent = '\uFEFF' + [
-      `"PT BATU KALI WELANG AMPUH - LAPORAN SETTING FLEET & HASIL RITASE CHECKER TAMBANG"`,
+      `"PT BATU KALI WELANG AMPUH (ETIKA) - LAPORAN SETTING FLEET & HASIL RITASE CHECKER TAMBANG"`,
       `"Tanggal Filter: ${filterDate || 'Semua Tanggal'} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Armada: ${filteredFleetList.length} | Total Ritase: ${ritaseMetrics.totalRitase} Rit"`,
       '',
       headers.join(','), 
@@ -698,7 +704,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Setting_Fleet_Operasi_PT_BATU_KALI_WELANG_AMPUH_${filterDate || 'Semua'}.csv`;
+    link.download = `Setting_Fleet_Operasi_PT_BATU_KALI_WELANG_AMPUH_ETIKA_${filterDate || 'Semua'}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -2944,14 +2950,57 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </button>
             </div>
 
+            {/* Input Manual Label Validasi Laporan (diketik sendiri oleh Checker) */}
+            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400">
+                <CheckSquare className="w-4 h-4 text-blue-400" />
+                <span>PENGATURAN LABEL VALIDASI LAPORAN (KETIK MANUAL OLEH CHECKER):</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 font-bold flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-blue-400" />
+                    <span>1. Nama Checker (Petugas Validasi):</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={validatorChecker}
+                    onChange={(e) => setValidatorChecker(e.target.value)}
+                    placeholder="Ketik nama Checker..."
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                    * Diketik manual oleh petugas checker sebelum cetak
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 font-bold flex items-center gap-1.5">
+                    <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                    <span>2. Nama Kepala Tehnik Tambang (KTT):</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={validatorKTT}
+                    onChange={(e) => setValidatorKTT(e.target.value)}
+                    placeholder="Ketik nama Kepala Tehnik Tambang (KTT)..."
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                    * Diketik manual untuk pengesahan KTT
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs">
-              {/* Kop Surat Resmi */}
+              {/* Kop Surat Resmi PT BATU KALI WELANG AMPUH (ETIKA) */}
               <div className="border-b-2 border-stone-950 pb-3 flex justify-between items-center">
                 <div>
-                  <h2 className="text-base font-black tracking-wider uppercase">PT. BUKIT KELAM WANA AGUNG</h2>
-                  <p className="text-[10px] text-stone-600 font-mono">DIVISI OPERATION • QUARRY PURWOSARI</p>
+                  <h2 className="text-base font-black tracking-wider uppercase">PT BATU KALI WELANG AMPUH (ETIKA)</h2>
+                  <p className="text-[10px] text-stone-600 font-mono">DIVISI OPERATION &bull; QUARRY &amp; MINING PURWOSARI</p>
                   <h3 className="text-sm font-bold text-stone-800 mt-1 uppercase">
-                    LAPORAN SETTING FLEET &amp; ALOKASI ARMADA
+                    LAPORAN SETTING FLEET &amp; HASIL KEGIATAN TAMBANG
                   </h3>
                 </div>
                 <div className="text-right text-[10px] font-mono text-stone-600">
@@ -2966,50 +3015,72 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 <thead>
                   <tr className="bg-stone-100 border-b border-stone-300 font-mono font-bold text-stone-800">
                     <th className="border border-stone-300 p-1.5 text-center w-8">No</th>
-                    <th className="border border-stone-300 p-1.5">Tanggal</th>
-                    <th className="border border-stone-300 p-1.5">Jam Operasi</th>
-                    <th className="border border-stone-300 p-1.5">Jenis (Modul 1)</th>
-                    <th className="border border-stone-300 p-1.5">CN_NEW (No Unit)</th>
-                    <th className="border border-stone-300 p-1.5">Nama Operator</th>
-                    <th className="border border-stone-300 p-1.5">Jabatan</th>
+                    <th className="border border-stone-300 p-1.5">No Unit (CN_NEW)</th>
+                    <th className="border border-stone-300 p-1.5">Nama Unit</th>
+                    <th className="border border-stone-300 p-1.5">Operator/Sopir</th>
                     <th className="border border-stone-300 p-1.5">Lokasi Kerja</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Batu Baik</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Pecelan</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Imbal Plant</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Imbal Tanah</th>
+                    <th className="border border-stone-300 p-1.5 text-right">Lokasian</th>
+                    <th className="border border-stone-300 p-1.5 text-right font-black">Total Rit</th>
                     <th className="border border-stone-300 p-1.5">Catatan</th>
-                    <th className="border border-stone-300 p-1.5 text-center">Sumber</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredFleetList.map((f, i) => (
                     <tr key={f.id} className="border-b border-stone-200">
                       <td className="border border-stone-300 p-1.5 text-center font-mono">{i + 1}</td>
-                      <td className="border border-stone-300 p-1.5 font-mono">{f.tanggal}</td>
-                      <td className="border border-stone-300 p-1.5 font-mono">{f.jamStartOperasi || '07:00'} - {f.jamFinishOperasi || '17:00'}</td>
-                      <td className="border border-stone-300 p-1.5">{f.jenisAlat || '-'}</td>
-                      <td className="border border-stone-300 p-1.5 font-mono font-bold">{f.noUnit} {f.namaAlat ? `(${f.namaAlat})` : ''}</td>
+                      <td className="border border-stone-300 p-1.5 font-mono font-bold">{f.noUnit}</td>
+                      <td className="border border-stone-300 p-1.5">{f.namaAlat || f.jenisAlat || '-'}</td>
                       <td className="border border-stone-300 p-1.5 font-bold">{f.namaOperator}</td>
-                      <td className="border border-stone-300 p-1.5">{f.operatorJabatan || '-'}</td>
                       <td className="border border-stone-300 p-1.5">{f.lokasiKerja}</td>
-                      <td className="border border-stone-300 p-1.5">{f.catatan || '-'}</td>
-                      <td className="border border-stone-300 p-1.5 text-center font-mono text-[9px]">
-                        {f.source === 'SYNC_P2H' ? 'SYNC P2H' : 'MANUAL'}
-                      </td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseBatuBaik || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseBatuPecelan || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseImbalPlant || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseImbalTanah || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseLokasian || 0}</td>
+                      <td className="border border-stone-300 p-1.5 text-right font-mono font-black">{f.totalRitase || 0}</td>
+                      <td className="border border-stone-300 p-1.5">{f.catatanChecker || f.catatan || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-stone-100 font-bold border-t-2 border-stone-950 font-mono">
+                    <td colSpan={5} className="border border-stone-300 p-1.5 text-right">
+                      TOTAL HASIL RITASE:
+                    </td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalBatuBaik}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalBatuPecelan}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalImbalPlant}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalImbalTanah}</td>
+                    <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalLokasian}</td>
+                    <td className="border border-stone-300 p-1.5 text-right font-black text-xs">
+                      {ritaseMetrics.totalRitase} Rit
+                    </td>
+                    <td className="border border-stone-300 p-1.5 text-stone-500 text-[9px] font-normal">
+                      ({filteredFleetList.length} Unit)
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
 
-              {/* Tanda Tangan */}
-              <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[10px]">
+              {/* Tanda Tangan: 2 Pihak Validasi Manual Saja */}
+              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-[10px]">
                 <div>
-                  <p className="text-stone-600 mb-12">Disiapkan Oleh (Dispatcher/Admin):</p>
-                  <p className="font-bold underline uppercase">{currentUser.fullName || currentUser.username}</p>
+                  <p className="text-stone-700 font-medium mb-14">Petugas Checker Tambang:</p>
+                  <p className="font-bold underline uppercase text-stone-900 tracking-wide text-[11px]">
+                    {validatorChecker.trim() || '....................................'}
+                  </p>
+                  <p className="text-[9px] text-stone-500 font-mono mt-0.5">Checker Lapangan / Tallyman</p>
                 </div>
                 <div>
-                  <p className="text-stone-600 mb-12">Diperiksa Oleh (Pengawas Lapangan):</p>
-                  <p className="font-bold underline">___________________________</p>
-                </div>
-                <div>
-                  <p className="text-stone-600 mb-12">Mengetahui (Kabag Operasi):</p>
-                  <p className="font-bold underline">___________________________</p>
+                  <p className="text-stone-700 font-medium mb-14">Mengetahui &amp; Menyetujui:</p>
+                  <p className="font-bold underline uppercase text-stone-900 tracking-wide text-[11px]">
+                    {validatorKTT.trim() || '....................................'}
+                  </p>
+                  <p className="text-[9px] text-stone-500 font-mono mt-0.5">Kepala Tehnik Tambang (KTT)</p>
                 </div>
               </div>
             </div>
@@ -3265,14 +3336,57 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </button>
             </div>
 
+            {/* Input Manual Label Validasi Laporan (diketik sendiri oleh Checker) */}
+            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-teal-400">
+                <CheckSquare className="w-4 h-4" />
+                <span>PENGATURAN LABEL VALIDASI LAPORAN (KETIK MANUAL OLEH CHECKER):</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 font-bold flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-teal-400" />
+                    <span>1. Nama Checker (Petugas Validasi):</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={validatorChecker}
+                    onChange={(e) => setValidatorChecker(e.target.value)}
+                    placeholder="Ketik nama Checker..."
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                  <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                    * Diketik manual oleh petugas checker sebelum cetak
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-300 mb-1 font-bold flex items-center gap-1.5">
+                    <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                    <span>2. Nama Kepala Tehnik Tambang (KTT):</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={validatorKTT}
+                    onChange={(e) => setValidatorKTT(e.target.value)}
+                    placeholder="Ketik nama Kepala Tehnik Tambang (KTT)..."
+                    className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                    * Diketik manual untuk pengesahan KTT
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs">
-              {/* Kop Surat Resmi PT BKWA */}
+              {/* Kop Surat Resmi PT BATU KALI WELANG AMPUH (ETIKA) */}
               <div className="border-b-2 border-stone-950 pb-3 flex justify-between items-center">
                 <div>
-                  <h2 className="text-base font-black tracking-wider uppercase">PT. BUKIT KELAM WANA AGUNG</h2>
+                  <h2 className="text-base font-black tracking-wider uppercase">PT BATU KALI WELANG AMPUH (ETIKA)</h2>
                   <p className="text-[10px] text-stone-600 font-mono">DIVISI OPERATION &bull; QUARRY &amp; MINING PURWOSARI</p>
-                  <h3 className="text-sm font-bold text-teal-800 mt-1 uppercase">
-                    LAPORAN HASIL PEKERJAAN RITASE CHECKER TAMBANG
+                  <h3 className="text-sm font-bold text-stone-900 mt-1 uppercase">
+                    LAPORAN HASIL KEGIATAN &amp; RITASE CHECKER TAMBANG
                   </h3>
                 </div>
                 <div className="text-right text-[10px] font-mono text-stone-600">
@@ -3289,7 +3403,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   <tr className="bg-stone-100 border-b border-stone-300 font-mono font-bold text-stone-800">
                     <th className="border border-stone-300 p-1.5 text-center w-8">No</th>
                     <th className="border border-stone-300 p-1.5">No Unit (CN_NEW)</th>
-                    <th className="border border-stone-300 p-1.5">Nama Sopir</th>
+                    <th className="border border-stone-300 p-1.5">Nama Unit</th>
+                    <th className="border border-stone-300 p-1.5">Operator/Sopir</th>
                     <th className="border border-stone-300 p-1.5">Lokasi Kerja</th>
                     <th className="border border-stone-300 p-1.5 text-right">Batu Baik</th>
                     <th className="border border-stone-300 p-1.5 text-right">Pecelan</th>
@@ -3297,7 +3412,6 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     <th className="border border-stone-300 p-1.5 text-right">Imbal Tanah</th>
                     <th className="border border-stone-300 p-1.5 text-right">Lokasian</th>
                     <th className="border border-stone-300 p-1.5 text-right font-black">Total Rit</th>
-                    <th className="border border-stone-300 p-1.5">Checker</th>
                     <th className="border border-stone-300 p-1.5">Catatan</th>
                   </tr>
                 </thead>
@@ -3306,6 +3420,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     <tr key={f.id} className="border-b border-stone-200">
                       <td className="border border-stone-300 p-1.5 text-center font-mono">{i + 1}</td>
                       <td className="border border-stone-300 p-1.5 font-mono font-bold">{f.noUnit}</td>
+                      <td className="border border-stone-300 p-1.5">{f.namaAlat || f.jenisAlat || '-'}</td>
                       <td className="border border-stone-300 p-1.5 font-bold">{f.namaOperator}</td>
                       <td className="border border-stone-300 p-1.5">{f.lokasiKerja}</td>
                       <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseBatuBaik || 0}</td>
@@ -3314,14 +3429,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                       <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseImbalTanah || 0}</td>
                       <td className="border border-stone-300 p-1.5 text-right font-mono">{f.ritaseLokasian || 0}</td>
                       <td className="border border-stone-300 p-1.5 text-right font-mono font-black">{f.totalRitase || 0}</td>
-                      <td className="border border-stone-300 p-1.5">{f.namaChecker || '-'}</td>
                       <td className="border border-stone-300 p-1.5">{f.catatanChecker || f.catatan || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="bg-stone-100 font-bold border-t-2 border-stone-950 font-mono">
-                    <td colSpan={4} className="border border-stone-300 p-1.5 text-right">
+                    <td colSpan={5} className="border border-stone-300 p-1.5 text-right">
                       TOTAL HASIL PEKERJAAN:
                     </td>
                     <td className="border border-stone-300 p-1.5 text-right">{ritaseMetrics.totalBatuBaik}</td>
@@ -3332,26 +3446,28 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     <td className="border border-stone-300 p-1.5 text-right font-black text-xs">
                       {ritaseMetrics.totalRitase} Rit
                     </td>
-                    <td colSpan={2} className="border border-stone-300 p-1.5 text-stone-500 text-[9px] font-normal">
+                    <td className="border border-stone-300 p-1.5 text-stone-500 text-[9px] font-normal">
                       ({filteredFleetList.length} Armada)
                     </td>
                   </tr>
                 </tfoot>
               </table>
 
-              {/* Tanda Tangan */}
-              <div className="grid grid-cols-3 gap-4 pt-6 text-center text-[10px]">
+              {/* Tanda Tangan: 2 Pihak Validasi Manual Saja */}
+              <div className="grid grid-cols-2 gap-8 pt-8 text-center text-[10px]">
                 <div>
-                  <p className="text-stone-600 mb-12">Petugas Checker Tambang:</p>
-                  <p className="font-bold underline uppercase">{currentUser.fullName || currentUser.username || 'Checker'}</p>
+                  <p className="text-stone-700 font-medium mb-14">Petugas Checker Tambang:</p>
+                  <p className="font-bold underline uppercase text-stone-900 tracking-wide text-[11px]">
+                    {validatorChecker.trim() || '....................................'}
+                  </p>
+                  <p className="text-[9px] text-stone-500 font-mono mt-0.5">Checker Lapangan / Tallyman</p>
                 </div>
                 <div>
-                  <p className="text-stone-600 mb-12">Pengawas Lapangan (Pit Supervisor):</p>
-                  <p className="font-bold underline">___________________________</p>
-                </div>
-                <div>
-                  <p className="text-stone-600 mb-12">Mengetahui (Kabag Operasi):</p>
-                  <p className="font-bold underline">___________________________</p>
+                  <p className="text-stone-700 font-medium mb-14">Mengetahui &amp; Menyetujui:</p>
+                  <p className="font-bold underline uppercase text-stone-900 tracking-wide text-[11px]">
+                    {validatorKTT.trim() || '....................................'}
+                  </p>
+                  <p className="text-[9px] text-stone-500 font-mono mt-0.5">Kepala Tehnik Tambang (KTT)</p>
                 </div>
               </div>
             </div>

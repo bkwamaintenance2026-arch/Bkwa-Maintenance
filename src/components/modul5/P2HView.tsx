@@ -490,7 +490,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
     });
 
     const csvContent = '\uFEFF' + [
-      `"PT BATU KALI WELANG AMPUH - LAPORAN PEMERIKSAAN HARIAN PRA-OPERASI (P2H)"`,
+      `"PT BATU KALI WELANG AMPUH (ETIKA) - LAPORAN PEMERIKSAAN HARIAN PRA-OPERASI (P2H)"`,
       `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Riwayat: ${filteredRiwayat.length}"`,
       '',
       headers.join(','),
@@ -544,7 +544,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
       </head>
       <body>
         <div class="header">
-          <div class="company">PT BATU KALI WELANG AMPUH</div>
+          <div class="company">PT BATU KALI WELANG AMPUH (ETIKA)</div>
           <div>DIVISI MAINTENANCE, QUARRY & ALAT BERAT</div>
           <div class="doc-title">LEMBAR PEMERIKSAAN HARIAN (P2H) UNIT</div>
           <div>No. Dokumen: <strong>${rec.noP2H}</strong> | Tanggal: ${rec.tanggal} ${rec.jam} WIB</div>
