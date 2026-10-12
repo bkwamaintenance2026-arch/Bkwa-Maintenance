@@ -205,6 +205,47 @@ export interface ManpowerData {
   updatedAt: string;
 }
 
+// Sub-Modul 2: Catatan Harian Manpower (Jabatan, Filter Nama, Jam Start - Stop, Fitur Fullday, Keterangan, Catatan)
+export type KeteranganCatatanManpower =
+  | 'Hadir'
+  | 'Sakit'
+  | 'Ijin'
+  | 'Cuti'
+  | 'Dinas Luar'
+  | 'Tukar jam'
+  | 'Lembur';
+
+export const KETERANGAN_CATATAN_MANPOWER_OPTIONS: {
+  value: KeteranganCatatanManpower;
+  label: string;
+  badgeClass: string;
+  colorClass: string;
+}[] = [
+  { value: 'Hadir', label: 'Hadir', badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', colorClass: 'text-emerald-400' },
+  { value: 'Sakit', label: 'Sakit', badgeClass: 'bg-rose-500/15 text-rose-400 border-rose-500/30', colorClass: 'text-rose-400' },
+  { value: 'Ijin', label: 'Ijin', badgeClass: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30', colorClass: 'text-cyan-400' },
+  { value: 'Cuti', label: 'Cuti', badgeClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30', colorClass: 'text-purple-400' },
+  { value: 'Dinas Luar', label: 'Dinas Luar', badgeClass: 'bg-blue-500/15 text-blue-400 border-blue-500/30', colorClass: 'text-blue-400' },
+  { value: 'Tukar jam', label: 'Tukar jam', badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30', colorClass: 'text-amber-400' },
+  { value: 'Lembur', label: 'Lembur', badgeClass: 'bg-orange-500/15 text-orange-400 border-orange-500/30', colorClass: 'text-orange-400' },
+];
+
+export interface CatatanHarianManpowerRecord {
+  id: string;
+  tanggal: string;              // YYYY-MM-DD (Tanggal Catatan dari Date Picker)
+  jabatan: string;              // Dropdown dari Modul 2
+  nama: string;                 // Dropdown dari Filter Jabatan
+  manpowerId?: string;          // Referensi ID Manpower jika ada
+  nik?: string;                 // NIK jika ada
+  isFullday: boolean;           // Fitur Fullday (true/false)
+  jamStart: string;             // Jam Start (HH:mm)
+  jamStop: string;              // Jam Stop (HH:mm)
+  keterangan: KeteranganCatatanManpower | string; // Hadir, Sakit, Ijin, Cuti, Dinas Luar, Tukar jam, Lembur
+  catatan: string;              // Catatan
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Sub-Modul: Remark / Monitoring Pekerjaan Khusus Mekanik & Anak Magang
 export type MechanicJobCategory =
   | 'NON_UNIT'          // Non-Unit (Genset, Pompa Tambang, Crusher, dll.)
@@ -777,6 +818,7 @@ export interface FleetSettingRecord {
   totalRitase?: number;         // Total seluruh ritase
   namaChecker?: string;         // Nama Checker Tambang yang bertugas
   catatanChecker?: string;      // Catatan Checker Tambang
+  namaKTT?: string;             // Nama Kepala Tehnik Tambang (KTT) untuk pengesahan laporan
 
   source: 'MANUAL' | 'SYNC_P2H'; // Indikator sumber: input manual atau sinkronisasi dari P2H
   p2hRefId?: string;            // Reff ID record P2H jika disinkronkan

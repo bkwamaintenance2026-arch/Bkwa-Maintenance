@@ -155,6 +155,25 @@
         "status": { "type": "string", "maxLength": 50 }
       },
       "required": ["status"]
+    },
+    "DailyManpowerLog": {
+      "title": "DailyManpowerLog",
+      "description": "Catatan harian kehadiran dan jam kerja manpower",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "tanggal": { "type": "string", "maxLength": 50 },
+        "jabatan": { "type": "string", "maxLength": 100 },
+        "nama": { "type": "string", "maxLength": 150 },
+        "isFullday": { "type": "boolean" },
+        "jamStart": { "type": "string", "maxLength": 10 },
+        "jamStop": { "type": "string", "maxLength": 10 },
+        "keterangan": { "type": "string", "maxLength": 50 },
+        "catatan": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "tanggal", "nama", "keterangan"]
     }
   },
   "firestore": {
@@ -169,6 +188,10 @@
     "/manpower/{manpowerId}": {
       "schema": "Manpower",
       "description": "Dokumen data personil workshop dan manpower"
+    },
+    "/daily_manpower_logs/{id}": {
+      "schema": "DailyManpowerLog",
+      "description": "Dokumen catatan harian manpower"
     },
     "/breakdowns/{breakdownId}": {
       "schema": "BreakdownRecord",

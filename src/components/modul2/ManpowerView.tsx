@@ -4,9 +4,8 @@ import {
   MANPOWER_JABATAN_OPTIONS, 
   STATUS_KARYAWAN_OPTIONS,
   StatusKaryawan,
-  StatusKerjaKaryawan,
-  STATUS_KERJA_OPTIONS,
   MechanicWorkLogRecord,
+  CatatanHarianManpowerRecord,
   UserAccount 
 } from '../../types';
 import { 
@@ -18,24 +17,25 @@ import {
   X, 
   Eye, 
   Edit3, 
-  Users,
-  Phone,
-  Calendar,
-  Briefcase,
-  Search,
-  Lock,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  FileSpreadsheet,
-  ArrowLeft,
-  Wrench,
-  Clock,
-  Clock3,
-  FileText,
-  Filter,
-  Sparkles,
-  ClipboardList
+  Users, 
+  Phone, 
+  Calendar, 
+  Briefcase, 
+  Search, 
+  Lock, 
+  ArrowUpDown, 
+  ArrowUp, 
+  ArrowDown, 
+  FileSpreadsheet, 
+  ArrowLeft, 
+  Wrench, 
+  Clock, 
+  Clock3, 
+  FileText, 
+  Filter, 
+  Sparkles, 
+  ClipboardList,
+  UserCheck
 } from 'lucide-react';
 import { 
   canUserEdit, 
@@ -43,9 +43,14 @@ import {
   getAllMechanicWorkLogs,
   registerMechanicWorkLog,
   updateMechanicWorkLog,
-  deleteMechanicWorkLog
+  deleteMechanicWorkLog,
+  getAllDailyManpowerLogs,
+  registerDailyManpowerLog,
+  updateDailyManpowerLog,
+  deleteDailyManpowerLog
 } from '../../utils/storage';
 import { MechanicWorkLogSubView } from './MechanicWorkLogSubView';
+import { CatatanHarianManpowerSubView } from './CatatanHarianManpowerSubView';
 
 interface ManpowerViewProps {
   manpowerList: ManpowerData[];
@@ -66,9 +71,9 @@ const EMPTY_FORM = {
   statusKaryawan: '',
   tglMasukKerja: '',
   keterangan: '',
-  statusKerja: 'NORMAL' as StatusKerjaKaryawan,
-  catatanKerja: '',
 };
+
+type SubModuleTab = 'data_karyawan' | 'catatan_harian' | 'pekerjaan_mekanik';
 
 export const ManpowerView: React.FC<ManpowerViewProps> = ({
   manpowerList,
@@ -81,14 +86,25 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   const canEdit = canUserEdit(currentUser, 2);
   const canExport = canUserExportModule(currentUser, 2);
 
-  // Sub-Modul Tab State: Data Karyawan vs Remark Pekerjaan Mekanik
-  const [activeSubModule, setActiveSubModule] = useState<'data_karyawan' | 'pekerjaan_mekanik'>('data_karyawan');
+  // Sub-Modul Tab State: Data Manpower vs Catatan Harian Manpower vs Remark Pekerjaan Mekanik
+  const [activeSubModule, setActiveSubModule] = useState<SubModuleTab>('data_karyawan');
   const [mechanicWorkLogs, setMechanicWorkLogs] = useState<MechanicWorkLogRecord[]>(() => getAllMechanicWorkLogs());
+  const [dailyManpowerLogs, setDailyManpowerLogs] = useState<CatatanHarianManpowerRecord[]>(() => getAllDailyManpowerLogs());
 
-  // Quick Note / Attendance Status Modal
-  const [quickNoteModalTarget, setQuickNoteModalTarget] = useState<ManpowerData | null>(null);
-  const [quickNoteStatus, setQuickNoteStatus] = useState<StatusKerjaKaryawan>('NORMAL');
-  const [quickNoteText, setQuickNoteText] = useState('');
+  // Listen to Firestore real-time sync events
+  useEffect(() => {
+    const handleSync = (e: any) => {
+      const col = e?.detail?.collection;
+      if (!col || col === 'daily_manpower_logs') {
+        setDailyManpowerLogs(getAllDailyManpowerLogs());
+      }
+      if (!col || col === 'mechanic_work_logs') {
+        setMechanicWorkLogs(getAllMechanicWorkLogs());
+      }
+    };
+    window.addEventListener('bkwa-firestore-synced', handleSync);
+    return () => window.removeEventListener('bkwa-firestore-synced', handleSync);
+  }, []);
 
   // Sorting state untuk header tabel data manpower
   const [sortField, setSortField] = useState<keyof ManpowerData>('nama');
@@ -113,9 +129,8 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   // Status feedback message
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Search filter & Status Kerja filter
+  // Search filter
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatusKerja, setFilterStatusKerja] = useState<string>('ALL');
 
   // Auto dismiss feedback after 4 seconds
   useEffect(() => {
@@ -150,8 +165,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       !formData.noWa.trim() &&
       !formData.statusKaryawan.trim() &&
       !formData.tglMasukKerja.trim() &&
-      !formData.keterangan.trim() &&
-      !formData.catatanKerja.trim()
+      !formData.keterangan.trim()
     ) {
       setFeedback({
         type: 'error',
@@ -168,9 +182,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       statusKaryawan: formData.statusKaryawan.trim(),
       tglMasukKerja: formData.tglMasukKerja.trim(),
       keterangan: formData.keterangan.trim(),
-      statusKerja: formData.statusKerja || 'NORMAL',
-      catatanKerja: formData.catatanKerja.trim(),
-      tglCatatan: new Date().toISOString().split('T')[0],
     };
 
     const res = onSaveManpower(payload, editingId);
@@ -207,8 +218,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       statusKaryawan: mp.statusKaryawan || '',
       tglMasukKerja: mp.tglMasukKerja || '',
       keterangan: mp.keterangan || '',
-      statusKerja: (mp.statusKerja as StatusKerjaKaryawan) || 'NORMAL',
-      catatanKerja: mp.catatanKerja || '',
     });
     setFeedback({
       type: 'info',
@@ -221,52 +230,38 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     }
   };
 
-  // Quick Attendance Note Handler
-  const handleOpenQuickNote = (mp: ManpowerData) => {
-    setQuickNoteModalTarget(mp);
-    setQuickNoteStatus((mp.statusKerja as StatusKerjaKaryawan) || 'NORMAL');
-    setQuickNoteText(mp.catatanKerja || '');
-  };
-
-  const handleSaveQuickNote = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickNoteModalTarget) return;
-
-    if (!canEdit) {
-      setFeedback({
-        type: 'error',
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Pengeditan catatan dinonaktifkan.',
-      });
-      return;
+  // Sub-Modul 2 Handlers: Catatan Harian Manpower
+  const handleSaveDailyLog = (
+    data: Omit<CatatanHarianManpowerRecord, 'id' | 'createdAt' | 'updatedAt'>,
+    idToEdit?: string
+  ) => {
+    let res;
+    if (idToEdit) {
+      res = updateDailyManpowerLog(idToEdit, data);
+    } else {
+      res = registerDailyManpowerLog(data);
     }
-
-    const payload: Omit<ManpowerData, 'id' | 'createdAt' | 'updatedAt'> = {
-      nik: quickNoteModalTarget.nik || '',
-      nama: quickNoteModalTarget.nama || '',
-      jabatan: quickNoteModalTarget.jabatan || '',
-      noWa: quickNoteModalTarget.noWa || '',
-      statusKaryawan: quickNoteModalTarget.statusKaryawan || '',
-      tglMasukKerja: quickNoteModalTarget.tglMasukKerja || '',
-      keterangan: quickNoteModalTarget.keterangan || '',
-      statusKerja: quickNoteStatus,
-      catatanKerja: quickNoteText.trim(),
-      tglCatatan: new Date().toISOString().split('T')[0],
-    };
-
-    const res = onSaveManpower(payload, quickNoteModalTarget.id);
     if (res.success) {
-      setFeedback({
-        type: 'success',
-        message: `Catatan kerja personil [${quickNoteModalTarget.nama || quickNoteModalTarget.nik}] berhasil disimpan!`,
-      });
-      setQuickNoteModalTarget(null);
-      setQuickNoteText('');
+      setDailyManpowerLogs(getAllDailyManpowerLogs());
+      setFeedback({ type: 'success', message: res.message });
     } else {
       setFeedback({ type: 'error', message: res.message });
     }
+    return res;
   };
 
-  // Sub-Modul 2 Handlers: Remark Pekerjaan Mekanik
+  const handleDeleteDailyLog = (id: string) => {
+    const res = deleteDailyManpowerLog(id);
+    if (res.success) {
+      setDailyManpowerLogs(getAllDailyManpowerLogs());
+      setFeedback({ type: 'success', message: res.message });
+    } else {
+      setFeedback({ type: 'error', message: res.message });
+    }
+    return res;
+  };
+
+  // Sub-Modul 3 Handlers: Remark Pekerjaan Mekanik
   const handleSaveWorkLog = (
     data: Omit<MechanicWorkLogRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -338,17 +333,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     }
   };
 
-  // Helper badge warna untuk Status Kerja (Hadir, Tukar Shift, Dinas Luar, Cuti, Izin, Sakit, Standby)
-  const getStatusKerjaBadge = (status?: string) => {
-    const key = (status || 'NORMAL') as StatusKerjaKaryawan;
-    const opt = STATUS_KERJA_OPTIONS.find((o) => o.value === key) || STATUS_KERJA_OPTIONS[0];
-    return (
-      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${opt.color}`}>
-        {opt.label}
-      </span>
-    );
-  };
-
   // Export CSV handler for authorized users (Akun Khusus & Developer)
   const handleExportCSV = () => {
     if (sortedList.length === 0) {
@@ -361,8 +345,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       'JABATAN',
       'NO WHATSAPP',
       'STATUS KARYAWAN',
-      'STATUS PRESENSI / KERJA',
-      'CATATAN STATUS KERJA',
       'TGL MASUK KERJA',
       'KETERANGAN'
     ];
@@ -372,13 +354,11 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       `"${(m.jabatan || '').replace(/"/g, '""')}"`,
       `"${m.noWa || ''}"`,
       `"${m.statusKaryawan || ''}"`,
-      `"${m.statusKerja || 'NORMAL'}"`,
-      `"${(m.catatanKerja || '').replace(/"/g, '""')}"`,
       `"${m.tglMasukKerja || ''}"`,
       `"${(m.keterangan || '').replace(/"/g, '""')}"`,
     ]);
     const csvContent = '\uFEFF' + 
-      `"PT BATU KALI WELANG AMPUH - DATA MANPOWER & PERSONIL WORKSHOP"\r\n` +
+      `"PT BATU KALI WELANG AMPUH (ETIKA) - DATA MANPOWER & PERSONIL WORKSHOP"\r\n` +
       `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Personil: ${sortedList.length} Orang"\r\n\r\n` +
       [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -391,36 +371,30 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // KPI Ringkasan Status Presensi & Kerja
+  // KPI Ringkasan Status Karyawan & Personil
   const manpowerStats = useMemo(() => {
     const total = manpowerList.length;
-    const normal = manpowerList.filter((m) => !m.statusKerja || m.statusKerja === 'NORMAL').length;
-    const tukarShift = manpowerList.filter((m) => m.statusKerja === 'TUKAR_SHIFT').length;
-    const dinasLuar = manpowerList.filter((m) => m.statusKerja === 'DINAS_LUAR').length;
-    const cutiIzinSakit = manpowerList.filter((m) => ['CUTI', 'IZIN', 'SAKIT'].includes(m.statusKerja as string)).length;
-    const standby = manpowerList.filter((m) => m.statusKerja === 'STANDBY').length;
-    return { total, normal, tukarShift, dinasLuar, cutiIzinSakit, standby };
+    const tetap = manpowerList.filter((m) => m.statusKaryawan === 'TETAP').length;
+    const kontrak = manpowerList.filter((m) => m.statusKaryawan === 'KONTRAK').length;
+    const harianLepas = manpowerList.filter((m) => m.statusKaryawan === 'HARIAN LEPAS').length;
+    const etikaSby = manpowerList.filter((m) => m.statusKaryawan === 'Etika 05 Sby' || (m.statusKaryawan || '').includes('Etika 05')).length;
+    const kemitraanMagang = manpowerList.filter((m) => ['KEMITRAAN', 'MAGANG'].includes(m.statusKaryawan as string)).length;
+    return { total, tetap, kontrak, harianLepas, etikaSby, kemitraanMagang };
   }, [manpowerList]);
 
   // Filtered & Sorted list
   const sortedList = useMemo(() => {
     const filtered = manpowerList.filter((m) => {
       const q = searchTerm.toLowerCase();
-      const matchSearch =
+      return (
         (m.nik && m.nik.toLowerCase().includes(q)) ||
         (m.nama && m.nama.toLowerCase().includes(q)) ||
         (m.jabatan && m.jabatan.toLowerCase().includes(q)) ||
         (m.noWa && m.noWa.toLowerCase().includes(q)) ||
         (m.statusKaryawan && m.statusKaryawan.toLowerCase().includes(q)) ||
         (m.tglMasukKerja && m.tglMasukKerja.toLowerCase().includes(q)) ||
-        (m.keterangan && m.keterangan.toLowerCase().includes(q)) ||
-        (m.catatanKerja && m.catatanKerja.toLowerCase().includes(q)) ||
-        (m.statusKerja && m.statusKerja.toLowerCase().includes(q));
-
-      const curStatus = m.statusKerja || 'NORMAL';
-      const matchStatus = filterStatusKerja === 'ALL' || curStatus === filterStatusKerja;
-
-      return matchSearch && matchStatus;
+        (m.keterangan && m.keterangan.toLowerCase().includes(q))
+      );
     });
 
     return [...filtered].sort((a, b) => {
@@ -433,7 +407,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [manpowerList, searchTerm, filterStatusKerja, sortField, sortOrder]);
+  }, [manpowerList, searchTerm, sortField, sortOrder]);
 
   const renderSortHeader = (label: string, field: keyof ManpowerData) => {
     const isSorted = sortField === field;
@@ -511,6 +485,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       {/* SUB-MODUL NAVIGATOR TABS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-900/90 border border-stone-800 p-2.5 rounded-2xl shadow-xl">
         <div className="flex flex-wrap items-center gap-2">
+          {/* Sub-Modul 1: Data Manpower */}
           <button
             type="button"
             onClick={() => setActiveSubModule('data_karyawan')}
@@ -521,7 +496,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>1. Data Karyawan & Presensi</span>
+            <span>1. Data Manpower</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
               activeSubModule === 'data_karyawan' ? 'bg-stone-950/20 text-stone-950 font-black' : 'bg-stone-900 text-amber-400'
             }`}>
@@ -529,6 +504,26 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             </span>
           </button>
 
+          {/* Sub-Modul 2: Catatan Harian Manpower */}
+          <button
+            type="button"
+            onClick={() => setActiveSubModule('catatan_harian')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition shadow-sm ${
+              activeSubModule === 'catatan_harian'
+                ? 'bg-amber-500 text-stone-950 shadow-amber-500/20'
+                : 'bg-stone-800/80 text-stone-300 hover:text-white hover:bg-stone-800'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>2. Catatan Harian Manpower</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+              activeSubModule === 'catatan_harian' ? 'bg-stone-950/20 text-stone-950 font-black' : 'bg-stone-900 text-amber-400'
+            }`}>
+              {dailyManpowerLogs.length}
+            </span>
+          </button>
+
+          {/* Sub-Modul 3: Remark Pekerjaan Mekanik */}
           <button
             type="button"
             onClick={() => setActiveSubModule('pekerjaan_mekanik')}
@@ -539,7 +534,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             }`}
           >
             <Wrench className="w-4 h-4" />
-            <span>2. Remark Pekerjaan Mekanik</span>
+            <span>3. Remark Pekerjaan Mekanik</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
               activeSubModule === 'pekerjaan_mekanik' ? 'bg-stone-950/20 text-stone-950 font-black' : 'bg-stone-900 text-amber-400'
             }`}>
@@ -550,13 +545,15 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
 
         <div className="text-[11px] font-mono text-stone-400 hidden sm:block">
           {activeSubModule === 'data_karyawan'
-            ? 'Kelola personil, tukar jam kerja, dinas luar, cuti & sakit'
+            ? 'Kelola master data personil karyawan workshop & operasional'
+            : activeSubModule === 'catatan_harian'
+            ? 'Pencatatan harian jam kerja, status kehadiran, lembur & dinas'
             : 'Monitoring pekerjaan non-unit, workshop & sarana mekanik/magang'}
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* SUB-MODUL 2: REMARK PEKERJAAN MEKANIK & ANAK MAGANG */}
+      {/* KONTEN SUB-MODUL AKTIF */}
       {/* ========================================================================= */}
       {activeSubModule === 'pekerjaan_mekanik' ? (
         <MechanicWorkLogSubView
@@ -566,12 +563,20 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
           onSaveWorkLog={handleSaveWorkLog}
           onDeleteWorkLog={handleDeleteWorkLog}
         />
+      ) : activeSubModule === 'catatan_harian' ? (
+        <CatatanHarianManpowerSubView
+          logs={dailyManpowerLogs}
+          manpowerList={manpowerList}
+          currentUser={currentUser}
+          onSaveLog={handleSaveDailyLog}
+          onDeleteLog={handleDeleteDailyLog}
+        />
       ) : (
         /* ======================================================================= */
-        /* SUB-MODUL 1: DATA KARYAWAN & PRESENSI KERJA */
+        /* SUB-MODUL 1: DATA MANPOWER */
         /* ======================================================================= */
         <>
-          {/* KPI SUMMARY BAR PRESENSI & STATUS KERJA */}
+          {/* KPI SUMMARY BAR STATUS KARYAWAN */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-stone-400 block mb-1">
@@ -585,50 +590,50 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
 
             <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 block mb-1">
-                HADIR NORMAL
+                KARYAWAN TETAP
               </span>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black font-mono text-emerald-400">{manpowerStats.normal}</span>
-                <span className="text-xs font-mono text-stone-500">Orang</span>
-              </div>
-            </div>
-
-            <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 block mb-1">
-                TUKAR SHIFT
-              </span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black font-mono text-amber-400">{manpowerStats.tukarShift}</span>
+                <span className="text-xl font-black font-mono text-emerald-400">{manpowerStats.tetap}</span>
                 <span className="text-xs font-mono text-stone-500">Orang</span>
               </div>
             </div>
 
             <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
               <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 block mb-1">
-                DINAS LUAR
+                KONTRAK
               </span>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black font-mono text-blue-400">{manpowerStats.dinasLuar}</span>
+                <span className="text-xl font-black font-mono text-blue-400">{manpowerStats.kontrak}</span>
                 <span className="text-xs font-mono text-stone-500">Orang</span>
               </div>
             </div>
 
             <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-400 block mb-1">
-                CUTI / IZIN / SAKIT
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 block mb-1">
+                HARIAN LEPAS
               </span>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black font-mono text-purple-400">{manpowerStats.cutiIzinSakit}</span>
+                <span className="text-xl font-black font-mono text-amber-400">{manpowerStats.harianLepas}</span>
                 <span className="text-xs font-mono text-stone-500">Orang</span>
               </div>
             </div>
 
             <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-stone-400 block mb-1">
-                STANDBY
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-yellow-400 block mb-1">
+                ETIKA 05 SBY
               </span>
               <div className="flex items-baseline gap-1">
-                <span className="text-xl font-black font-mono text-stone-300">{manpowerStats.standby}</span>
+                <span className="text-xl font-black font-mono text-yellow-400">{manpowerStats.etikaSby}</span>
+                <span className="text-xs font-mono text-stone-500">Orang</span>
+              </div>
+            </div>
+
+            <div className="bg-stone-900/80 border border-stone-800/90 rounded-2xl p-3 shadow-md">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 block mb-1">
+                MITRA / MAGANG
+              </span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-black font-mono text-cyan-400">{manpowerStats.kemitraanMagang}</span>
                 <span className="text-xs font-mono text-stone-500">Orang</span>
               </div>
             </div>
@@ -661,11 +666,11 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   </span>
                   <h2 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide flex items-center gap-2">
                     <Users className="w-5 h-5 text-amber-500" />
-                    <span>FORM DATA MANPOWER &amp; PRESENSI</span>
+                    <span>FORM DATA MANPOWER</span>
                   </h2>
                 </div>
                 <p className="text-xs text-stone-400 mt-1">
-                  Input data tenaga kerja workshop &amp; operasional quarry beserta status presensi harian (tukar jam kerja, dinas luar, cuti, izin, sakit). Kolom formulir bersifat fleksibel dapat dilengkapi sewaktu-waktu.
+                  Input dan kelola master data tenaga kerja workshop &amp; operasional quarry. Kolom formulir bersifat fleksibel dapat dilengkapi sewaktu-waktu.
                 </p>
               </div>
 
@@ -817,41 +822,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   </div>
                 </div>
 
-                {/* 7. STATUS KERJA / PRESENSI */}
-                <div>
-                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
-                    STATUS KERJA / PRESENSI
-                  </label>
-                  <select
-                    id="field-manpower-status-kerja"
-                    value={formData.statusKerja}
-                    onChange={(e) => setFormData({ ...formData, statusKerja: e.target.value as StatusKerjaKaryawan })}
-                    className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  >
-                    {STATUS_KERJA_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 8. CATATAN STATUS KERJA */}
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
-                    CATATAN STATUS KERJA (TUKAR SHIFT / DINAS / CUTI / SAKIT)
-                  </label>
-                  <input
-                    id="field-manpower-catatan-kerja"
-                    type="text"
-                    value={formData.catatanKerja}
-                    onChange={(e) => setFormData({ ...formData, catatanKerja: e.target.value })}
-                    placeholder="Contoh: Tukar shift malam dgn Budi, dinas luar belanja part, cuti tahunan, sakit surat dokter..."
-                    className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </div>
-
-                {/* 9. KETERANGAN TAMBAHAN */}
+                {/* 7. KETERANGAN TAMBAHAN */}
                 <div className="sm:col-span-2 lg:col-span-3">
                   <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-stone-300 mb-1">
                     KETERANGAN TAMBAHAN
@@ -893,7 +864,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   )}
 
                   {/* Reset form jika ada yang sedang diisi/diedit */}
-                  {canEdit && (editingId || formData.nik || formData.nama || formData.jabatan || formData.noWa || formData.statusKaryawan || formData.catatanKerja) && (
+                  {canEdit && (editingId || formData.nik || formData.nama || formData.jabatan || formData.noWa || formData.statusKaryawan || formData.keterangan) && (
                     <button
                       type="button"
                       onClick={handleResetForm}
@@ -922,33 +893,19 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm sm:text-base font-black text-stone-100 font-mono tracking-wide">
-                    DAFTAR DATA MANPOWER &amp; PRESENSI
+                    DAFTAR DATA MANPOWER
                   </h3>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
                     {manpowerList.length} Personil
                   </span>
                 </div>
                 <p className="text-xs text-stone-400 mt-0.5">
-                  Daftar seluruh personil yang telah diinput. Kolom <strong>Status &amp; Catatan</strong> menampilkan catatan tukar shift, dinas luar, cuti, izin, atau sakit.
+                  Daftar seluruh personil yang telah terdaftar di database master Modul 2.
                 </p>
               </div>
 
-              {/* Fast Search, Status Filter & Export */}
+              {/* Fast Search & Export */}
               <div className="flex flex-wrap items-center gap-2">
-                {/* Filter Status Kerja */}
-                <select
-                  value={filterStatusKerja}
-                  onChange={(e) => setFilterStatusKerja(e.target.value)}
-                  className="bg-stone-800 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="ALL">Semua Status Presensi</option>
-                  {STATUS_KERJA_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-
                 {canExport && (
                   <button
                     id="btn-export-modul2-csv"
@@ -966,7 +923,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Cari NIK / Nama / WA / Catatan..."
+                      placeholder="Cari NIK / Nama / WA / Jabatan..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="w-full pl-9 pr-3 py-1.5 bg-stone-800 border border-stone-700 rounded-xl text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -987,7 +944,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                     {renderSortHeader('JABATAN', 'jabatan')}
                     {renderSortHeader('NO WA', 'noWa')}
                     {renderSortHeader('STATUS KARYAWAN', 'statusKaryawan')}
-                    {renderSortHeader('STATUS & CATATAN KERJA', 'statusKerja')}
                     {renderSortHeader('TGL. MASUK', 'tglMasukKerja')}
                     {renderSortHeader('KETERANGAN', 'keterangan')}
                     <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
@@ -1071,30 +1027,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                             {getStatusBadge(mp.statusKaryawan)}
                           </td>
 
-                          {/* STATUS & CATATAN KERJA */}
-                          <td className="py-3 px-3 min-w-[200px]">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1.5">
-                                {getStatusKerjaBadge(mp.statusKerja)}
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenQuickNote(mp)}
-                                  className="text-stone-500 hover:text-amber-400 p-0.5 rounded transition"
-                                  title="Ubah Cepat Status & Catatan Kerja"
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                </button>
-                              </div>
-                              {mp.catatanKerja ? (
-                                <p className="text-[11px] text-amber-200/90 bg-amber-950/30 border border-amber-900/40 rounded px-2 py-1 max-w-xs whitespace-pre-wrap" title={mp.catatanKerja}>
-                                  {mp.catatanKerja}
-                                </p>
-                              ) : (
-                                <span className="text-[10px] text-stone-600 italic block">Tidak ada catatan</span>
-                              )}
-                            </div>
-                          </td>
-
                           {/* TGL. MASUK KERJA */}
                           <td className="py-3 px-3 font-mono text-stone-300 whitespace-nowrap">
                             {formatDisplayDate(mp.tglMasukKerja)}
@@ -1105,7 +1037,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                             {mp.keterangan || '-'}
                           </td>
 
-                          {/* KOLOM AKSI: VIEW, EDIT, CATAT, DAN DELETED */}
+                          {/* KOLOM AKSI: VIEW, EDIT, DAN DELETED */}
                           <td className="py-2.5 px-3 text-center whitespace-nowrap sticky right-0 bg-stone-900/95 shadow-l">
                             <div className="flex items-center justify-center gap-1.5">
                               {/* 1. VIEW */}
@@ -1120,18 +1052,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                                 <span>View</span>
                               </button>
 
-                              {/* 2. CATAT STATUS CEPAT */}
-                              <button
-                                type="button"
-                                onClick={() => handleOpenQuickNote(mp)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-amber-300 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/60 transition"
-                                title={`Catat cepat tukar shift, dinas luar, cuti, izin, sakit [${mp.nama || mp.nik}]`}
-                              >
-                                <ClipboardList className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Catat</span>
-                              </button>
-
-                              {/* 3. EDIT */}
+                              {/* 2. EDIT */}
                               <button
                                 id={`btn-edit-mp-${mp.id}`}
                                 type="button"
@@ -1148,7 +1069,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                                 <span>Edit</span>
                               </button>
 
-                              {/* 4. DELETED */}
+                              {/* 3. DELETED */}
                               <button
                                 id={`btn-delete-mp-${mp.id}`}
                                 type="button"
@@ -1171,7 +1092,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                     })
                   ) : (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-stone-400 text-xs">
+                      <td colSpan={8} className="py-12 text-center text-stone-400 text-xs">
                         {manpowerList.length === 0 ? (
                           <div className="space-y-1">
                             <p className="font-bold text-stone-300">Belum ada data manpower yang terdaftar.</p>
@@ -1189,80 +1110,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
               </table>
             </div>
           </section>
-
-          {/* QUICK NOTE MODAL (Tukar Shift, Dinas Luar, Cuti, Izin, Sakit) */}
-          {quickNoteModalTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-              <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
-                <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold font-mono text-amber-400 flex items-center gap-2">
-                      <ClipboardList className="w-4 h-4 text-amber-400" />
-                      <span>CATAT STATUS &amp; PRESENSI KERJA</span>
-                    </h3>
-                    <p className="text-xs text-stone-300 font-semibold mt-0.5">
-                      {quickNoteModalTarget.nama || quickNoteModalTarget.nik} — {quickNoteModalTarget.jabatan || 'Personil'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setQuickNoteModalTarget(null)}
-                    className="text-stone-400 hover:text-white"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveQuickNote} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block text-[11px] font-mono text-stone-400 mb-1">
-                      Status Presensi / Kehadiran:
-                    </label>
-                    <select
-                      value={quickNoteStatus}
-                      onChange={(e) => setQuickNoteStatus(e.target.value as StatusKerjaKaryawan)}
-                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    >
-                      {STATUS_KERJA_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-mono text-stone-400 mb-1">
-                      Catatan Khusus (Tukar Shift / Dinas Luar / Cuti / Izin / Sakit):
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={quickNoteText}
-                      onChange={(e) => setQuickNoteText(e.target.value)}
-                      placeholder="Contoh: Tukar shift malam dengan Budi; Dinas luar beli sparepart ke bengkel bubut; Cuti 2 hari; Sakit surat dokter terlampir..."
-                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-800">
-                    <button
-                      type="button"
-                      onClick={() => setQuickNoteModalTarget(null)}
-                      className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 text-xs hover:bg-stone-700"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs font-mono hover:bg-amber-400 transition shadow-lg shadow-amber-500/20"
-                    >
-                      Simpan Catatan
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
 
           {/* VIEW DETAIL MODAL */}
           {viewingData && (
@@ -1306,18 +1153,6 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                         {viewingData.jabatan || '-'}
                       </span>
                     </div>
-
-                    <div className="flex justify-between border-b border-stone-800 pb-2">
-                      <span className="text-stone-400 uppercase font-mono text-[10px]">STATUS PRESENSI &amp; KERJA:</span>
-                      <span>{getStatusKerjaBadge(viewingData.statusKerja)}</span>
-                    </div>
-
-                    {viewingData.catatanKerja && (
-                      <div className="flex justify-between border-b border-stone-800 pb-2">
-                        <span className="text-stone-400 uppercase font-mono text-[10px]">CATATAN KHUSUS:</span>
-                        <span className="text-amber-200 font-medium text-right max-w-[240px] whitespace-pre-wrap">{viewingData.catatanKerja}</span>
-                      </div>
-                    )}
 
                     <div className="flex justify-between border-b border-stone-800 pb-2">
                       <span className="text-stone-400 uppercase font-mono text-[10px]">NO WA:</span>

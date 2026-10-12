@@ -42,7 +42,8 @@ import {
   ModulePermissionSet,
   GreaseStockRecord,
   GreaseDistributionRecord,
-  MechanicWorkLogRecord
+  MechanicWorkLogRecord,
+  CatatanHarianManpowerRecord
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -58,6 +59,7 @@ const STORAGE_KEYS = {
   UNITS: 'bkwa_asset_units_v2', // updated version key to guarantee clean state
   MANPOWER: 'bkwa_manpower_list_v1', // storage key for Modul 2 Manpower
   MECHANIC_WORK_LOGS: 'bkwa_mechanic_work_logs_v1', // storage key for Modul 2 Sub-Modul Remark Mekanik & Magang
+  DAILY_MANPOWER_LOGS: 'bkwa_daily_manpower_logs_v1', // storage key for Modul 2 Sub-Modul Catatan Harian Manpower
   BREAKDOWN: 'bkwa_breakdown_records_v1', // storage key for Modul 3 Breakdown records
   BREAKDOWN_COUNTER: 'bkwa_breakdown_counter_v1', // persistent counter for notification numbering
   FOG_STOCK: 'bkwa_fog_stock_inputs_v1', // storage key for Modul 4 FOG Input Stock (Tangki Utama)
@@ -1052,6 +1054,118 @@ export function deleteMechanicWorkLog(id: string): { success: boolean; message: 
   return {
     success: true,
     message: `Catatan pekerjaan mekanik berhasil dihapus.`,
+  };
+}
+
+// --- MODUL 2 SUB-MODUL: CATATAN HARIAN MANPOWER ---
+export function getAllDailyManpowerLogs(): CatatanHarianManpowerRecord[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.DAILY_MANPOWER_LOGS);
+    if (!data) return [];
+    return JSON.parse(data);
+  } catch (e) {
+    console.error('Error reading daily manpower logs', e);
+    return [];
+  }
+}
+
+export function saveAllDailyManpowerLogs(records: CatatanHarianManpowerRecord[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.DAILY_MANPOWER_LOGS, JSON.stringify(records));
+  } catch (e) {
+    console.error('Error saving daily manpower logs', e);
+  }
+}
+
+export function registerDailyManpowerLog(
+  data: Omit<CatatanHarianManpowerRecord, 'id' | 'createdAt' | 'updatedAt'>
+): {
+  success: boolean;
+  message: string;
+  record?: CatatanHarianManpowerRecord;
+} {
+  const list = getAllDailyManpowerLogs();
+  const now = new Date().toISOString();
+
+  const newRecord: CatatanHarianManpowerRecord = {
+    ...data,
+    id: `dml-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  list.unshift(newRecord);
+  saveAllDailyManpowerLogs(list);
+  syncItemToFirestore('daily_manpower_logs', newRecord.id, newRecord);
+
+  logActivity({
+    aksi: 'CREATE',
+    keterangan: `Input Catatan Harian Manpower: ${newRecord.nama} (${newRecord.jabatan}) - ${newRecord.keterangan}`,
+  });
+
+  return {
+    success: true,
+    message: `Catatan harian [${newRecord.nama}] berhasil disimpan!`,
+    record: newRecord,
+  };
+}
+
+export function updateDailyManpowerLog(
+  id: string,
+  updates: Partial<Omit<CatatanHarianManpowerRecord, 'id' | 'createdAt'>>
+): {
+  success: boolean;
+  message: string;
+  record?: CatatanHarianManpowerRecord;
+} {
+  const list = getAllDailyManpowerLogs();
+  const index = list.findIndex((r) => r.id === id);
+  if (index === -1) {
+    return { success: false, message: 'Data catatan harian manpower tidak ditemukan!' };
+  }
+
+  const now = new Date().toISOString();
+  const updatedRecord: CatatanHarianManpowerRecord = {
+    ...list[index],
+    ...updates,
+    updatedAt: now,
+  };
+
+  list[index] = updatedRecord;
+  saveAllDailyManpowerLogs(list);
+  syncItemToFirestore('daily_manpower_logs', id, updatedRecord);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Update Catatan Harian Manpower: ${updatedRecord.nama} (${updatedRecord.jabatan}) - ${updatedRecord.keterangan}`,
+  });
+
+  return {
+    success: true,
+    message: `Catatan harian [${updatedRecord.nama}] berhasil diperbarui!`,
+    record: updatedRecord,
+  };
+}
+
+export function deleteDailyManpowerLog(id: string): { success: boolean; message: string } {
+  const list = getAllDailyManpowerLogs();
+  const target = list.find((r) => r.id === id);
+  if (!target) {
+    return { success: false, message: 'Data catatan harian manpower tidak ditemukan!' };
+  }
+
+  const filtered = list.filter((r) => r.id !== id);
+  saveAllDailyManpowerLogs(filtered);
+  deleteItemFromFirestore('daily_manpower_logs', id);
+
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Catatan Harian Manpower: ${target.nama} (${target.jabatan}) - ${target.keterangan}`,
+  });
+
+  return {
+    success: true,
+    message: `Catatan harian [${target.nama}] berhasil dihapus.`,
   };
 }
 

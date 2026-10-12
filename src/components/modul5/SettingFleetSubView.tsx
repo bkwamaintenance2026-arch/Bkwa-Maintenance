@@ -153,6 +153,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     ritaseImbalTanah: 0,
     ritaseLokasian: 0,
     namaChecker: '',
+    namaKTT: '',
     catatanChecker: '',
   });
 
@@ -255,6 +256,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       ritaseImbalTanah: 0,
       ritaseLokasian: 0,
       namaChecker: currentUser.fullName || currentUser.username || '',
+      namaKTT: validatorKTT || '',
       catatanChecker: '',
     });
     setShowManualModal(true);
@@ -283,6 +285,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       ritaseImbalTanah: rec.ritaseImbalTanah || 0,
       ritaseLokasian: rec.ritaseLokasian || 0,
       namaChecker: rec.namaChecker || currentUser.fullName || currentUser.username || '',
+      namaKTT: rec.namaKTT || validatorKTT || '',
       catatanChecker: rec.catatanChecker || '',
     });
     setShowManualModal(true);
@@ -324,9 +327,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       ritaseLokasian: Number(formData.ritaseLokasian || 0),
       totalRitase: totalRit,
       namaChecker: formData.namaChecker.trim(),
+      namaKTT: formData.namaKTT.trim(),
       catatanChecker: formData.catatanChecker.trim(),
       source: 'MANUAL' as const,
     };
+
+    if (formData.namaChecker.trim()) setValidatorChecker(formData.namaChecker.trim());
+    if (formData.namaKTT.trim()) setValidatorKTT(formData.namaKTT.trim());
 
     const res = addOrUpdateFleetSetting(payload, editingFleetId || undefined);
     if (res.success) {
@@ -388,9 +395,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       ritaseLokasian: Number(formData.ritaseLokasian || 0),
       totalRitase: totalRit,
       namaChecker: formData.namaChecker.trim(),
+      namaKTT: formData.namaKTT.trim(),
       catatanChecker: formData.catatanChecker.trim(),
       source: 'MANUAL' as const,
     };
+
+    if (formData.namaChecker.trim()) setValidatorChecker(formData.namaChecker.trim());
+    if (formData.namaKTT.trim()) setValidatorKTT(formData.namaKTT.trim());
 
     const res = addOrUpdateFleetSetting(payload, editingFleetId || undefined);
     if (res.success) {
@@ -709,6 +720,23 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Open Print Preview & sinkronkan nama validasi manual dari data form atau record fleet
+  const handleOpenPrintModal = () => {
+    const foundChecker = formData.namaChecker.trim() || filteredFleetList.find((f) => f.namaChecker?.trim())?.namaChecker;
+    const foundKTT = formData.namaKTT.trim() || filteredFleetList.find((f) => f.namaKTT?.trim())?.namaKTT;
+    if (foundChecker) setValidatorChecker(foundChecker);
+    if (foundKTT) setValidatorKTT(foundKTT);
+    setShowPrintModal(true);
+  };
+
+  const handleOpenCheckerPrintModal = () => {
+    const foundChecker = formData.namaChecker.trim() || filteredFleetList.find((f) => f.namaChecker?.trim())?.namaChecker;
+    const foundKTT = formData.namaKTT.trim() || filteredFleetList.find((f) => f.namaKTT?.trim())?.namaKTT;
+    if (foundChecker) setValidatorChecker(foundChecker);
+    if (foundKTT) setValidatorKTT(foundKTT);
+    setShowCheckerPrintModal(true);
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Top Banner & Action Controls */}
@@ -774,7 +802,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setShowPrintModal(true)}
+              onClick={handleOpenPrintModal}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold shadow transition active:scale-95"
             >
               <Printer className="w-3.5 h-3.5 text-blue-400" />
@@ -1282,34 +1310,68 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 )}
               </div>
 
-              {/* Checker Tambang Identity & Catatan Checker */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-stone-800/80">
-                <div>
-                  <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
-                    <Users className="w-3 h-3 text-teal-400" />
-                    <span>Petugas Checker Tambang:</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Nama Checker Tambang bertugas (contoh: Pos Front Pit)..."
-                    value={formData.namaChecker}
-                    onChange={(e) => setFormData({ ...formData, namaChecker: e.target.value })}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
-                  />
+              {/* Validasi Pengesahan: Checker Tambang & Kepala Tehnik Tambang (KTT) */}
+              <div className="space-y-3 pt-3 border-t border-stone-800/80">
+                <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400">
+                  <CheckSquare className="w-4 h-4 text-teal-400" />
+                  <span>KOLOM PENGESAHAN DOKUMEN (KETIK MANUAL OLEH CHECKER):</span>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5 font-bold">
+                      <Users className="w-3.5 h-3.5 text-teal-400" />
+                      <span>1. Petugas Checker Tambang (Ketik Manual):</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ketik nama Checker Tambang yang bertugas..."
+                      value={formData.namaChecker}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData({ ...formData, namaChecker: val });
+                        setValidatorChecker(val);
+                      }}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-stone-600"
+                    />
+                    <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                      * Kolom khusus tanda tangan Checker (Kiri)
+                    </span>
+                  </div>
 
-                <div>
-                  <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
-                    <FileText className="w-3 h-3 text-amber-400" />
-                    <span>Catatan Checker Tambang:</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Kondisi loading, antrian ritase, material basah/kering, dll..."
-                    value={formData.catatanChecker}
-                    onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
-                    className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5 font-bold">
+                      <CheckSquare className="w-3.5 h-3.5 text-amber-400" />
+                      <span>2. Kepala Tehnik Tambang (KTT) (Ketik Manual):</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ketik nama Kepala Tehnik Tambang (KTT)..."
+                      value={formData.namaKTT}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData({ ...formData, namaKTT: val });
+                        setValidatorKTT(val);
+                      }}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
+                    />
+                    <span className="text-[10px] text-stone-500 font-mono mt-0.5 block">
+                      * Kolom khusus pengesahan KTT (Kanan)
+                    </span>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Catatan Checker Tambang:</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Kondisi loading, antrian ritase, material basah/kering, dll..."
+                      value={formData.catatanChecker}
+                      onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
+                      className="w-full px-3 py-2 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-stone-600"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1862,7 +1924,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowCheckerPrintModal(true)}
+              onClick={handleOpenCheckerPrintModal}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
             >
               <Printer className="w-4 h-4" />
@@ -2712,34 +2774,68 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   </div>
                 </div>
 
-                {/* Checker Information */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-stone-800">
-                  <div>
-                    <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
-                      <Users className="w-3 h-3 text-teal-400" />
-                      <span>Nama Checker Tambang:</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Nama Checker Tambang..."
-                      value={formData.namaChecker}
-                      onChange={(e) => setFormData({ ...formData, namaChecker: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
+                {/* Validasi Pengesahan: Checker Tambang & Kepala Tehnik Tambang (KTT) */}
+                <div className="space-y-2.5 pt-2.5 border-t border-stone-800">
+                  <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400">
+                    <CheckSquare className="w-3.5 h-3.5 text-teal-400" />
+                    <span>KOLOM PENGESAHAN DOKUMEN (KETIK MANUAL OLEH CHECKER):</span>
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5 font-bold">
+                        <Users className="w-3 h-3 text-teal-400" />
+                        <span>1. Petugas Checker Tambang (Ketik Manual):</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Nama Checker Tambang bertugas..."
+                        value={formData.namaChecker}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, namaChecker: val });
+                          setValidatorChecker(val);
+                        }}
+                        className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-teal-500"
+                      />
+                      <span className="text-[9.5px] text-stone-500 font-mono mt-0.5 block">
+                        * Tanda tangan Checker (Kiri)
+                      </span>
+                    </div>
 
-                  <div>
-                    <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
-                      <FileText className="w-3 h-3 text-amber-400" />
-                      <span>Catatan Checker Tambang:</span>
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Catatan hasil muatan / antrian..."
-                      value={formData.catatanChecker}
-                      onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    />
+                    <div>
+                      <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5 font-bold">
+                        <CheckSquare className="w-3 h-3 text-amber-400" />
+                        <span>2. Kepala Tehnik Tambang (KTT) (Ketik Manual):</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Nama Kepala Tehnik Tambang (KTT)..."
+                        value={formData.namaKTT}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, namaKTT: val });
+                          setValidatorKTT(val);
+                        }}
+                        className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                      <span className="text-[9.5px] text-stone-500 font-mono mt-0.5 block">
+                        * Pengesahan KTT (Kanan)
+                      </span>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10.5px] font-mono text-stone-300 mb-1 flex items-center gap-1.5">
+                        <FileText className="w-3 h-3 text-amber-400" />
+                        <span>Catatan Checker Tambang:</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Catatan hasil muatan / antrian..."
+                        value={formData.catatanChecker}
+                        onChange={(e) => setFormData({ ...formData, catatanChecker: e.target.value })}
+                        className="w-full px-3 py-1.5 bg-stone-900 border border-stone-800 rounded-xl text-stone-100 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2934,7 +3030,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       {showPrintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
           <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950 no-print">
               <div className="flex items-center gap-2">
                 <Printer className="w-4 h-4 text-blue-400" />
                 <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
@@ -2951,7 +3047,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
             </div>
 
             {/* Input Manual Label Validasi Laporan (diketik sendiri oleh Checker) */}
-            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2">
+            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2 no-print">
               <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400">
                 <CheckSquare className="w-4 h-4 text-blue-400" />
                 <span>PENGATURAN LABEL VALIDASI LAPORAN (KETIK MANUAL OLEH CHECKER):</span>
@@ -2993,7 +3089,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs">
+            <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs printable-report-modal">
               {/* Kop Surat Resmi PT BATU KALI WELANG AMPUH (ETIKA) */}
               <div className="border-b-2 border-stone-950 pb-3 flex justify-between items-center">
                 <div>
@@ -3085,7 +3181,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2.5 p-4 border-t border-stone-800 bg-stone-950">
+            <div className="flex justify-end gap-2.5 p-4 border-t border-stone-800 bg-stone-950 no-print">
               <button
                 type="button"
                 onClick={() => setShowPrintModal(false)}
@@ -3320,7 +3416,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       {showCheckerPrintModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fadeIn">
           <div className="bg-stone-900 border border-teal-500/50 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950 no-print">
               <div className="flex items-center gap-2">
                 <Printer className="w-4 h-4 text-teal-400" />
                 <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
@@ -3337,7 +3433,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
             </div>
 
             {/* Input Manual Label Validasi Laporan (diketik sendiri oleh Checker) */}
-            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2">
+            <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-2 no-print">
               <div className="flex items-center gap-2 text-xs font-mono font-bold text-teal-400">
                 <CheckSquare className="w-4 h-4" />
                 <span>PENGATURAN LABEL VALIDASI LAPORAN (KETIK MANUAL OLEH CHECKER):</span>
@@ -3379,7 +3475,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs">
+            <div className="p-6 overflow-y-auto space-y-4 bg-white text-stone-950 font-sans text-xs printable-report-modal">
               {/* Kop Surat Resmi PT BATU KALI WELANG AMPUH (ETIKA) */}
               <div className="border-b-2 border-stone-950 pb-3 flex justify-between items-center">
                 <div>
@@ -3472,7 +3568,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2.5 p-4 border-t border-stone-800 bg-stone-950">
+            <div className="flex justify-end gap-2.5 p-4 border-t border-stone-800 bg-stone-950 no-print">
               <button
                 type="button"
                 onClick={() => setShowCheckerPrintModal(false)}

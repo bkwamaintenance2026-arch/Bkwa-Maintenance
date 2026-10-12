@@ -21,6 +21,12 @@ service cloud.firestore {
     match /manpower/{manpowerId} {
       allow read, write: if true;
     }
+    match /daily_manpower_logs/{id} {
+      allow read, write: if true;
+    }
+    match /mechanic_work_logs/{id} {
+      allow read, write: if true;
+    }
 
     // Dokumen Breakdown Record & History Perbaikan (Modul 3)
     match /breakdowns/{breakdownId} {

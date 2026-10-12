@@ -142,6 +142,10 @@ export function getDeterministicDocId(collectionName: string, item: any): string
     const no = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return no ? `mwl_${no}` : String(Date.now());
   }
+  if (collectionName === 'daily_manpower_logs') {
+    const no = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return no ? `dml_${no}` : String(Date.now());
+  }
 
   return String(item.id || Date.now());
 }
@@ -713,8 +717,10 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
   // 2. Modul 1: Asset Units
   attachListener('units', 'bkwa_asset_units_v2', 'units');
 
-  // 3. Modul 2: Manpower
+  // 3. Modul 2: Manpower & Sub-Moduls
   attachListener('manpower', 'bkwa_manpower_list_v1', 'manpower');
+  attachListener('daily_manpower_logs', 'bkwa_daily_manpower_logs_v1', 'daily_manpower_logs');
+  attachListener('mechanic_work_logs', 'bkwa_mechanic_work_logs_v1', 'mechanic_work_logs');
 
   // 4. Modul 3: Breakdown
   attachListener('breakdowns', 'bkwa_breakdown_records_v1', 'breakdowns');
