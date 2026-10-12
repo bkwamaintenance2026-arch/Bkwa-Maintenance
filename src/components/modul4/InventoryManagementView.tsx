@@ -23,6 +23,7 @@ import { FuelDistributionSubView } from './FuelDistributionSubView';
 import { OilDistributionSubView } from './OilDistributionSubView';
 import { OutFieldFuelSubView } from './OutFieldFuelSubView';
 import { GreaseSubView } from './GreaseSubView';
+import { ExportFuelOilReportModal } from './ExportFuelOilReportModal';
 import { 
   calculateInventoryStockLevels, 
   calculateFuelSummaryBulanBerjalan, 
@@ -51,7 +52,8 @@ import {
   ArrowRight,
   Pencil,
   Package,
-  Sparkles
+  Sparkles,
+  FileDown
 } from 'lucide-react';
 
 export type FogCategoryColumn = 'ALL' | 'FUEL' | 'OIL' | 'GREASE' | 'SUPPLIER';
@@ -180,6 +182,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [showQuickCapacityModal, setShowQuickCapacityModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportCategoryTarget, setExportCategoryTarget] = useState<
+    'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE'
+  >('ALL');
   const [quickCapacityTarget, setQuickCapacityTarget] = useState<'tangki_utama' | 'fuel_truck'>('tangki_utama');
   const [quickCapacityVal, setQuickCapacityVal] = useState<number>(20000);
 
@@ -475,7 +481,31 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                id="btn-open-export-fuel-oil-pdf"
+                type="button"
+                onClick={() => {
+                  if (activeSubModule === 'fuel_stock') {
+                    setExportCategoryTarget('TANGKI_UTAMA');
+                  } else if (activeSubModule === 'fuel_transfer' || activeSubModule === 'fuel_dist') {
+                    setExportCategoryTarget('FUEL_TRUCK');
+                  } else if (activeSubModule === 'out_field_fuel') {
+                    setExportCategoryTarget('SPBU_LUAR');
+                  } else if (activeSubModule === 'oil_dist' || activeSubModule === 'oil_stock') {
+                    setExportCategoryTarget('OLI_PER_TIPE');
+                  } else {
+                    setExportCategoryTarget('ALL');
+                  }
+                  setShowExportModal(true);
+                }}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
+                title="Download / Cetak Dokumen Laporan Resmi Bahan Bakar & Pelumas (.pdf)"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                <span>Export Laporan PDF</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleOpenBalanceModal}
@@ -857,6 +887,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             manpowerList={manpowerList}
             outFieldFuelRecords={outFieldFuelRecords}
             currentUser={currentUser}
+            onOpenExportPDF={() => {
+              setExportCategoryTarget('SPBU_LUAR');
+              setShowExportModal(true);
+            }}
             onSaveRecord={onSaveOutFieldFuelRecord}
             onDeleteRecord={onDeleteOutFieldFuelRecord}
             standardSolarPrice={standardSolarPrice}
@@ -874,6 +908,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             suppliers={suppliers}
             manpowerList={manpowerList}
             currentUser={currentUser}
+            onOpenExportPDF={() => {
+              setExportCategoryTarget('TANGKI_UTAMA');
+              setShowExportModal(true);
+            }}
             onSave={onSaveFuelStockInput}
             onDelete={onDeleteFuelStockInput}
           />
@@ -888,6 +926,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             standardSolarPrice={standardSolarPrice}
             manpowerList={manpowerList}
             currentUser={currentUser}
+            onOpenExportPDF={() => {
+              setExportCategoryTarget('FUEL_TRUCK');
+              setShowExportModal(true);
+            }}
             onSave={onSaveFuelTransfer}
             onDelete={onDeleteFuelTransfer}
           />
@@ -900,6 +942,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             equipmentList={units}
             manpowerList={manpowerList}
             currentUser={currentUser}
+            onOpenExportPDF={() => {
+              setExportCategoryTarget('FUEL_TRUCK');
+              setShowExportModal(true);
+            }}
             onSave={onSaveFuelDistribution}
             onDelete={onDeleteFuelDistribution}
           />
@@ -927,6 +973,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             manpowerList={manpowerList}
             availableOilTypes={availableOilTypes}
             currentUser={currentUser}
+            onOpenExportPDF={() => {
+              setExportCategoryTarget('OLI_PER_TIPE');
+              setShowExportModal(true);
+            }}
             onSave={onSaveOilDistribution}
             onDelete={onDeleteOilDistribution}
           />
@@ -1187,6 +1237,22 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL EXPORT LAPORAN PDF (SOLAR TANGKI UTAMA, FUEL TRUCK, SPBU LUAR & OLI) */}
+      {/* ========================================================================= */}
+      <ExportFuelOilReportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        fuelStockInputs={fuelStockInputs}
+        fuelTransfers={fuelTransfers}
+        fuelDistributions={fuelDistributions}
+        outFieldFuelRecords={outFieldFuelRecords}
+        oilDistributions={oilDistributions}
+        periodBalance={periodBalance}
+        currentUser={currentUser}
+        defaultCategory={exportCategoryTarget}
+      />
     </div>
   );
 };

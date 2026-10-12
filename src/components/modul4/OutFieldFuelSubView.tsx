@@ -38,7 +38,8 @@ import {
   RotateCcw,
   Sparkles,
   HelpCircle,
-  ArrowRight
+  ArrowRight,
+  FileDown
 } from 'lucide-react';
 
 interface OutFieldFuelSubViewProps {
@@ -46,6 +47,7 @@ interface OutFieldFuelSubViewProps {
   manpowerList: ManpowerData[];
   outFieldFuelRecords: OutFieldFuelRecord[];
   currentUser: UserAccount;
+  onOpenExportPDF?: () => void;
   onSaveRecord: (
     data: Omit<OutFieldFuelRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -73,6 +75,7 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
   onDeleteRecord,
   standardSolarPrice,
   onUpdateSolarPrice,
+  onOpenExportPDF,
 }) => {
   const isDev = isDeveloper(currentUser);
   const canInput = isDev || canUserInsertModule(currentUser, 4);
@@ -604,6 +607,20 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
               >
                 <Download className="w-4 h-4 text-emerald-400" />
                 <span>Export CSV</span>
+              </button>
+            )}
+
+            {/* Export PDF */}
+            {onOpenExportPDF && (
+              <button
+                id="btn-export-pdf-out-field-fuel"
+                type="button"
+                onClick={onOpenExportPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/50 text-xs font-mono font-bold transition shadow-md active:scale-95"
+                title="Export Laporan PDF Pembelian Solar SPBU Luar (PT BATU KALI WELANG AMPUH)"
+              >
+                <FileDown className="w-4 h-4 text-rose-400" />
+                <span>Export PDF</span>
               </button>
             )}
 

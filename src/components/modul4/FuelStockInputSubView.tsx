@@ -29,7 +29,8 @@ import {
   Lock,
   Download,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileDown
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
@@ -41,6 +42,7 @@ interface FuelStockInputSubViewProps {
   suppliers: SupplierRecord[];
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
+  onOpenExportPDF?: () => void;
   onSave: (
     data: Omit<FuelStockInputRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -56,6 +58,7 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
   suppliers,
   manpowerList,
   currentUser,
+  onOpenExportPDF,
   onSave,
   onDelete,
 }) => {
@@ -393,6 +396,19 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
             <Download className="w-4 h-4 text-amber-400" />
             <span>Export CSV</span>
           </button>
+
+          {onOpenExportPDF && (
+            <button
+              id="btn-export-pdf-fuel-stock"
+              type="button"
+              onClick={onOpenExportPDF}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-xs font-mono transition active:scale-95"
+              title="Export Laporan PDF Transaksi Tangki Utama (PT BATU KALI WELANG AMPUH)"
+            >
+              <FileDown className="w-4 h-4 text-amber-400" />
+              <span>Export PDF</span>
+            </button>
+          )}
 
           {canEdit ? (
             <button

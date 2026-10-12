@@ -20,7 +20,8 @@ import {
   CheckCircle2,
   FileText,
   AlertTriangle,
-  Download
+  Download,
+  FileDown
 } from 'lucide-react';
 
 interface OilDistributionSubViewProps {
@@ -29,6 +30,7 @@ interface OilDistributionSubViewProps {
   manpowerList: ManpowerData[];
   availableOilTypes: string[];
   currentUser: UserAccount;
+  onOpenExportPDF?: () => void;
   onSave: (
     data: Omit<OilDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -42,6 +44,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   manpowerList,
   availableOilTypes,
   currentUser,
+  onOpenExportPDF,
   onSave,
   onDelete,
 }) => {
@@ -412,6 +415,19 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
             <Download className="w-4 h-4 text-emerald-400" />
             <span>Export CSV</span>
           </button>
+
+          {onOpenExportPDF && (
+            <button
+              id="btn-export-pdf-oil-distribution"
+              type="button"
+              onClick={onOpenExportPDF}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-bold text-xs font-mono transition active:scale-95"
+              title="Export Laporan PDF Penggunaan Oli Setiap Tipe (PT BATU KALI WELANG AMPUH)"
+            >
+              <FileDown className="w-4 h-4 text-emerald-400" />
+              <span>Export PDF</span>
+            </button>
+          )}
 
           <button
             id="btn-add-oil-distribution"

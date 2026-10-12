@@ -23,7 +23,8 @@ import {
   Warehouse,
   Lock,
   Sparkles,
-  DollarSign
+  DollarSign,
+  FileDown
 } from 'lucide-react';
 import { canUserEdit } from '../../utils/storage';
 
@@ -34,6 +35,7 @@ interface FuelTransferSubViewProps {
   standardSolarPrice?: number;
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
+  onOpenExportPDF?: () => void;
   onSave: (
     data: Omit<FuelTransferRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -48,6 +50,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   standardSolarPrice = 6800,
   manpowerList,
   currentUser,
+  onOpenExportPDF,
   onSave,
   onDelete,
 }) => {
@@ -257,6 +260,19 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
               className="pl-9 pr-3 py-2 bg-stone-950/80 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-500 focus:outline-none focus:border-blue-500/50 w-56 sm:w-64"
             />
           </div>
+
+          {onOpenExportPDF && (
+            <button
+              id="btn-export-pdf-fuel-transfer"
+              type="button"
+              onClick={onOpenExportPDF}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-300 font-bold text-xs font-mono transition active:scale-95"
+              title="Export Laporan PDF Transaksi Transfer Fuel Truck (PT BATU KALI WELANG AMPUH)"
+            >
+              <FileDown className="w-4 h-4 text-blue-400" />
+              <span>Export PDF</span>
+            </button>
+          )}
 
           {canEdit ? (
             <button

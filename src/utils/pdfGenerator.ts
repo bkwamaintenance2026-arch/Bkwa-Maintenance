@@ -1,6 +1,17 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { BreakdownRecord, BreakdownPartJasaItem, P2HRecord, UserAccount } from '../types';
+import { 
+  BreakdownRecord, 
+  BreakdownPartJasaItem, 
+  P2HRecord, 
+  UserAccount,
+  FuelStockInputRecord,
+  FuelTransferRecord,
+  FuelDistributionRecord,
+  OutFieldFuelRecord,
+  OilDistributionRecord,
+  InventoryPeriodBalance
+} from '../types';
 import { ReportSignatories } from './reportSignatories';
 
 /**
@@ -855,5 +866,834 @@ export const exportDetailHistoryToPDF = (
 
   const cleanUnit = (selectedUnit || 'Semua_Unit').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Laporan_Detail_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${cleanUnit}_${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+};
+
+export interface ExportFuelOilReportParams {
+  startDate?: string;
+  endDate?: string;
+  reportCategory?: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE';
+  petugasChecker: string;
+  kttName: string;
+  currentUser?: UserAccount;
+  fuelStockInputs: FuelStockInputRecord[];
+  fuelTransfers: FuelTransferRecord[];
+  fuelDistributions: FuelDistributionRecord[];
+  outFieldFuelRecords: OutFieldFuelRecord[];
+  oilDistributions: OilDistributionRecord[];
+  periodBalance?: InventoryPeriodBalance;
+}
+
+/**
+ * Utility Resmi untuk Mengekspor Laporan Rekapitulasi:
+ * 1. Transaksi Tangki Utama (Solar Masuk & Transfer)
+ * 2. Transaksi Fuel Truck (Distribusi Solar ke Unit)
+ * 3. Pembelian Solar di Luar (SPBU Luar / Out-Field Fuel)
+ * 4. Penggunaan Oli Setiap Tipe
+ * 
+ * Dilengkapi Filter Tanggal, Ringkasan Eksekutif, dan Format 2 Tanda Tangan:
+ * - Kiri: Petugas Checker Tambang (Checker Lapangan / Tallyman)
+ * - Kanan: Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT)
+ */
+export const exportFuelOilTransactionsToPDF = ({
+  startDate,
+  endDate,
+  reportCategory = 'ALL',
+  petugasChecker,
+  kttName,
+  currentUser,
+  fuelStockInputs = [],
+  fuelTransfers = [],
+  fuelDistributions = [],
+  outFieldFuelRecords = [],
+  oilDistributions = [],
+  periodBalance,
+}: ExportFuelOilReportParams) => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const nowStr = new Date().toLocaleString('id-ID');
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Admin FOG / Maintenance';
+
+  // Helper filter tanggal
+  const matchDate = (tgl?: string) => {
+    if (!tgl) return true;
+    const cleanTgl = tgl.trim().split('T')[0];
+    if (startDate && cleanTgl < startDate) return false;
+    if (endDate && cleanTgl > endDate) return false;
+    return true;
+  };
+
+  // 1. Filter data berdasarkan rentang tanggal
+  const filteredStockInputs = fuelStockInputs.filter((item) => matchDate(item.tanggal));
+  const filteredTransfers = fuelTransfers.filter((item) => matchDate(item.tanggal));
+  const filteredDistributions = fuelDistributions.filter((item) => matchDate(item.tanggal));
+  const filteredOutField = outFieldFuelRecords.filter((item) => matchDate(item.tanggal));
+  const filteredOilDist = oilDistributions.filter((item) => matchDate(item.tanggal));
+
+  // 2. Kalkulasi Metrik Utama
+  const totalMasukTangki = filteredStockInputs.reduce(
+    (acc, r) => acc + (Number(r.actualQtyFlowmeter) || Number(r.qtySupplier) || 0),
+    0
+  );
+  const totalTransferFT = filteredTransfers.reduce((acc, r) => acc + (Number(r.qty) || 0), 0);
+  const totalDistribusiFT = filteredDistributions.reduce((acc, r) => acc + (Number(r.qty) || 0), 0);
+  const totalOutFieldLiter = filteredOutField.reduce((acc, r) => acc + (Number(r.jmlLtr) || 0), 0);
+  const totalOutFieldNominal = filteredOutField.reduce(
+    (acc, r) => acc + (Number(r.totalNominal) || Number(r.nominalFuelSetelahPembulatan) || 0),
+    0
+  );
+  const totalKonsumsiSolarQuarry = totalDistribusiFT + totalOutFieldLiter;
+
+  // Rekapitulasi Oli per Tipe
+  const oliPerTipeMap = new Map<string, { totalLiter: number; count: number }>();
+  filteredOilDist.forEach((r) => {
+    const tipe = (r.jenisOli || 'LAINNYA').trim();
+    const cur = oliPerTipeMap.get(tipe) || { totalLiter: 0, count: 0 };
+    cur.totalLiter += Number(r.qty) || 0;
+    cur.count += 1;
+    oliPerTipeMap.set(tipe, cur);
+  });
+  const totalSemuaOliLiter = Array.from(oliPerTipeMap.values()).reduce((acc, v) => acc + v.totalLiter, 0);
+
+  // Label Rentang Tanggal
+  let periodeLabel = 'Semua Periode Data';
+  if (startDate && endDate) {
+    periodeLabel = startDate === endDate ? `${startDate}` : `${startDate} s/d ${endDate}`;
+  } else if (startDate) {
+    periodeLabel = `Mulai ${startDate}`;
+  } else if (endDate) {
+    periodeLabel = `Sampai ${endDate}`;
+  }
+
+  // Label Kategori
+  const categoryLabels: Record<string, string> = {
+    ALL: 'Semua Kategori (Tangki Utama, Fuel Truck, SPBU Luar & Oli)',
+    TANGKI_UTAMA: 'Khusus Transaksi Tangki Utama Solar',
+    FUEL_TRUCK: 'Khusus Transaksi Tangki Fuel Truck FT-01',
+    SPBU_LUAR: 'Khusus Pembelian Solar SPBU Luar',
+    OLI_PER_TIPE: 'Khusus Penggunaan Oli Setiap Tipe',
+  };
+  const kategoriLabel = categoryLabels[reportCategory] || 'Semua Kategori';
+
+  // Warna Dokumen
+  const primaryColor: [number, number, number] = [180, 83, 9]; // Amber-700
+  const darkTextColor: [number, number, number] = [30, 41, 59]; // Slate-800
+  const grayTextColor: [number, number, number] = [100, 116, 139]; // Slate-500
+
+  // ==========================================
+  // HEADER KOP SURAT
+  // ==========================================
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text('PT BATU KALI WELANG AMPUH • DIVISI MAINTENANCE & OPERASIONAL', 14, 11);
+  doc.text('SITE QUARRY PURWOSARI - PASURUAN', 283, 11, { align: 'right' });
+
+  // Company Name
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(...primaryColor);
+  doc.text('LAPORAN TRANSAKSI BAHAN BAKAR & PELUMAS (FOG)', 148.5, 17, { align: 'center' });
+
+  // Report Subtitle
+  doc.setFontSize(9);
+  doc.setTextColor(...darkTextColor);
+  doc.text(
+    'REKAPITULASI PEMAKAIAN SOLAR (TANGKI UTAMA & FUEL TRUCK), PEMBELIAN SPBU LUAR & PENGGUNAAN OLI PER TIPE',
+    148.5,
+    22,
+    { align: 'center' }
+  );
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(
+    `Periode Data: ${periodeLabel}  |  Kategori: ${kategoriLabel}  |  Waktu Cetak: ${nowStr}  |  Operator: ${exporterName}`,
+    148.5,
+    27,
+    { align: 'center' }
+  );
+
+  // Divider Line
+  doc.setDrawColor(203, 213, 225);
+  doc.setLineWidth(0.5);
+  doc.line(14, 29.5, 283, 29.5);
+
+  // ==========================================
+  // RINGKASAN EKSEKUTIF (EXECUTIVE KPI SUMMARY)
+  // ==========================================
+  autoTable(doc, {
+    startY: 31.5,
+    head: [
+      [
+        'Total Solar Masuk (Tangki)',
+        'Solar Transfer ke FT',
+        'Distribusi Solar ke Unit (FT)',
+        'Pembelian Solar di Luar',
+        'Total Solar Quarry (FT + SPBU)',
+        'Total Penggunaan Oli',
+      ],
+    ],
+    body: [
+      [
+        `${totalMasukTangki.toLocaleString('id-ID')} Liter\n(${filteredStockInputs.length} Penerimaan)`,
+        `${totalTransferFT.toLocaleString('id-ID')} Liter\n(${filteredTransfers.length} Transfer)`,
+        `${totalDistribusiFT.toLocaleString('id-ID')} Liter\n(${filteredDistributions.length} Bon Unit)`,
+        `${totalOutFieldLiter.toLocaleString('id-ID')} Liter\nRp ${totalOutFieldNominal.toLocaleString('id-ID')}`,
+        `${totalKonsumsiSolarQuarry.toLocaleString('id-ID')} Liter\nTotal Konsumsi Fleet`,
+        `${totalSemuaOliLiter.toLocaleString('id-ID')} Liter\n(${filteredOilDist.length} Bon, ${oliPerTipeMap.size} Varian)`,
+      ],
+    ],
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [248, 250, 252],
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      fontStyle: 'bold',
+      halign: 'center',
+      textColor: [15, 23, 42],
+      cellPadding: 2.5,
+      fillColor: [248, 250, 252],
+    },
+    styles: {
+      lineColor: [203, 213, 225],
+      lineWidth: 0.3,
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // @ts-ignore
+  let curY = doc.lastAutoTable.finalY + 5;
+
+  // Helper untuk cek kebutuhan addPage
+  const ensurePageSpace = (neededHeight: number) => {
+    if (curY + neededHeight > 195) {
+      doc.addPage();
+      curY = 14;
+    }
+  };
+
+  // =========================================================================
+  // 1. SECTION: TRANSAKSI TANGKI UTAMA (PENERIMAAN DARI SUPPLIER & TRANSFER KE FT)
+  // =========================================================================
+  if (reportCategory === 'ALL' || reportCategory === 'TANGKI_UTAMA') {
+    ensurePageSpace(18);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(180, 83, 9); // Amber
+    doc.text(
+      `1. TRANSAKSI TANGKI UTAMA (SOLAR) • PENERIMAAN SUPPLIER (${filteredStockInputs.length} Transaksi) & TRANSFER KE FT (${filteredTransfers.length} Transaksi)`,
+      14,
+      curY
+    );
+
+    // Tabel 1A: Riwayat Masuk Tangki Utama dari Supplier
+    const stockRows =
+      filteredStockInputs.length > 0
+        ? filteredStockInputs.map((r, idx) => [
+            idx + 1,
+            `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+            r.snReffNo || '-',
+            r.distributor || '-',
+            `${r.platNomor || '-'}\n${r.driverName || '-'}`,
+            (Number(r.qtySupplier) || 0).toLocaleString('id-ID'),
+            (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
+            (Number(r.flowmeterEnd) || 0).toLocaleString('id-ID'),
+            (Number(r.actualQtyFlowmeter) || Number(r.qtySupplier) || 0).toLocaleString('id-ID'),
+            r.hasilUkurStickSebelum || r.hasilUkurTangkiUtama || '-',
+            r.picFogName || '-',
+            r.remark || '-',
+          ])
+        : [
+            [
+              {
+                content: 'Tidak ada data penerimaan solar tangki utama pada periode ini.',
+                colSpan: 12,
+                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+              },
+            ],
+          ];
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Tanggal & Jam',
+          'No DO / Reff',
+          'Supplier / Vendor',
+          'No Plat / Driver',
+          'Qty DO (L)',
+          'FM Start',
+          'FM End',
+          'Actual (L)',
+          'Level Sounding',
+          'PIC FOG',
+          'Catatan / Remark',
+        ],
+      ],
+      body: stockRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [180, 83, 9],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 24, halign: 'center' },
+        2: { cellWidth: 24, fontStyle: 'bold' },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 26 },
+        5: { cellWidth: 18, halign: 'right' },
+        6: { cellWidth: 18, halign: 'right' },
+        7: { cellWidth: 18, halign: 'right' },
+        8: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [180, 83, 9] },
+        9: { cellWidth: 22, halign: 'center' },
+        10: { cellWidth: 24 },
+        11: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 4;
+
+    // Tabel 1B: Transfer Tangki Utama ke Fuel Truck
+    ensurePageSpace(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(37, 99, 235); // Blue
+    doc.text(`Penyaluran Transfer: Tangki Utama -> Fuel Truck FT-01 (${filteredTransfers.length} Transaksi)`, 14, curY);
+
+    const transferRows =
+      filteredTransfers.length > 0
+        ? filteredTransfers.map((r, idx) => [
+            idx + 1,
+            `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+            r.namaDriverFt || '-',
+            r.picFog || '-',
+            (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
+            (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
+            (Number(r.qty) || 0).toLocaleString('id-ID'),
+            r.remark || '-',
+          ])
+        : [
+            [
+              {
+                content: 'Tidak ada data transfer solar dari tangki utama ke FT pada periode ini.',
+                colSpan: 8,
+                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+              },
+            ],
+          ];
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Tanggal & Jam',
+          'Driver Fuel Truck',
+          'PIC FOG',
+          'Flowmeter Start',
+          'Flowmeter Stop',
+          'Qty Transfer (Ltr)',
+          'Catatan / Keterangan',
+        ],
+      ],
+      body: transferRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [37, 99, 235],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 26, halign: 'center' },
+        2: { cellWidth: 42, fontStyle: 'bold' },
+        3: { cellWidth: 38 },
+        4: { cellWidth: 28, halign: 'right' },
+        5: { cellWidth: 28, halign: 'right' },
+        6: { cellWidth: 32, halign: 'right', fontStyle: 'bold', textColor: [37, 99, 235] },
+        7: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // =========================================================================
+  // 2. SECTION: TRANSAKSI TANGKI FUEL TRUCK (FT-01) - DISTRIBUSI KE UNIT
+  // =========================================================================
+  if (reportCategory === 'ALL' || reportCategory === 'FUEL_TRUCK') {
+    ensurePageSpace(18);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(234, 88, 12); // Orange
+    doc.text(
+      `2. TRANSAKSI TANGKI FUEL TRUCK (FT-01) • PENGISIAN KE UNIT ALAT BERAT & DUMP TRUCK (${filteredDistributions.length} Transaksi, Total: ${totalDistribusiFT.toLocaleString('id-ID')} Liter)`,
+      14,
+      curY
+    );
+
+    const distRows =
+      filteredDistributions.length > 0
+        ? filteredDistributions.map((r, idx) => [
+            idx + 1,
+            `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+            r.noBon || '-',
+            r.cnAlat || '-',
+            r.namaAlat || '-',
+            `${r.operatorName || '-'}${r.operatorJabatan ? ` (${r.operatorJabatan})` : ''}`,
+            (Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID'),
+            (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
+            (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
+            (Number(r.qty) || 0).toLocaleString('id-ID'),
+            r.driverFtName || r.picFogName || '-',
+            r.lokasi || r.remark || '-',
+          ])
+        : [
+            [
+              {
+                content: 'Tidak ada data transaksi distribusi solar fuel truck ke unit pada periode ini.',
+                colSpan: 12,
+                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+              },
+            ],
+          ];
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Tanggal & Jam',
+          'No Bon',
+          'CN Unit',
+          'Nama Alat Berat',
+          'Operator / Penerima',
+          'HM Unit',
+          'FM Start',
+          'FM Stop',
+          'Qty (Ltr)',
+          'Driver FT / PIC',
+          'Lokasi / Remark',
+        ],
+      ],
+      body: distRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [234, 88, 12],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 24, halign: 'center' },
+        2: { cellWidth: 20, fontStyle: 'bold' },
+        3: { cellWidth: 20, fontStyle: 'bold', textColor: [234, 88, 12] },
+        4: { cellWidth: 32 },
+        5: { cellWidth: 34 },
+        6: { cellWidth: 16, halign: 'right' },
+        7: { cellWidth: 18, halign: 'right' },
+        8: { cellWidth: 18, halign: 'right' },
+        9: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [234, 88, 12] },
+        10: { cellWidth: 26 },
+        11: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // =========================================================================
+  // 3. SECTION: PEMBELIAN SOLAR DI LUAR (SPBU LUAR / OUT-FIELD FUEL)
+  // =========================================================================
+  if (reportCategory === 'ALL' || reportCategory === 'SPBU_LUAR') {
+    ensurePageSpace(18);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(225, 29, 72); // Rose
+    doc.text(
+      `3. PEMBELIAN SOLAR DI LUAR (SPBU LUAR / OUT-FIELD FUEL) • ${filteredOutField.length} Transaksi (Total: ${totalOutFieldLiter.toLocaleString('id-ID')} Liter, Nilai: Rp ${totalOutFieldNominal.toLocaleString('id-ID')})`,
+      14,
+      curY
+    );
+
+    const outFieldRows =
+      filteredOutField.length > 0
+        ? filteredOutField.map((r, idx) => [
+            idx + 1,
+            `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+            r.noTransaksi || '-',
+            r.kodeSpbu || '-',
+            r.cnNew || '-',
+            r.namaAlat || '-',
+            r.jenisAlat || '-',
+            (Number(r.jmlLtr) || 0).toLocaleString('id-ID'),
+            `Rp ${(Number(r.hargaSolarPerLiter) || 6800).toLocaleString('id-ID')}`,
+            `Rp ${(Number(r.nominalFuelSetelahPembulatan) || Number(r.nominalPembelianFuel) || 0).toLocaleString('id-ID')}`,
+            `Rp ${(Number(r.totalNominal) || 0).toLocaleString('id-ID')}`,
+            r.job || (r.ritaseTotal ? `${r.ritaseTotal} Rit` : '-'),
+            r.lainLain || '-',
+          ])
+        : [
+            [
+              {
+                content: 'Tidak ada data transaksi pembelian solar di SPBU luar pada periode ini.',
+                colSpan: 13,
+                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+              },
+            ],
+          ];
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Tanggal & Jam',
+          'No Transaksi',
+          'Kode SPBU',
+          'CN Unit',
+          'Nama Alat',
+          'Jenis Alat',
+          'Liter (L)',
+          'Harga/Ltr',
+          'Nominal Solar',
+          'Total Biaya (Rp)',
+          'Job / Ritase',
+          'Catatan / Lain-lain',
+        ],
+      ],
+      body: outFieldRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [225, 29, 72],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 24, halign: 'center' },
+        2: { cellWidth: 20, fontStyle: 'bold' },
+        3: { cellWidth: 18 },
+        4: { cellWidth: 18, fontStyle: 'bold', textColor: [225, 29, 72] },
+        5: { cellWidth: 26 },
+        6: { cellWidth: 22 },
+        7: { cellWidth: 16, halign: 'right', fontStyle: 'bold' },
+        8: { cellWidth: 18, halign: 'right' },
+        9: { cellWidth: 24, halign: 'right' },
+        10: { cellWidth: 26, halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] },
+        11: { cellWidth: 24 },
+        12: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // =========================================================================
+  // 4. SECTION: PENGGUNAAN OLI SETIAP TIPE (REKAPITULASI & RINCIAN)
+  // =========================================================================
+  if (reportCategory === 'ALL' || reportCategory === 'OLI_PER_TIPE') {
+    ensurePageSpace(18);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(16, 185, 129); // Emerald
+    doc.text(
+      `4. PENGGUNAAN OLI SETIAP TIPE • REKAPITULASI PER TIPE & RINCIAN DISTRIBUSI KE UNIT (${filteredOilDist.length} Bon, Total: ${totalSemuaOliLiter.toLocaleString('id-ID')} Liter)`,
+      14,
+      curY
+    );
+
+    // 4A: Tabel Rekapitulasi per Tipe Oli
+    const oliSummaryRows = Array.from(oliPerTipeMap.entries()).map(([tipe, val], idx) => {
+      const persentase = totalSemuaOliLiter > 0 ? ((val.totalLiter / totalSemuaOliLiter) * 100).toFixed(1) : '0';
+      return [
+        idx + 1,
+        tipe,
+        `${val.totalLiter.toLocaleString('id-ID')} Liter`,
+        `${val.count} Bon Transaksi`,
+        `${persentase} %`,
+        'Terdistribusi',
+      ];
+    });
+
+    if (oliSummaryRows.length === 0) {
+      oliSummaryRows.push([
+        {
+          content: 'Tidak ada data pengeluaran oli pada periode ini.',
+          colSpan: 6,
+          styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+        } as any,
+      ]);
+    } else {
+      // Baris Total
+      oliSummaryRows.push([
+        '',
+        'TOTAL PENGGUNAAN KESELURUHAN OLI',
+        `${totalSemuaOliLiter.toLocaleString('id-ID')} Liter`,
+        `${filteredOilDist.length} Bon Transaksi`,
+        '100 %',
+        'Semua Varian',
+      ]);
+    }
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Nama / Jenis Tipe Oli',
+          'Total Volume Digunakan (Liter)',
+          'Frekuensi Bon',
+          'Persentase Beban',
+          'Keterangan',
+        ],
+      ],
+      body: oliSummaryRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [5, 150, 105],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 7,
+        cellPadding: 1.6,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 70, fontStyle: 'bold' },
+        2: { cellWidth: 50, halign: 'right', fontStyle: 'bold', textColor: [5, 150, 105] },
+        3: { cellWidth: 40, halign: 'center' },
+        4: { cellWidth: 35, halign: 'center' },
+        5: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 4;
+
+    // 4B: Tabel Rincian Distribusi Bon Oli ke Unit
+    ensurePageSpace(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(5, 150, 105);
+    doc.text(`Rincian Bon Pengeluaran Oli ke Unit Alat Berat & Workshop (${filteredOilDist.length} Transaksi)`, 14, curY);
+
+    const oilDetailRows =
+      filteredOilDist.length > 0
+        ? filteredOilDist.map((r, idx) => [
+            idx + 1,
+            `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+            r.noBon || '-',
+            r.noUnit || '-',
+            r.namaAlat || r.namaUnit || '-',
+            (Number(r.hmUnit) || 0).toLocaleString('id-ID'),
+            r.jenisOli || '-',
+            (Number(r.qty) || 0).toLocaleString('id-ID'),
+            r.rincianKerusakan || '-',
+            r.picMekanik || '-',
+            r.picGudangMaterial || '-',
+          ])
+        : [
+            [
+              {
+                content: 'Tidak ada data rincian pengeluaran oli pada periode ini.',
+                colSpan: 11,
+                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+              },
+            ],
+          ];
+
+    autoTable(doc, {
+      startY: curY + 2,
+      head: [
+        [
+          'No',
+          'Tanggal & Jam',
+          'No Bon',
+          'CN Unit',
+          'Nama Alat Berat',
+          'HM Unit',
+          'Jenis / Tipe Oli',
+          'Qty (Ltr)',
+          'Rincian Kerusakan / Kompartemen',
+          'PIC Mekanik',
+          'PIC Gudang',
+        ],
+      ],
+      body: oilDetailRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [16, 185, 129],
+        textColor: [255, 255, 255],
+        fontSize: 7,
+        fontStyle: 'bold',
+        halign: 'center',
+        cellPadding: 1.8,
+      },
+      styles: {
+        fontSize: 6.8,
+        cellPadding: 1.5,
+        textColor: [30, 41, 59],
+        lineColor: [226, 232, 240],
+        lineWidth: 0.2,
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 24, halign: 'center' },
+        2: { cellWidth: 20, fontStyle: 'bold' },
+        3: { cellWidth: 20, fontStyle: 'bold', textColor: [5, 150, 105] },
+        4: { cellWidth: 32 },
+        5: { cellWidth: 16, halign: 'right' },
+        6: { cellWidth: 34, fontStyle: 'bold' },
+        7: { cellWidth: 18, halign: 'right', fontStyle: 'bold', textColor: [5, 150, 105] },
+        8: { cellWidth: 42 },
+        9: { cellWidth: 26 },
+        10: { cellWidth: 'auto' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // @ts-ignore
+    curY = doc.lastAutoTable.finalY + 6;
+  }
+
+  // =========================================================================
+  // 5. FORMAT TANDA TANGAN (2 PIHAK PENGESAHAN SESUAI PERMINTAAN USER):
+  // - Petugas Checker Tambang (Kiri — Checker Lapangan / Tallyman)
+  // - Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT) (Kanan — KTT)
+  // =========================================================================
+  if (curY > 162) {
+    doc.addPage();
+    curY = 20;
+  }
+
+  const checkerClean = (petugasChecker || '').trim() || '....................................';
+  const kttClean = (kttName || '').trim() || '....................................';
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...darkTextColor);
+
+  // Kolom Kiri: Petugas Checker Tambang
+  doc.text('Petugas Checker Tambang (Checker Lapangan / Tallyman):', 70, curY + 4, { align: 'center' });
+  doc.line(35, curY + 22, 105, curY + 22);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`( ${checkerClean} )`, 70, curY + 26, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Checker Tambang / Petugas FOG Lapangan', 70, curY + 30, { align: 'center' });
+
+  // Kolom Kanan: Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT)
+  doc.setFontSize(8.5);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Mengetahui & Menyetujui:', 227, curY + 4, { align: 'center' });
+  doc.setFont('helvetica', 'bold');
+  doc.text('Kepala Tehnik Tambang (KTT)', 227, curY + 8, { align: 'center' });
+  doc.line(192, curY + 22, 262, curY + 22);
+  doc.setFontSize(9);
+  doc.text(`( ${kttClean} )`, 227, curY + 26, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kepala Tehnik Tambang (KTT)', 227, curY + 30, { align: 'center' });
+
+  // ==========================================
+  // FOOTER HALAMAN OTOMATIS
+  // ==========================================
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH • Laporan Transaksi Bahan Bakar & Pelumas (${periodeLabel}) • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      203,
+      { align: 'center' }
+    );
+  }
+
+  // Simpan File PDF
+  const cleanStartDate = (startDate || 'Awal').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanEndDate = (endDate || 'Akhir').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Laporan_Transaksi_Fuel_Oli_PT_BKWA_${cleanStartDate}_sd_${cleanEndDate}.pdf`;
   doc.save(filename);
 };

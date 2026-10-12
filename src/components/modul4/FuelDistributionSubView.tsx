@@ -27,7 +27,8 @@ import {
   MapPin,
   Sparkles,
   RotateCcw,
-  Download
+  Download,
+  FileDown
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 
@@ -36,6 +37,7 @@ interface FuelDistributionSubViewProps {
   equipmentList: (HeavyEquipment | AssetUnit)[];
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
+  onOpenExportPDF?: () => void;
   onSave: (
     data: Omit<FuelDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -48,6 +50,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   equipmentList,
   manpowerList,
   currentUser,
+  onOpenExportPDF,
   onSave,
   onDelete,
 }) => {
@@ -458,6 +461,19 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             <Download className="w-4 h-4 text-orange-400" />
             <span>Export CSV</span>
           </button>
+
+          {onOpenExportPDF && (
+            <button
+              id="btn-export-pdf-fuel-distribution"
+              type="button"
+              onClick={onOpenExportPDF}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-xs font-mono transition active:scale-95"
+              title="Export Laporan PDF Distribusi Fuel Truck ke Unit (PT BATU KALI WELANG AMPUH)"
+            >
+              <FileDown className="w-4 h-4 text-orange-400" />
+              <span>Export PDF</span>
+            </button>
+          )}
 
           <button
             id="btn-add-fuel-distribution"
