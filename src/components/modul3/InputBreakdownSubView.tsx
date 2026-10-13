@@ -60,9 +60,22 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     new Set(units.map((u) => u.jenis).filter((j) => Boolean(j && j.trim())))
   );
 
+  // Helper jam 24 jam Indonesia saat ini (HH:mm)
+  const getCurrent24HourTime = (): string => {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  };
+
+  // Pilihan Jam (00 - 23) dan Menit (00 - 59) sederhana format 24 jam
+  const JAM_24_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+  const MENIT_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
   // Form State
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
+    jamBreakdown: getCurrent24HourTime(),
     hm: '',
     jenis: '',
     noUnit: '',
@@ -75,6 +88,14 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     statusUnit: 'BREAKDOWN' as BreakdownStatusUnitOption,
     progress: 'On Progress' as BreakdownProgressOption,
   });
+
+  // Nilai Jam dan Menit yang saat ini terpilih pada dropdown 24 jam (format Indonesia HH:mm)
+  const [selectedHour, selectedMinute] = useMemo(() => {
+    const parts = (formData.jamBreakdown || '07:35').split(':');
+    const h = parts[0] ? parts[0].padStart(2, '0') : '07';
+    const m = parts[1] ? parts[1].padStart(2, '0') : '35';
+    return [h, m];
+  }, [formData.jamBreakdown]);
 
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error' | null;
@@ -162,6 +183,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   const handleResetForm = () => {
     setFormData({
       tanggal: new Date().toISOString().split('T')[0],
+      jamBreakdown: getCurrent24HourTime(),
       hm: '',
       jenis: '',
       noUnit: '',
@@ -191,6 +213,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
     const payload = {
       tanggal: formData.tanggal || new Date().toISOString().split('T')[0],
+      jamBreakdown: formData.jamBreakdown ? formData.jamBreakdown.trim() : getCurrent24HourTime(),
       hm: formData.hm ? Number(formData.hm) || formData.hm : '',
       jenis: formData.jenis.trim(),
       noUnit: formData.noUnit.trim(),
@@ -313,6 +336,85 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   <Calendar className="w-4 h-4 text-stone-400 absolute right-3 top-3 pointer-events-none" />
                 </div>
                 <p className="text-[10px] text-stone-500 mt-1">Tanggal unit mulai breakdown</p>
+              </div>
+
+              {/* Jam Breakdown (Model Dropdown 24 Jam Indonesia - Sederhana) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Jam Breakdown <span className="text-amber-400">*</span></span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, jamBreakdown: '07:35' }))}
+                      className="text-[10px] font-mono text-stone-300 hover:text-amber-300 font-bold transition px-1.5 py-0.5 rounded bg-stone-800 border border-stone-700 hover:border-amber-500/40 active:scale-95 cursor-pointer"
+                      title="Set contoh jam 07:35"
+                    >
+                      07:35
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData((prev) => ({ ...prev, jamBreakdown: getCurrent24HourTime() }))}
+                      className="text-[10px] font-mono text-amber-400 hover:text-amber-300 font-bold transition px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 active:scale-95 cursor-pointer"
+                      title="Set ke jam saat ini"
+                    >
+                      Jam Sekarang
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dropdown Container: Jam (00 - 23) dan Menit (00 - 59) */}
+                <div className="flex items-center gap-2 bg-stone-800/90 border border-stone-700 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-amber-500">
+                  <span className="text-xs font-mono font-bold text-stone-400 pl-1">Jam</span>
+
+                  {/* Dropdown Pilihan Jam (00 s/d 23) */}
+                  <div className="flex-1">
+                    <select
+                      id="field-breakdown-jam-hour"
+                      value={selectedHour}
+                      onChange={(e) => {
+                        const newH = e.target.value;
+                        const m = selectedMinute || '00';
+                        setFormData((prev) => ({ ...prev, jamBreakdown: `${newH}:${m}` }));
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-stone-100 text-center focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {JAM_24_OPTIONS.map((h) => (
+                        <option key={h} value={h}>
+                          {h}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <span className="font-mono font-black text-amber-400 text-sm">:</span>
+
+                  {/* Dropdown Pilihan Menit (00 s/d 59) */}
+                  <div className="flex-1">
+                    <select
+                      id="field-breakdown-jam-minute"
+                      value={selectedMinute}
+                      onChange={(e) => {
+                        const newM = e.target.value;
+                        const h = selectedHour || '07';
+                        setFormData((prev) => ({ ...prev, jamBreakdown: `${h}:${newM}` }));
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-stone-100 text-center focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      {MENIT_OPTIONS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <p className="text-[11px] font-mono text-stone-400 mt-1">
+                  Jam: <strong className="text-amber-300 font-bold">{formData.jamBreakdown || '07:35'}</strong>
+                </p>
               </div>
 
               {/* HM (Hours Meter) */}
@@ -745,7 +847,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               <thead className="bg-stone-950/80 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
                 <tr>
                   <th className="px-3 py-3">No. Maintenance Order</th>
-                  <th className="px-3 py-3">Tanggal</th>
+                  <th className="px-3 py-3">Tanggal &amp; Waktu</th>
                   <th className="px-3 py-3">Jenis</th>
                   <th className="px-3 py-3">No Unit (CN New)</th>
                   <th className="px-3 py-3">Nama Alat (No Lama)</th>
@@ -762,7 +864,14 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                     <td className="px-3 py-3 font-bold text-amber-400 whitespace-nowrap">
                       {b.noMaintenanceOrder || b.noNotifikasi}
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-stone-300">{b.tanggal}</td>
+                    <td className="px-3 py-3 whitespace-nowrap text-stone-300">
+                      <div>{b.tanggal}</div>
+                      {b.jamBreakdown && (
+                        <div className="text-[10px] font-mono text-amber-400 font-bold mt-0.5">
+                          Jam {b.jamBreakdown}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-stone-300 font-sans">{b.jenis || '-'}</td>
                     <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">{b.noUnit}</td>
                     <td className="px-3 py-3 text-stone-400 whitespace-nowrap">{b.namaAlat || b.noLama || '-'}</td>
@@ -866,8 +975,10 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
             <div className="mt-4 space-y-4 text-xs font-mono">
               <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-stone-950/60 border border-stone-800">
                 <div>
-                  <span className="text-stone-500 block text-[10px]">TANGGAL MULAI:</span>
-                  <span className="text-stone-200 font-bold">{viewingRecord.tanggal}</span>
+                  <span className="text-stone-500 block text-[10px]">TANGGAL &amp; JAM BREAKDOWN:</span>
+                  <span className="text-stone-200 font-bold">
+                    {viewingRecord.tanggal} {viewingRecord.jamBreakdown ? `Jam ${viewingRecord.jamBreakdown}` : ''}
+                  </span>
                 </div>
                 <div>
                   <span className="text-stone-500 block text-[10px]">HM (HOURS METER):</span>

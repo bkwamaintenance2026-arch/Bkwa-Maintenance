@@ -437,8 +437,10 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                 <span className="text-stone-200 font-bold">{currentActiveRecord.noUnit} ({currentActiveRecord.jenis || '-'})</span>
               </div>
               <div>
-                <span className="text-stone-500 block text-[10px]">NO LAMA:</span>
-                <span className="text-stone-300">{currentActiveRecord.noLama || '-'}</span>
+                <span className="text-stone-500 block text-[10px]">TANGGAL &amp; JAM BREAKDOWN:</span>
+                <span className="text-stone-300 font-bold">
+                  {currentActiveRecord.tanggal} {currentActiveRecord.jamBreakdown ? `Jam ${currentActiveRecord.jamBreakdown}` : ''}
+                </span>
               </div>
               <div>
                 <span className="text-stone-500 block text-[10px]">KOMPONEN RUSAK:</span>

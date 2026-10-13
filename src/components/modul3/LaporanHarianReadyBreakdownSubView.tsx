@@ -30,11 +30,12 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
-  Users
+  Users,
 } from 'lucide-react';
 import { PartRequirementModal } from './PartRequirementModal';
-import { exportDailyBreakdownToPDF } from '../../utils/pdfGenerator';
+import { exportDailyBreakdownToPDF, generateDailyBreakdownPDF } from '../../utils/pdfGenerator';
 import { resolveReportSignatories } from '../../utils/reportSignatories';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
 interface LaporanHarianReadyBreakdownSubViewProps {
   units: AssetUnit[];
@@ -537,6 +538,40 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     }, 1000);
   };
 
+  // State untuk Pratinjau Dokumen PDF Resmi
+  const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // Handler Pratinjau PDF Sebelum Download
+  const handlePreviewPDF = () => {
+    if (!canExport) {
+      alert('Akses Ditolak: Anda tidak memiliki izin ekspor laporan.');
+      return;
+    }
+
+    try {
+      const result = generateDailyBreakdownPDF({
+        selectedDate,
+        formattedDate: formattedSelectedDate,
+        totalMaster: totalUnitMaster,
+        readyCount: totalReadyCount,
+        breakdownCount: totalBreakdownCount,
+        availabilityRate,
+        breakdownList: breakdownUnitsList,
+        readyList: readyUnitsFromP2H,
+        currentUser,
+        signatories,
+      });
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating PDF with jsPDF, falling back to print modal', e);
+      setShowPrintModal(true);
+    }
+  };
+
   // Handler Export PDF: Meng-generate file PDF resmi PT BATU KALI WELANG AMPUH untuk dikirim ke Head Office
   const handleExportPDF = () => {
     if (!canExport) {
@@ -586,6 +621,18 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
         <div className="flex flex-wrap items-center gap-2">
           {canExport ? (
             <>
+              {/* Tombol Pratinjau PDF Sebelum Download */}
+              <button
+                id="btn-preview-pdf-laporan-harian"
+                type="button"
+                onClick={handlePreviewPDF}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold font-mono transition shadow active:scale-95 cursor-pointer"
+                title="Buka Pratinjau (Preview) PDF untuk cek kop, data, & lembar pengesahan sebelum download"
+              >
+                <Eye className="w-4 h-4 text-amber-400" />
+                <span>Pratinjau PDF (Preview)</span>
+              </button>
+
               {/* Tombol Export PDF untuk Head Office */}
               <button
                 id="btn-export-pdf-laporan-harian"
@@ -1639,6 +1686,21 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
           setSelectedBreakdownForParts(null);
         }}
         currentUser={currentUser}
+      />
+
+      {/* Modal Pratinjau PDF Resmi Laporan Harian Ready & Breakdown */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="PRATINJAU PDF - LAPORAN HARIAN READY & BREAKDOWN"
+        subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleExportPDF}
+        signatoriesSummary={{
+          pembuat: `${signatories.pembuatName} (${signatories.pembuatJabatan})`,
+          diketahui: `${signatories.diketahuiName} (${signatories.diketahuiJabatan})`,
+        }}
       />
     </div>
   );

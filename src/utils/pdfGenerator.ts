@@ -14,16 +14,25 @@ import {
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
 
+export interface GeneratedPDFResult {
+  doc: jsPDF;
+  blob: Blob;
+  blobUrl: string;
+  filename: string;
+  download: () => void;
+}
+
 /**
- * Utility untuk mengekspor Formulir Permintaan Part & Jasa Breakdown ke PDF
+ * Utility untuk men-generate Dokumen Permintaan Part & Jasa Breakdown ke PDF
  * Ditujukan untuk dikirim ke Head Office Malang sebagai laporan resmi.
+ * Mengembalikan objek GeneratedPDFResult yang dapat digunakan untuk Pratinjau (Preview) maupun Download.
  */
-export const exportPartRequirementToPDF = (
+export const generatePartRequirementPDF = (
   breakdown: BreakdownRecord,
   parts: BreakdownPartJasaItem[],
   currentUser: UserAccount,
   signatories?: Partial<ReportSignatories>
-) => {
+): GeneratedPDFResult => {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -295,11 +304,29 @@ export const exportPartRequirementToPDF = (
     );
   }
 
-  // Trigger download file PDF langsung
+  // Generate blob URL & filename
   const cleanMo = String(moNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
   const cleanUnit = String(breakdown.noUnit).replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Permintaan_Part_MO_${cleanMo}_Unit_${cleanUnit}_PT_BATU_KALI_WELANG_AMPUH_${dateStr}.pdf`;
-  doc.save(filename);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+/**
+ * Utility untuk mengekspor Formulir Permintaan Part & Jasa Breakdown langsung ke file PDF
+ */
+export const exportPartRequirementToPDF = (
+  breakdown: BreakdownRecord,
+  parts: BreakdownPartJasaItem[],
+  currentUser: UserAccount,
+  signatories?: Partial<ReportSignatories>
+): GeneratedPDFResult => {
+  const result = generatePartRequirementPDF(breakdown, parts, currentUser, signatories);
+  result.download();
+  return result;
 };
 
 export interface DailyReportSignatoryOptions {
@@ -312,10 +339,11 @@ export interface DailyReportSignatoryOptions {
 }
 
 /**
- * Utility untuk mengekspor Laporan Harian Ready & Breakdown ke PDF
+ * Utility untuk men-generate Dokumen Laporan Harian Ready & Breakdown ke PDF
  * Ditujukan untuk dikirim setiap hari ke Head Office.
+ * Mengembalikan GeneratedPDFResult untuk Preview maupun Download.
  */
-export const exportDailyBreakdownToPDF = (options: {
+export const generateDailyBreakdownPDF = (options: {
   selectedDate: string;
   formattedDate: string;
   totalMaster: number;
@@ -326,7 +354,7 @@ export const exportDailyBreakdownToPDF = (options: {
   readyList: P2HRecord[];
   currentUser: UserAccount;
   signatories?: DailyReportSignatoryOptions;
-}) => {
+}): GeneratedPDFResult => {
   const {
     selectedDate,
     formattedDate,
@@ -664,21 +692,46 @@ export const exportDailyBreakdownToPDF = (options: {
     );
   }
 
-  // Trigger download file PDF
+  // Generate blob URL & filename
   const cleanDate = (selectedDate || 'Semua').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Laporan_Harian_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${cleanDate}.pdf`;
-  doc.save(filename);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
 };
 
 /**
- * Utility untuk mengekspor Laporan Detail Riwayat Breakdown ke PDF
+ * Utility untuk mengekspor Laporan Harian Ready & Breakdown langsung ke file PDF
  */
-export const exportDetailHistoryToPDF = (
+export const exportDailyBreakdownToPDF = (options: {
+  selectedDate: string;
+  formattedDate: string;
+  totalMaster: number;
+  readyCount: number;
+  breakdownCount: number;
+  availabilityRate: number;
+  breakdownList: BreakdownRecord[];
+  readyList: P2HRecord[];
+  currentUser: UserAccount;
+  signatories?: DailyReportSignatoryOptions;
+}): GeneratedPDFResult => {
+  const result = generateDailyBreakdownPDF(options);
+  result.download();
+  return result;
+};
+
+/**
+ * Utility untuk men-generate Dokumen Laporan Detail Riwayat Breakdown ke PDF
+ * Mengembalikan GeneratedPDFResult untuk Preview maupun Download.
+ */
+export const generateDetailHistoryPDF = (
   breakdowns: BreakdownRecord[],
   selectedUnit: string,
   currentUser: UserAccount,
   signatories?: DailyReportSignatoryOptions
-) => {
+): GeneratedPDFResult => {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -858,9 +911,28 @@ export const exportDetailHistoryToPDF = (
     );
   }
 
+  // Generate blob URL & filename
   const cleanUnit = (selectedUnit || 'Semua_Unit').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Laporan_Detail_Breakdown_PT_BATU_KALI_WELANG_AMPUH_${cleanUnit}_${new Date().toISOString().split('T')[0]}.pdf`;
-  doc.save(filename);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+/**
+ * Utility untuk mengekspor Laporan Detail Riwayat Breakdown langsung ke file PDF
+ */
+export const exportDetailHistoryToPDF = (
+  breakdowns: BreakdownRecord[],
+  selectedUnit: string,
+  currentUser: UserAccount,
+  signatories?: DailyReportSignatoryOptions
+): GeneratedPDFResult => {
+  const result = generateDetailHistoryPDF(breakdowns, selectedUnit, currentUser, signatories);
+  result.download();
+  return result;
 };
 
 export interface ExportFuelOilReportParams {
@@ -890,7 +962,7 @@ export interface ExportFuelOilReportParams {
 }
 
 /**
- * Utility Resmi untuk Mengekspor Laporan Rekapitulasi:
+ * Utility Resmi untuk Men-generate Laporan Rekapitulasi ke PDF:
  * 1. Transaksi Tangki Utama (Solar Masuk & Transfer)
  * 2. Transaksi Fuel Truck (Distribusi Solar ke Unit)
  * 3. Pembelian Solar di Luar (SPBU Luar / Out-Field Fuel)
@@ -900,8 +972,10 @@ export interface ExportFuelOilReportParams {
  * 1. Petugas FOG = Yang membuat Laporan
  * 2. Petugas Inventory = Diperiksa oleh
  * 3. Kabag Workshop = Mengetahui & Menyetujui
+ * 
+ * Mengembalikan GeneratedPDFResult untuk Preview maupun Download.
  */
-export const exportFuelOilTransactionsToPDF = ({
+export const generateFuelOilTransactionsPDF = ({
   startDate,
   endDate,
   reportCategory = 'ALL',
@@ -920,7 +994,7 @@ export const exportFuelOilTransactionsToPDF = ({
   outFieldFuelRecords = [],
   oilDistributions = [],
   periodBalance,
-}: ExportFuelOilReportParams) => {
+}: ExportFuelOilReportParams): GeneratedPDFResult => {
   const doc = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -1732,9 +1806,22 @@ export const exportFuelOilTransactionsToPDF = ({
     );
   }
 
-  // Simpan File PDF
+  // Generate blob URL & filename
   const cleanStartDate = (startDate || 'Awal').replace(/[^a-zA-Z0-9_-]/g, '_');
   const cleanEndDate = (endDate || 'Akhir').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Laporan_Transaksi_Fuel_Oli_PT_BKWA_${cleanStartDate}_sd_${cleanEndDate}.pdf`;
-  doc.save(filename);
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+/**
+ * Utility Resmi untuk Mengekspor Laporan Rekapitulasi Bahan Bakar & Pelumas langsung ke file PDF
+ */
+export const exportFuelOilTransactionsToPDF = (params: ExportFuelOilReportParams): GeneratedPDFResult => {
+  const result = generateFuelOilTransactionsPDF(params);
+  result.download();
+  return result;
 };

@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   BreakdownRecord, 
   BreakdownPartJasaItem, 
   UserAccount 
 } from '../../types';
 import { getAllSparePartTransactions, getAllManpower } from '../../utils/storage';
-import { exportPartRequirementToPDF } from '../../utils/pdfGenerator';
+import { exportPartRequirementToPDF, generatePartRequirementPDF } from '../../utils/pdfGenerator';
 import { resolveReportSignatories } from '../../utils/reportSignatories';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import { 
   X, 
   Printer, 
@@ -19,7 +20,8 @@ import {
   User, 
   Calendar, 
   Building2,
-  AlertTriangle
+  AlertTriangle,
+  Eye
 } from 'lucide-react';
 
 interface PartRequirementModalProps {
@@ -116,6 +118,24 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
     const mpList = getAllManpower();
     return resolveReportSignatories(mpList, currentUser);
   }, [currentUser]);
+
+  // State untuk Pratinjau Dokumen PDF Resmi
+  const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // Handler Pratinjau PDF Sebelum Download
+  const handlePreviewPDF = () => {
+    try {
+      const result = generatePartRequirementPDF(breakdown, allNeededParts, currentUser, signatories);
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating Part Requirement PDF preview', e);
+      handleExportPDF();
+    }
+  };
 
   // Handler Export PDF: Meng-generate file PDF asli PT BATU KALI WELANG AMPUH untuk dikirim ke Head Office Malang
   const handleExportPDF = () => {
@@ -268,7 +288,19 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Tombol Pratinjau PDF */}
+            <button
+              id="btn-preview-pdf-part-requirement"
+              type="button"
+              onClick={handlePreviewPDF}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold text-xs shadow transition active:scale-95 cursor-pointer"
+              title="Buka Pratinjau (Preview) PDF untuk cek daftar part & lembar pengesahan sebelum download"
+            >
+              <Eye className="w-4 h-4 text-amber-400" />
+              <span>Pratinjau PDF</span>
+            </button>
+
             {/* Tombol Export PDF */}
             <button
               id="btn-export-pdf-part-requirement"
@@ -552,6 +584,22 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
         </div>
 
       </div>
+
+      {/* MODAL PRATINJAU PDF PERMINTAAN PART & JASA */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title={`PRATINJAU PDF - PERMINTAAN PART MO: ${moNumber || '-'}`}
+        subtitle={`PT BATU KALI WELANG AMPUH • Unit ${breakdown.noUnit}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleExportPDF}
+        signatoriesSummary={{
+          pembuat: `${signatories?.pembuatName || '-'} (${signatories?.pembuatJabatan || 'Administrasi'})`,
+          diperiksa: `${signatories?.diperiksaName || '-'} (${signatories?.diperiksaJabatan || 'SPV'})`,
+          diketahui: `${signatories?.diketahuiName || '-'} (${signatories?.diketahuiJabatan || 'Kabag Workshop'})`,
+        }}
+      />
     </div>
   );
 };

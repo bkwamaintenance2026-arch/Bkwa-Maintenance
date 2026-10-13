@@ -9,9 +9,10 @@ import {
   UserAccount,
   ManpowerData,
 } from '../../types';
-import { exportFuelOilTransactionsToPDF } from '../../utils/pdfGenerator';
+import { exportFuelOilTransactionsToPDF, generateFuelOilTransactionsPDF } from '../../utils/pdfGenerator';
 import { resolveFogSignatories } from '../../utils/reportSignatories';
 import { getAllManpower } from '../../utils/storage';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import {
   X,
   FileDown,
@@ -32,7 +33,8 @@ import {
   ExternalLink,
   RotateCcw,
   FileCheck,
-  Edit3
+  Edit3,
+  Eye,
 } from 'lucide-react';
 
 interface ExportFuelOilReportModalProps {
@@ -288,7 +290,37 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
     };
   }, [filteredStockInputs, filteredTransfers, filteredDistributions, filteredOutField, filteredOilDist]);
 
-  // Handle Export PDF
+  // State untuk Pratinjau Dokumen PDF
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // Handle Pratinjau PDF Sebelum Download
+  const handlePreviewPDF = () => {
+    const result = generateFuelOilTransactionsPDF({
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      reportCategory,
+      petugasFog,
+      petugasFogJabatan,
+      petugasInventory,
+      petugasInventoryJabatan,
+      kabagWorkshop,
+      kabagWorkshopJabatan,
+      currentUser,
+      fuelStockInputs,
+      fuelTransfers,
+      fuelDistributions,
+      outFieldFuelRecords,
+      oilDistributions,
+      periodBalance,
+    });
+    setPreviewPdfUrl(result.blobUrl);
+    setPreviewFilename(result.filename);
+    setShowPdfPreview(true);
+  };
+
+  // Handle Export PDF Langsung
   const handleExportPDF = () => {
     exportFuelOilTransactionsToPDF({
       startDate: startDate || undefined,
@@ -1210,7 +1242,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
             </span>
           </div>
 
-          <div className="flex items-center gap-2.5 justify-end">
+          <div className="flex items-center gap-2.5 justify-end flex-wrap">
             <button
               type="button"
               onClick={onClose}
@@ -1231,6 +1263,17 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
             </button>
 
             <button
+              id="btn-preview-pdf-fuel-oil-transactions"
+              type="button"
+              onClick={handlePreviewPDF}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs font-mono transition shadow-sm active:scale-95"
+              title="Buka Pratinjau (Preview) PDF untuk cek sebelum download"
+            >
+              <Eye className="w-4 h-4 text-amber-400" />
+              <span>Pratinjau PDF (Preview)</span>
+            </button>
+
+            <button
               id="btn-export-pdf-fuel-oil-transactions"
               type="button"
               onClick={handleExportPDF}
@@ -1242,6 +1285,22 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
           </div>
         </div>
       </div>
+
+      {/* MODAL PRATINJAU PDF RESMI SEBELUM DOWNLOAD */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="PRATINJAU PDF - LAPORAN BAHAN BAKAR & PELUMAS (FOG)"
+        subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleExportPDF}
+        signatoriesSummary={{
+          pembuat: `${petugasFog} (${petugasFogJabatan})`,
+          diperiksa: `${petugasInventory} (${petugasInventoryJabatan})`,
+          diketahui: `${kabagWorkshop} (${kabagWorkshopJabatan})`,
+        }}
+      />
     </div>
   );
 };

@@ -37,7 +37,8 @@ import {
   FileText
 } from 'lucide-react';
 import { PartRequirementModal } from './PartRequirementModal';
-import { exportDetailHistoryToPDF } from '../../utils/pdfGenerator';
+import { exportDetailHistoryToPDF, generateDetailHistoryPDF } from '../../utils/pdfGenerator';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
 interface DetailBreakdownHistorySubViewProps {
   units: AssetUnit[];
@@ -336,6 +337,25 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
     window.print();
   };
 
+  // State untuk Pratinjau Dokumen PDF Resmi
+  const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // Handler Pratinjau PDF Sebelum Download
+  const handlePreviewPDF = () => {
+    if (filteredBreakdowns.length === 0) return;
+    try {
+      const result = generateDetailHistoryPDF(filteredBreakdowns, selectedUnit, currentUser);
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating Detail Breakdown PDF preview', e);
+      handleExportPDF();
+    }
+  };
+
   // Ekspor ke PDF
   const handleExportPDF = () => {
     if (filteredBreakdowns.length === 0) return;
@@ -372,7 +392,20 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 self-start md:self-center">
+          <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
+            {/* Tombol Pratinjau PDF Sebelum Download */}
+            <button
+              id="btn-preview-pdf-detail-breakdown"
+              type="button"
+              onClick={handlePreviewPDF}
+              disabled={filteredBreakdowns.length === 0}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+              title="Buka Pratinjau (Preview) PDF untuk cek riwayat breakdown sebelum download"
+            >
+              <Eye className="w-4 h-4 text-amber-400" />
+              <span>Pratinjau PDF (Preview)</span>
+            </button>
+
             <button
               type="button"
               onClick={handleExportPDF}
@@ -1318,6 +1351,17 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           setSelectedBreakdownForPartReq(null);
         }}
         currentUser={currentUser}
+      />
+
+      {/* Modal Pratinjau PDF Riwayat Detail Breakdown */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="PRATINJAU PDF - RIWAYAT & DETAIL BREAKDOWN UNIT"
+        subtitle={`PT BATU KALI WELANG AMPUH • Unit ${selectedUnit || 'Semua Unit'}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleExportPDF}
       />
     </div>
   );
