@@ -109,10 +109,9 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     }
   }, [propManpowerList]);
 
-  // Resolusi otomatis penandatangan resmi sesuai instruksi:
-  // - Yang Membuat: Admin yang ditunjuk sesuai otoritas di Modul 2 Manpower (Jabatan Administrasi)
-  // - Diperiksa Oleh: SPV, jika tidak ada pilih Kabag Workshop
-  // - Diketahui Oleh: Kabag Workshop
+  // Resolusi otomatis penandatangan resmi Laporan Breakdown (2 Pihak sesuai instruksi user):
+  // 1. Administrasi = Dibuat Oleh
+  // 2. Kabag Workshop = Mengetahui & Menyetujui
   const resolvedSig = useMemo(() => {
     return resolveReportSignatories(manpowerData, currentUser);
   }, [manpowerData, currentUser]);
@@ -134,13 +133,6 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     });
   }, [manpowerData]);
 
-  const spvCandidates = useMemo(() => {
-    return manpowerData.filter((m) => {
-      const j = (m.jabatan || '').toUpperCase().trim();
-      return j === 'SPV' || j.includes('SPV') || j.includes('SUPERVISOR');
-    });
-  }, [manpowerData]);
-
   const kabagCandidates = useMemo(() => {
     return manpowerData.filter((m) => {
       const j = (m.jabatan || '').toUpperCase().trim();
@@ -154,30 +146,22 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     });
   }, [manpowerData]);
 
-  // Diperiksa Oleh: cari SPV, jika tidak ada fallback ke Kabag Workshop
-  const diperiksaCandidates = useMemo(() => {
-    if (spvCandidates.length > 0) return spvCandidates;
-    return kabagCandidates;
-  }, [spvCandidates, kabagCandidates]);
-
   // Sinkronisasi otomatis saat personil Manpower terdeteksi
   useEffect(() => {
     setSignatories((prev) => {
-      // Jika user belum memilih secara manual atau belum terisi, sinkronkan otomatis dengan resolusi dari Manpower Modul 2
       const isPembuatInCandidates = administrasiCandidates.some((m) => m.nama === prev.pembuatName);
-      const isDiperiksaInCandidates = diperiksaCandidates.some((m) => m.nama === prev.diperiksaName);
       const isDiketahuiInCandidates = kabagCandidates.some((m) => m.nama === prev.diketahuiName);
 
       return {
         pembuatName: (isPembuatInCandidates ? prev.pembuatName : resolvedSig.pembuatName) || resolvedSig.pembuatName,
         pembuatJabatan: (isPembuatInCandidates ? prev.pembuatJabatan : resolvedSig.pembuatJabatan) || resolvedSig.pembuatJabatan,
-        diperiksaName: (isDiperiksaInCandidates ? prev.diperiksaName : resolvedSig.diperiksaName) || resolvedSig.diperiksaName,
-        diperiksaJabatan: (isDiperiksaInCandidates ? prev.diperiksaJabatan : resolvedSig.diperiksaJabatan) || resolvedSig.diperiksaJabatan,
+        diperiksaName: resolvedSig.diperiksaName || '',
+        diperiksaJabatan: resolvedSig.diperiksaJabatan || '',
         diketahuiName: (isDiketahuiInCandidates ? prev.diketahuiName : resolvedSig.diketahuiName) || resolvedSig.diketahuiName,
         diketahuiJabatan: (isDiketahuiInCandidates ? prev.diketahuiJabatan : resolvedSig.diketahuiJabatan) || resolvedSig.diketahuiJabatan,
       };
     });
-  }, [resolvedSig, administrasiCandidates, diperiksaCandidates, kabagCandidates]);
+  }, [resolvedSig, administrasiCandidates, kabagCandidates]);
 
   // Cek otorisasi export
   const canExport = useMemo(() => {
@@ -384,10 +368,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     }
 
     lines.push(`""`);
-    lines.push(`"=== LEMBAR PENGESAHAN LAPORAN ==="`);
-    lines.push(`"Yang Membuat:","Diperiksa Oleh:","Diketahui Oleh:"`);
-    lines.push(`"${signatories.pembuatJabatan || 'Administrasi'}","${signatories.diperiksaJabatan || 'Supervisor Maintenance'}","${signatories.diketahuiJabatan || 'Kabag Workshop'}"`);
-    lines.push(`"( ${signatories.pembuatName || 'Admin Workshop'} )","( ${signatories.diperiksaName || 'Supervisor Maintenance'} )","( ${signatories.diketahuiName || 'Kabag Workshop'} )"`);
+    lines.push(`"=== LEMBAR VALIDASI PELAPORAN BREAKDOWN ==="`);
+    lines.push(`"Dibuat Oleh:","Mengetahui & Menyetujui:"`);
+    lines.push(`"${signatories.pembuatJabatan || 'Administrasi'}","${signatories.diketahuiJabatan || 'Kabag Workshop'}"`);
+    lines.push(`"( ${signatories.pembuatName || 'Admin Workshop'} )","( ${signatories.diketahuiName || 'Kabag Workshop'} )"`);
 
     const csvContent = '\uFEFF' + lines.join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -514,18 +498,13 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
 
         <table class="sig-table">
           <tr>
-            <td>
-              Yang Membuat,<br>
+            <td style="width: 50%;">
+              Dibuat Oleh,<br>
               <span style="font-size: 8.5pt; color: #64748b;">${signatories.pembuatJabatan || 'Administrasi'}</span><br><br><br><br>
               <strong>( ${signatories.pembuatName || 'Admin Workshop'} )</strong>
             </td>
-            <td>
-              Diperiksa Oleh,<br>
-              <span style="font-size: 8.5pt; color: #64748b;">${signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span><br><br><br><br>
-              <strong>( ${signatories.diperiksaName || 'Supervisor Maintenance'} )</strong>
-            </td>
-            <td>
-              Diketahui Oleh,<br>
+            <td style="width: 50%;">
+              Mengetahui & Menyetujui,<br>
               <span style="font-size: 8.5pt; color: #64748b;">${signatories.diketahuiJabatan || 'Kabag Workshop'}</span><br><br><br><br>
               <strong>( ${signatories.diketahuiName || 'Kabag Workshop'} )</strong>
             </td>
@@ -677,37 +656,48 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
-          {/* 1. Yang Membuat (Pilih Jabatan Administrasi) */}
-          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+          {/* 1. Dibuat Oleh (Pilih Jabatan Administrasi) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-mono font-bold text-amber-400 uppercase">
-                1. Yang Membuat (Administrasi)
+                1. Dibuat Oleh (Administrasi)
               </label>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 {signatories.pembuatJabatan || 'Administrasi'}
               </span>
             </div>
-            {administrasiCandidates.length > 0 ? (
+            {administrasiCandidates.length > 0 || manpowerData.length > 0 ? (
               <select
                 id="select-penandatangan-pembuat"
                 value={signatories.pembuatName}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const found = administrasiCandidates.find((m) => m.nama === val);
+                  const found = manpowerData.find((m) => m.nama === val);
                   setSignatories((prev) => ({
                     ...prev,
                     pembuatName: val,
                     pembuatJabatan: found?.jabatan || 'Administrasi',
                   }));
                 }}
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
               >
-                {administrasiCandidates.map((m) => (
-                  <option key={m.id} value={m.nama}>
-                    {m.nama} ({m.jabatan || 'Administrasi'})
-                  </option>
-                ))}
+                {administrasiCandidates.length > 0 && (
+                  <optgroup label="Personil Administrasi Terdaftar">
+                    {administrasiCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Administrasi'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             ) : (
               <input
@@ -716,90 +706,55 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 value={signatories.pembuatName}
                 onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatName: e.target.value }))}
                 placeholder="Nama Admin / Pembuat..."
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
               />
             )}
             <p className="text-[10px] text-stone-500 font-mono">
-              Admin ditunjuk sesuai otoritas di Modul 2 Manpower
+              Administrasi yang ditunjuk sesuai otoritas di Modul 2 Manpower
             </p>
           </div>
 
-          {/* 2. Diperiksa Oleh (SPV / Kabag Workshop) */}
-          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-mono font-bold text-blue-400 uppercase">
-                2. Diperiksa Oleh (SPV / Kabag)
-              </label>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                {spvCandidates.length > 0 ? 'SPV Terdeteksi' : 'Fallback: Kabag Workshop'}
-              </span>
-            </div>
-            {diperiksaCandidates.length > 0 ? (
-              <select
-                id="select-penandatangan-diperiksa"
-                value={signatories.diperiksaName}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const found = diperiksaCandidates.find((m) => m.nama === val);
-                  setSignatories((prev) => ({
-                    ...prev,
-                    diperiksaName: val,
-                    diperiksaJabatan: found?.jabatan || 'Supervisor Maintenance',
-                  }));
-                }}
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-blue-500 focus:outline-none"
-              >
-                {diperiksaCandidates.map((m) => (
-                  <option key={m.id} value={m.nama}>
-                    {m.nama} ({m.jabatan || 'Supervisor'})
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                id="input-penandatangan-diperiksa"
-                type="text"
-                value={signatories.diperiksaName}
-                onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaName: e.target.value }))}
-                placeholder="Nama Supervisor / Pemeriksa..."
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-blue-500 focus:outline-none"
-              />
-            )}
-            <p className="text-[10px] text-stone-500 font-mono">
-              Otomatis SPV, jika tidak ada fallback ke Kabag Workshop
-            </p>
-          </div>
-
-          {/* 3. Diketahui Oleh (Kabag Workshop) */}
-          <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800 space-y-1.5">
+          {/* 2. Mengetahui & Menyetujui (Kabag Workshop) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-mono font-bold text-emerald-400 uppercase">
-                3. Diketahui Oleh (Kabag Workshop)
+                2. Mengetahui &amp; Menyetujui (Kabag Workshop)
               </label>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Kabag Workshop
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {signatories.diketahuiJabatan || 'Kabag Workshop'}
               </span>
             </div>
-            {kabagCandidates.length > 0 ? (
+            {kabagCandidates.length > 0 || manpowerData.length > 0 ? (
               <select
                 id="select-penandatangan-diketahui"
                 value={signatories.diketahuiName}
                 onChange={(e) => {
                   const val = e.target.value;
-                  const found = kabagCandidates.find((m) => m.nama === val);
+                  const found = manpowerData.find((m) => m.nama === val);
                   setSignatories((prev) => ({
                     ...prev,
                     diketahuiName: val,
                     diketahuiJabatan: found?.jabatan || 'Kabag Workshop',
                   }));
                 }}
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
               >
-                {kabagCandidates.map((m) => (
-                  <option key={m.id} value={m.nama}>
-                    {m.nama} ({m.jabatan || 'Kabag Workshop'})
-                  </option>
-                ))}
+                {kabagCandidates.length > 0 && (
+                  <optgroup label="Personil Kabag Workshop Terdaftar">
+                    {kabagCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Kabag Workshop'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             ) : (
               <input
@@ -808,11 +763,11 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 value={signatories.diketahuiName}
                 onChange={(e) => setSignatories((prev) => ({ ...prev, diketahuiName: e.target.value }))}
                 placeholder="Nama Kabag Workshop..."
-                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
               />
             )}
             <p className="text-[10px] text-stone-500 font-mono">
-              Otomatis mencari personil berjabatan Kabag Workshop
+              Kabag Workshop yang bertugas sesuai otoritas di Modul 2 Manpower
             </p>
           </div>
         </div>
@@ -1652,9 +1607,9 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               </div>
 
               {/* Lembar Tanda Tangan */}
-              <div className="pt-6 border-t border-stone-300 grid grid-cols-3 gap-4 text-center font-mono text-[11px]">
+              <div className="pt-6 border-t border-stone-300 grid grid-cols-2 gap-6 text-center font-mono text-[11px]">
                 <div>
-                  Yang Membuat,<br />
+                  Dibuat Oleh,<br />
                   <span className="text-[10px] text-stone-500">{signatories.pembuatJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
@@ -1662,15 +1617,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                   <strong className="block border-t border-stone-400 pt-1">( {signatories.pembuatName || 'Admin Workshop'} )</strong>
                 </div>
                 <div>
-                  Diperiksa Oleh,<br />
-                  <span className="text-[10px] text-stone-500">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
-                  <div className="h-16 flex items-end justify-center">
-                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
-                  </div>
-                  <strong className="block border-t border-stone-400 pt-1">( {signatories.diperiksaName || 'Supervisor Maintenance'} )</strong>
-                </div>
-                <div>
-                  Diketahui Oleh,<br />
+                  Mengetahui &amp; Menyetujui,<br />
                   <span className="text-[10px] text-stone-500">{signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>

@@ -7,8 +7,11 @@ import {
   OilDistributionRecord,
   InventoryPeriodBalance,
   UserAccount,
+  ManpowerData,
 } from '../../types';
 import { exportFuelOilTransactionsToPDF } from '../../utils/pdfGenerator';
+import { resolveFogSignatories } from '../../utils/reportSignatories';
+import { getAllManpower } from '../../utils/storage';
 import {
   X,
   FileDown,
@@ -27,7 +30,9 @@ import {
   UserCheck,
   ShieldCheck,
   ExternalLink,
-  RotateCcw
+  RotateCcw,
+  FileCheck,
+  Edit3
 } from 'lucide-react';
 
 interface ExportFuelOilReportModalProps {
@@ -41,10 +46,15 @@ interface ExportFuelOilReportModalProps {
   periodBalance?: InventoryPeriodBalance;
   currentUser: UserAccount;
   defaultCategory?: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE';
+  manpowerList?: ManpowerData[];
 }
 
-const STORAGE_KEY_CHECKER = 'bkwa_report_checker_fog_name_v1';
-const STORAGE_KEY_KTT = 'bkwa_report_ktt_name_v1';
+const STORAGE_KEY_FOG = 'bkwa_fog_sig_pembuat';
+const STORAGE_KEY_FOG_JABATAN = 'bkwa_fog_sig_pembuat_jabatan';
+const STORAGE_KEY_INVENTORY = 'bkwa_fog_sig_diperiksa';
+const STORAGE_KEY_INVENTORY_JABATAN = 'bkwa_fog_sig_diperiksa_jabatan';
+const STORAGE_KEY_KABAG = 'bkwa_fog_sig_kabag';
+const STORAGE_KEY_KABAG_JABATAN = 'bkwa_fog_sig_kabag_jabatan';
 
 export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> = ({
   isOpen,
@@ -57,6 +67,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   periodBalance,
   currentUser,
   defaultCategory = 'ALL',
+  manpowerList: propManpowerList,
 }) => {
   // Category tab
   const [reportCategory, setReportCategory] = useState<
@@ -76,29 +87,90 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   const [endDate, setEndDate] = useState<string>('');
   const [activeDatePreset, setActiveDatePreset] = useState<string>('all');
 
-  // Signatories state (Persisted in localStorage)
-  const [petugasChecker, setPetugasChecker] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CHECKER);
-    return saved || currentUser?.fullName || currentUser?.username || 'Petugas Checker Tambang';
+  // Daftar personil Manpower Modul 2
+  const effectiveManpowerList = useMemo(() => {
+    if (propManpowerList && propManpowerList.length > 0) return propManpowerList;
+    try {
+      return getAllManpower();
+    } catch {
+      return [];
+    }
+  }, [propManpowerList]);
+
+  // Resolusi otomatis penandatangan awal dari Manpower Modul 2:
+  // 1. Petugas FOG = Yang membuat Laporan
+  // 2. Petugas Inventory = Diperiksa oleh
+  // 3. Kabag Workshop = Mengetahui & Menyetujui
+  const resolvedFog = useMemo(() => {
+    return resolveFogSignatories(effectiveManpowerList, currentUser);
+  }, [effectiveManpowerList, currentUser]);
+
+  // 1. Petugas FOG (Yang Membuat Laporan)
+  const [petugasFog, setPetugasFog] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_FOG);
+    return saved || resolvedFog.petugasFogName || 'Petugas FOG Lapangan';
+  });
+  const [petugasFogJabatan, setPetugasFogJabatan] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_FOG_JABATAN);
+    return saved || resolvedFog.petugasFogJabatan || 'Petugas FOG';
   });
 
-  const [kttName, setKttName] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_KTT);
-    return saved || 'Kepala Tehnik Tambang (KTT)';
+  // 2. Petugas Inventory (Diperiksa Oleh)
+  const [petugasInventory, setPetugasInventory] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_INVENTORY);
+    return saved || resolvedFog.petugasInventoryName || 'Petugas Inventory';
   });
+  const [petugasInventoryJabatan, setPetugasInventoryJabatan] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_INVENTORY_JABATAN);
+    return saved || resolvedFog.petugasInventoryJabatan || 'Petugas Inventory';
+  });
+
+  // 3. Kabag Workshop (Mengetahui & Menyetujui)
+  const [kabagWorkshop, setKabagWorkshop] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_KABAG);
+    return saved || resolvedFog.kabagWorkshopName || 'Kabag Workshop';
+  });
+  const [kabagWorkshopJabatan, setKabagWorkshopJabatan] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_KABAG_JABATAN);
+    return saved || resolvedFog.kabagWorkshopJabatan || 'Kabag Workshop';
+  });
+
+  // Toggle mode ketik manual
+  const [customFogInput, setCustomFogInput] = useState(false);
+  const [customInventoryInput, setCustomInventoryInput] = useState(false);
+  const [customKabagInput, setCustomKabagInput] = useState(false);
+
+  // Sinkronisasi default jika belum ada di localStorage
+  useEffect(() => {
+    if (!localStorage.getItem(STORAGE_KEY_FOG) && resolvedFog.petugasFogName) {
+      setPetugasFog(resolvedFog.petugasFogName);
+      setPetugasFogJabatan(resolvedFog.petugasFogJabatan);
+    }
+    if (!localStorage.getItem(STORAGE_KEY_INVENTORY) && resolvedFog.petugasInventoryName) {
+      setPetugasInventory(resolvedFog.petugasInventoryName);
+      setPetugasInventoryJabatan(resolvedFog.petugasInventoryJabatan);
+    }
+    if (!localStorage.getItem(STORAGE_KEY_KABAG) && resolvedFog.kabagWorkshopName) {
+      setKabagWorkshop(resolvedFog.kabagWorkshopName);
+      setKabagWorkshopJabatan(resolvedFog.kabagWorkshopJabatan);
+    }
+  }, [resolvedFog]);
 
   // Save signatory edits to localStorage
   useEffect(() => {
-    if (petugasChecker) {
-      localStorage.setItem(STORAGE_KEY_CHECKER, petugasChecker);
-    }
-  }, [petugasChecker]);
+    if (petugasFog) localStorage.setItem(STORAGE_KEY_FOG, petugasFog);
+    if (petugasFogJabatan) localStorage.setItem(STORAGE_KEY_FOG_JABATAN, petugasFogJabatan);
+  }, [petugasFog, petugasFogJabatan]);
 
   useEffect(() => {
-    if (kttName) {
-      localStorage.setItem(STORAGE_KEY_KTT, kttName);
-    }
-  }, [kttName]);
+    if (petugasInventory) localStorage.setItem(STORAGE_KEY_INVENTORY, petugasInventory);
+    if (petugasInventoryJabatan) localStorage.setItem(STORAGE_KEY_INVENTORY_JABATAN, petugasInventoryJabatan);
+  }, [petugasInventory, petugasInventoryJabatan]);
+
+  useEffect(() => {
+    if (kabagWorkshop) localStorage.setItem(STORAGE_KEY_KABAG, kabagWorkshop);
+    if (kabagWorkshopJabatan) localStorage.setItem(STORAGE_KEY_KABAG_JABATAN, kabagWorkshopJabatan);
+  }, [kabagWorkshop, kabagWorkshopJabatan]);
 
   // Search filter inside preview table
   const [previewSearch, setPreviewSearch] = useState<string>('');
@@ -222,8 +294,12 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       reportCategory,
-      petugasChecker,
-      kttName,
+      petugasFog,
+      petugasFogJabatan,
+      petugasInventory,
+      petugasInventoryJabatan,
+      kabagWorkshop,
+      kabagWorkshopJabatan,
       currentUser,
       fuelStockInputs,
       fuelTransfers,
@@ -625,53 +701,239 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
           </div>
 
           {/* ========================================================================= */}
-          {/* 4. FORM FORMAT TANDA TANGAN (2 PIHAK PENGESAHAN SESUAI PERMINTAAN USER) */}
-          {/* Petugas Checker Tambang (Kiri) & Kepala Tehnik Tambang (KTT) (Kanan) */}
+          {/* 4. LEMBAR PENGESAHAN LAPORAN FOG (3 PIHAK DARI MODUL 2 MANPOWER) */}
+          {/* 1. Petugas FOG = Yang membuat Laporan */}
+          {/* 2. Petugas Inventory = Diperiksa oleh */}
+          {/* 3. Kabag Workshop = Mengetahui & Menyetujui */}
           {/* ========================================================================= */}
           <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center gap-2 border-b border-stone-800/60 pb-2">
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-bold text-stone-200 font-mono uppercase tracking-wider">
-                Pengesahan Lembar Dokumen (2 Pihak Tanda Tangan)
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-stone-800/60 pb-2">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-stone-200 font-mono uppercase tracking-wider">
+                  Lembar Pengesahan Laporan FOG (3 Pihak Penandatangan)
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 w-fit">
+                Dropdown dari Modul 2 Manpower
               </span>
             </div>
             <p className="text-[11px] text-stone-400">
-              Format tanda tangan dokumen kini hanya menampilkan 2 pihak pengesahan. Anda dapat mengetik manual nama kedua petugas di bawah ini:
+              Format lembar pengesahan resmi laporan FOG (Bahan Bakar &amp; Pelumas) divalidasi oleh 3 pihak: <strong>1. Petugas FOG</strong> (Yang membuat Laporan), <strong>2. Petugas Inventory</strong> (Diperiksa oleh), dan <strong>3. Kabag Workshop</strong> (Mengetahui &amp; Menyetujui). Seluruh personil dipilih melalui dropdown dari Modul 2 Manpower:
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-              {/* Pihak 1: Petugas Checker Tambang (Kiri) */}
-              <div className="bg-stone-900/80 p-3.5 rounded-xl border border-stone-800">
-                <label className="block text-[11px] font-mono font-bold text-stone-200 mb-0.5">
-                  1. Petugas Checker Tambang (Ketik Manual):
-                </label>
-                <p className="text-[10px] text-stone-400 mb-2">
-                  Kiri — Checker Lapangan / Tallyman / Petugas FOG
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+              {/* PIHAK 1: PETUGAS FOG (YANG MEMBUAT LAPORAN) */}
+              <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-mono font-bold text-amber-400 uppercase">
+                    1. Petugas FOG (Pembuat)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomFogInput(!customFogInput)}
+                    className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1 transition"
+                    title="Toggle ketik manual"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{customFogInput ? 'Pilih Dropdown' : 'Ketik Manual'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-400 leading-tight">
+                  Yang membuat Laporan • Petugas FOG / BBM Lapangan
                 </p>
-                <input
-                  type="text"
-                  value={petugasChecker}
-                  onChange={(e) => setPetugasChecker(e.target.value)}
-                  placeholder="Ketik nama Checker Tambang yang bertugas..."
-                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
-                />
+
+                {!customFogInput ? (
+                  <select
+                    id="select-petugas-fog-signatory"
+                    value={petugasFog}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        setCustomFogInput(true);
+                      } else {
+                        const found = effectiveManpowerList.find((m) => m.nama === val);
+                        setPetugasFog(val);
+                        if (found?.jabatan) setPetugasFogJabatan(found.jabatan);
+                      }
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
+                  >
+                    {resolvedFog.fogList.length > 0 && (
+                      <optgroup label="Personil Petugas FOG Terdaftar">
+                        {resolvedFog.fogList.map((m) => (
+                          <option key={m.id} value={m.nama}>
+                            {m.nama} — {m.jabatan || 'Petugas FOG'}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Semua Personil Modul 2 Manpower">
+                      {effectiveManpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan || 'Manpower'})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__CUSTOM__">+ Ketik Nama Manual...</option>
+                  </select>
+                ) : (
+                  <input
+                    id="input-petugas-fog-signatory-manual"
+                    type="text"
+                    value={petugasFog}
+                    onChange={(e) => setPetugasFog(e.target.value)}
+                    placeholder="Ketik nama Petugas FOG..."
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
+                  />
+                )}
+
+                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
+                  <span>Jabatan:</span>
+                  <span className="text-stone-300 font-semibold">{petugasFogJabatan || 'Petugas FOG'}</span>
+                </div>
               </div>
 
-              {/* Pihak 2: Kepala Tehnik Tambang (KTT) (Kanan) */}
-              <div className="bg-stone-900/80 p-3.5 rounded-xl border border-stone-800">
-                <label className="block text-[11px] font-mono font-bold text-stone-200 mb-0.5">
-                  2. Mengetahui &amp; Menyetujui: KTT (Ketik Manual):
-                </label>
-                <p className="text-[10px] text-stone-400 mb-2">
-                  Kanan — Kepala Tehnik Tambang (KTT)
+              {/* PIHAK 2: PETUGAS INVENTORY (DIPERIKSA OLEH) */}
+              <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-mono font-bold text-blue-400 uppercase">
+                    2. Petugas Inventory (Pemeriksa)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomInventoryInput(!customInventoryInput)}
+                    className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1 transition"
+                    title="Toggle ketik manual"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{customInventoryInput ? 'Pilih Dropdown' : 'Ketik Manual'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-400 leading-tight">
+                  Diperiksa oleh • Petugas Inventory / Gudang Material
                 </p>
-                <input
-                  type="text"
-                  value={kttName}
-                  onChange={(e) => setKttName(e.target.value)}
-                  placeholder="Ketik nama Kepala Tehnik Tambang (KTT)..."
-                  className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
-                />
+
+                {!customInventoryInput ? (
+                  <select
+                    id="select-petugas-inventory-signatory"
+                    value={petugasInventory}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        setCustomInventoryInput(true);
+                      } else {
+                        const found = effectiveManpowerList.find((m) => m.nama === val);
+                        setPetugasInventory(val);
+                        if (found?.jabatan) setPetugasInventoryJabatan(found.jabatan);
+                      }
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none transition"
+                  >
+                    {resolvedFog.inventoryList.length > 0 && (
+                      <optgroup label="Personil Inventory & Gudang Terdaftar">
+                        {resolvedFog.inventoryList.map((m) => (
+                          <option key={m.id} value={m.nama}>
+                            {m.nama} — {m.jabatan || 'Petugas Inventory'}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Semua Personil Modul 2 Manpower">
+                      {effectiveManpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan || 'Manpower'})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__CUSTOM__">+ Ketik Nama Manual...</option>
+                  </select>
+                ) : (
+                  <input
+                    id="input-petugas-inventory-signatory-manual"
+                    type="text"
+                    value={petugasInventory}
+                    onChange={(e) => setPetugasInventory(e.target.value)}
+                    placeholder="Ketik nama Petugas Inventory..."
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none transition"
+                  />
+                )}
+
+                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
+                  <span>Jabatan:</span>
+                  <span className="text-stone-300 font-semibold">{petugasInventoryJabatan || 'Petugas Inventory'}</span>
+                </div>
+              </div>
+
+              {/* PIHAK 3: KABAG WORKSHOP (MENGETAHUI & MENYETUJUI) */}
+              <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-mono font-bold text-emerald-400 uppercase">
+                    3. Kabag Workshop (Menyetujui)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setCustomKabagInput(!customKabagInput)}
+                    className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1 transition"
+                    title="Toggle ketik manual"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{customKabagInput ? 'Pilih Dropdown' : 'Ketik Manual'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-400 leading-tight">
+                  Mengetahui &amp; Menyetujui • Kabag Workshop / Kepala Bengkel
+                </p>
+
+                {!customKabagInput ? (
+                  <select
+                    id="select-kabag-workshop-signatory"
+                    value={kabagWorkshop}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__CUSTOM__') {
+                        setCustomKabagInput(true);
+                      } else {
+                        const found = effectiveManpowerList.find((m) => m.nama === val);
+                        setKabagWorkshop(val);
+                        if (found?.jabatan) setKabagWorkshopJabatan(found.jabatan);
+                      }
+                    }}
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none transition"
+                  >
+                    {resolvedFog.kabagList.length > 0 && (
+                      <optgroup label="Personil Kabag Workshop Terdaftar">
+                        {resolvedFog.kabagList.map((m) => (
+                          <option key={m.id} value={m.nama}>
+                            {m.nama} — {m.jabatan || 'Kabag Workshop'}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Semua Personil Modul 2 Manpower">
+                      {effectiveManpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan || 'Manpower'})
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="__CUSTOM__">+ Ketik Nama Manual...</option>
+                  </select>
+                ) : (
+                  <input
+                    id="input-kabag-workshop-signatory-manual"
+                    type="text"
+                    value={kabagWorkshop}
+                    onChange={(e) => setKabagWorkshop(e.target.value)}
+                    placeholder="Ketik nama Kabag Workshop..."
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none transition"
+                  />
+                )}
+
+                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
+                  <span>Jabatan:</span>
+                  <span className="text-stone-300 font-semibold">{kabagWorkshopJabatan || 'Kabag Workshop'}</span>
+                </div>
               </div>
             </div>
           </div>

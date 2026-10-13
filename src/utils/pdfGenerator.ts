@@ -604,52 +604,50 @@ export const exportDailyBreakdownToPDF = (options: {
     sigY = 20;
   }
 
-  // 5. LEMBAR PENGESAHAN
+  // 5. LEMBAR PENGESAHAN (VALIDASI 2 PIHAK SESUAI INSTRUKSI USER):
+  // 1. Administrasi = Dibuat Oleh
+  // 2. Kabag Workshop = Mengetahui & Menyetujui
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
   const namaPembuat = signatories?.pembuatName || exporterName;
   const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
-  const namaDiperiksa = signatories?.diperiksaName || 'Supervisor Maintenance';
-  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Supervisor Maintenance';
   const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
   const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
 
-  // Kolom 1: Yang Membuat (Admin yang ditunjuk - Jabatan Administrasi)
-  doc.text('Yang Membuat,', 55, sigY, { align: 'center' });
+  // Kolom 1: Dibuat Oleh (Administrasi)
+  doc.text('Dibuat Oleh,', 80, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanPembuat, 55, sigY + 4, { align: 'center' });
-  doc.line(25, sigY + 18, 85, sigY + 18);
+  doc.text(jabatanPembuat, 80, sigY + 4, { align: 'center' });
+  doc.line(45, sigY + 18, 115, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaPembuat} )`, 55, sigY + 22, { align: 'center' });
-
-  // Kolom 2: Diperiksa Oleh (SPV / Kabag Workshop)
+  doc.text(`( ${namaPembuat} )`, 80, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.text('Diperiksa Oleh,', 148.5, sigY, { align: 'center' });
-  doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiperiksa, 148.5, sigY + 4, { align: 'center' });
-  doc.line(118.5, sigY + 18, 178.5, sigY + 18);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiperiksa} )`, 148.5, sigY + 22, { align: 'center' });
+  doc.text('Administrasi Workshop', 80, sigY + 26, { align: 'center' });
 
-  // Kolom 3: Diketahui Oleh (Kabag Workshop)
+  // Kolom 2: Mengetahui & Menyetujui (Kabag Workshop)
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Diketahui Oleh,', 242, sigY, { align: 'center' });
+  doc.setTextColor(...darkTextColor);
+  doc.text('Mengetahui & Menyetujui,', 217, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiketahui, 242, sigY + 4, { align: 'center' });
-  doc.line(212, sigY + 18, 272, sigY + 18);
+  doc.text(jabatanDiketahui, 217, sigY + 4, { align: 'center' });
+  doc.line(182, sigY + 18, 252, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiketahui} )`, 242, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaDiketahui} )`, 217, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop / Kepala Bengkel', 217, sigY + 26, { align: 'center' });
 
   // Footer di semua halaman
   const totalPages = doc.getNumberOfPages();
@@ -810,45 +808,41 @@ export const exportDetailHistoryToPDF = (
 
   const namaPembuat = signatories?.pembuatName || exporterName;
   const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
-  const namaDiperiksa = signatories?.diperiksaName || 'Supervisor Maintenance';
-  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Supervisor Maintenance';
   const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
   const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
 
-  // Kolom 1: Yang Membuat (Admin yang ditunjuk - Jabatan Administrasi)
-  doc.text('Yang Membuat,', 55, sigY, { align: 'center' });
+  // Kolom 1: Dibuat Oleh (Administrasi)
+  doc.text('Dibuat Oleh,', 80, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanPembuat, 55, sigY + 4, { align: 'center' });
-  doc.line(25, sigY + 18, 85, sigY + 18);
+  doc.text(jabatanPembuat, 80, sigY + 4, { align: 'center' });
+  doc.line(45, sigY + 18, 115, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaPembuat} )`, 55, sigY + 22, { align: 'center' });
-
-  // Kolom 2: Diperiksa Oleh (SPV / Kabag Workshop)
+  doc.text(`( ${namaPembuat} )`, 80, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.text('Diperiksa Oleh,', 148.5, sigY, { align: 'center' });
-  doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiperiksa, 148.5, sigY + 4, { align: 'center' });
-  doc.line(118.5, sigY + 18, 178.5, sigY + 18);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiperiksa} )`, 148.5, sigY + 22, { align: 'center' });
+  doc.text('Administrasi Workshop', 80, sigY + 26, { align: 'center' });
 
-  // Kolom 3: Diketahui Oleh (Kabag Workshop)
+  // Kolom 2: Mengetahui & Menyetujui (Kabag Workshop)
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('Diketahui Oleh,', 242, sigY, { align: 'center' });
+  doc.setTextColor(...darkTextColor);
+  doc.text('Mengetahui & Menyetujui,', 217, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiketahui, 242, sigY + 4, { align: 'center' });
-  doc.line(212, sigY + 18, 272, sigY + 18);
+  doc.text(jabatanDiketahui, 217, sigY + 4, { align: 'center' });
+  doc.line(182, sigY + 18, 252, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiketahui} )`, 242, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaDiketahui} )`, 217, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop / Kepala Bengkel', 217, sigY + 26, { align: 'center' });
 
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
@@ -873,8 +867,19 @@ export interface ExportFuelOilReportParams {
   startDate?: string;
   endDate?: string;
   reportCategory?: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE';
-  petugasChecker: string;
-  kttName: string;
+  // Lembar Pengesahan FOG (3 Pihak sesuai instruksi user):
+  // 1. Petugas FOG = yang membuat Laporan
+  // 2. Petugas Inventory = Diperiksa oleh
+  // 3. Kabag Workshop = Mengetahui & Menyetujui
+  petugasFog?: string;
+  petugasFogJabatan?: string;
+  petugasInventory?: string;
+  petugasInventoryJabatan?: string;
+  kabagWorkshop?: string;
+  kabagWorkshopJabatan?: string;
+  // Legacy fallback
+  petugasChecker?: string;
+  kttName?: string;
   currentUser?: UserAccount;
   fuelStockInputs: FuelStockInputRecord[];
   fuelTransfers: FuelTransferRecord[];
@@ -891,14 +896,21 @@ export interface ExportFuelOilReportParams {
  * 3. Pembelian Solar di Luar (SPBU Luar / Out-Field Fuel)
  * 4. Penggunaan Oli Setiap Tipe
  * 
- * Dilengkapi Filter Tanggal, Ringkasan Eksekutif, dan Format 2 Tanda Tangan:
- * - Kiri: Petugas Checker Tambang (Checker Lapangan / Tallyman)
- * - Kanan: Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT)
+ * Dilengkapi Filter Tanggal, Ringkasan Eksekutif, dan Format Lembar Pengesahan FOG (3 Pihak):
+ * 1. Petugas FOG = Yang membuat Laporan
+ * 2. Petugas Inventory = Diperiksa oleh
+ * 3. Kabag Workshop = Mengetahui & Menyetujui
  */
 export const exportFuelOilTransactionsToPDF = ({
   startDate,
   endDate,
   reportCategory = 'ALL',
+  petugasFog,
+  petugasFogJabatan,
+  petugasInventory,
+  petugasInventoryJabatan,
+  kabagWorkshop,
+  kabagWorkshopJabatan,
   petugasChecker,
   kttName,
   currentUser,
@@ -1633,46 +1645,75 @@ export const exportFuelOilTransactionsToPDF = ({
   }
 
   // =========================================================================
-  // 5. FORMAT TANDA TANGAN (2 PIHAK PENGESAHAN SESUAI PERMINTAAN USER):
-  // - Petugas Checker Tambang (Kiri — Checker Lapangan / Tallyman)
-  // - Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT) (Kanan — KTT)
+  // 5. FORMAT LEMBAR PENGESAHAN FOG (3 PIHAK SESUAI INSTRUKSI USER):
+  // 1. Petugas FOG = yang membuat Laporan (Kiri)
+  // 2. Petugas Inventory = Diperiksa oleh (Tengah)
+  // 3. Kabag Workshop = Mengetahui & Menyetujui (Kanan)
   // =========================================================================
   if (curY > 162) {
     doc.addPage();
     curY = 20;
   }
 
-  const checkerClean = (petugasChecker || '').trim() || '....................................';
-  const kttClean = (kttName || '').trim() || '....................................';
+  const fogClean = (petugasFog || petugasChecker || '').trim() || '....................................';
+  const fogJabatan = (petugasFogJabatan || 'Petugas FOG').trim();
+  const inventoryClean = (petugasInventory || '').trim() || '....................................';
+  const inventoryJabatan = (petugasInventoryJabatan || 'Petugas Inventory').trim();
+  const kabagClean = (kabagWorkshop || kttName || '').trim() || '....................................';
+  const kabagJabatan = (kabagWorkshopJabatan || 'Kabag Workshop').trim();
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
-  // Kolom Kiri: Petugas Checker Tambang
-  doc.text('Petugas Checker Tambang (Checker Lapangan / Tallyman):', 70, curY + 4, { align: 'center' });
-  doc.line(35, curY + 22, 105, curY + 22);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.text(`( ${checkerClean} )`, 70, curY + 26, { align: 'center' });
+  // Kolom 1 (Kiri - x=55): 1. Yang Membuat Laporan: Petugas FOG
+  doc.text('Yang Membuat Laporan,', 55, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
-  doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Checker Tambang / Petugas FOG Lapangan', 70, curY + 30, { align: 'center' });
-
-  // Kolom Kanan: Mengetahui & Menyetujui: Kepala Tehnik Tambang (KTT)
+  doc.text(fogJabatan, 55, curY + 8, { align: 'center' });
+  doc.line(25, curY + 22, 85, curY + 22);
   doc.setFontSize(8.5);
-  doc.setTextColor(...darkTextColor);
-  doc.text('Mengetahui & Menyetujui:', 227, curY + 4, { align: 'center' });
   doc.setFont('helvetica', 'bold');
-  doc.text('Kepala Tehnik Tambang (KTT)', 227, curY + 8, { align: 'center' });
-  doc.line(192, curY + 22, 262, curY + 22);
-  doc.setFontSize(9);
-  doc.text(`( ${kttClean} )`, 227, curY + 26, { align: 'center' });
-  doc.setFontSize(7.5);
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${fogClean} )`, 55, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Kepala Tehnik Tambang (KTT)', 227, curY + 30, { align: 'center' });
+  doc.text('Petugas FOG / BBM & Pelumas', 55, curY + 30, { align: 'center' });
+
+  // Kolom 2 (Tengah - x=148.5): 2. Diperiksa Oleh: Petugas Inventory
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Diperiksa Oleh,', 148.5, curY + 4, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(inventoryJabatan, 148.5, curY + 8, { align: 'center' });
+  doc.line(118.5, curY + 22, 178.5, curY + 22);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${inventoryClean} )`, 148.5, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Petugas Inventory / Logistik Gudang', 148.5, curY + 30, { align: 'center' });
+
+  // Kolom 3 (Kanan - x=242): 3. Mengetahui & Menyetujui: Kabag Workshop
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Mengetahui & Menyetujui,', 242, curY + 4, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(kabagJabatan, 242, curY + 8, { align: 'center' });
+  doc.line(212, curY + 22, 272, curY + 22);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${kabagClean} )`, 242, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop / Kepala Bengkel', 242, curY + 30, { align: 'center' });
 
   // ==========================================
   // FOOTER HALAMAN OTOMATIS

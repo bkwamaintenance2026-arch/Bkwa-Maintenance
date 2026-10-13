@@ -1252,6 +1252,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         periodBalance={periodBalance}
         currentUser={currentUser}
         defaultCategory={exportCategoryTarget}
+        manpowerList={manpowerList}
       />
     </div>
   );

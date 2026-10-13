@@ -132,6 +132,7 @@ export type ManpowerJabatan =
   | 'SOPIR LOKASI'
   | 'DRIVER FUEL TRUCK'
   | 'PETUGAS FOG'
+  | 'PETUGAS INVENTORY'
   | 'PKL';
 
 export const MANPOWER_JABATAN_OPTIONS: ManpowerJabatan[] = [
@@ -146,6 +147,7 @@ export const MANPOWER_JABATAN_OPTIONS: ManpowerJabatan[] = [
   'SOPIR LOKASI',
   'DRIVER FUEL TRUCK',
   'PETUGAS FOG',
+  'PETUGAS INVENTORY',
   'PKL',
 ];
 
