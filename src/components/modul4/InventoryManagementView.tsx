@@ -23,6 +23,7 @@ import { FuelDistributionSubView } from './FuelDistributionSubView';
 import { OilDistributionSubView } from './OilDistributionSubView';
 import { OutFieldFuelSubView } from './OutFieldFuelSubView';
 import { GreaseSubView } from './GreaseSubView';
+import { OilSummaryReportSubView } from './OilSummaryReportSubView';
 import { ExportFuelOilReportModal } from './ExportFuelOilReportModal';
 import { 
   calculateInventoryStockLevels, 
@@ -53,7 +54,8 @@ import {
   Pencil,
   Package,
   Sparkles,
-  FileDown
+  FileDown,
+  BarChart3
 } from 'lucide-react';
 
 export type FogCategoryColumn = 'ALL' | 'FUEL' | 'OIL' | 'GREASE' | 'SUPPLIER';
@@ -64,6 +66,7 @@ export type FogSubModuleTab =
   | 'fuel_dist'
   | 'oil_stock'
   | 'oil_dist'
+  | 'oil_summary_report'
   | 'grease'
   | 'supplier';
 
@@ -398,6 +401,19 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       activeColor: 'bg-emerald-500 text-stone-950 shadow-emerald-500/20',
       badge: 'Pemakaian Unit',
     },
+    {
+      id: 'oil_summary_report' as const,
+      category: 'OIL' as const,
+      label: 'Report Summary Oli',
+      sublabel: 'Saldo & Distribusi per Tipe Oli',
+      categoryLabel: 'KOLOM OIL',
+      icon: BarChart3,
+      count: oilDistributions.length,
+      isPrimary: true,
+      color: 'hover:text-teal-400',
+      activeColor: 'bg-teal-500 text-stone-950 shadow-teal-500/25',
+      badge: 'Report & Saldo',
+    },
 
     // KOLOM GREASE (Gemuk Pelumas Padat)
     {
@@ -680,15 +696,17 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             <div 
               onClick={() => {
                 setSelectedCategory('OIL');
-                setActiveSubModule('oil_stock');
+                setActiveSubModule('oil_summary_report');
               }}
               className="group cursor-pointer bg-stone-950/80 hover:bg-stone-950 border border-stone-800/90 hover:border-emerald-500/50 rounded-2xl p-3.5 shadow-lg transition-all relative overflow-hidden flex flex-col justify-between"
+              title="Klik untuk membuka Sub Modul Report Summary Penggunaan Oli Per Tipe"
             >
               <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
               <div>
                 <div className="flex items-center justify-between text-stone-400">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400">
-                    SISA OLI PER TIPE
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                    <span>SISA OLI PER TIPE</span>
+                    <span className="text-[9px] text-teal-400 font-normal lowercase">(buka report)</span>
                   </span>
                   <div className="p-1 rounded-md bg-emerald-500/10 text-emerald-400">
                     <Droplet className="w-3.5 h-3.5" />
@@ -715,7 +733,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
               <div className="mt-2 pt-1.5 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
                 <span>Total: <strong className="text-emerald-400 font-bold">{(computation?.totalOliLiters ?? 0).toLocaleString('id-ID')} Ltr</strong></span>
-                <span className="text-stone-500">{oilDistributions.length} Bon</span>
+                <span className="text-teal-400 font-bold group-hover:underline">Buka Report →</span>
               </div>
             </div>
 
@@ -776,7 +794,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 : 'bg-stone-900 text-stone-400 hover:text-stone-200 border border-stone-800'
             }`}
           >
-            Semua Sub-Modul (8)
+            Semua Sub-Modul ({allSubModuleTabs.length})
           </button>
 
           <button
@@ -789,7 +807,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             }`}
           >
             <Fuel className="w-3.5 h-3.5" />
-            <span>KOLOM FUEL (4)</span>
+            <span>KOLOM FUEL ({allSubModuleTabs.filter((t) => t.category === 'FUEL').length})</span>
           </button>
 
           <button
@@ -802,7 +820,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             }`}
           >
             <Droplet className="w-3.5 h-3.5" />
-            <span>KOLOM OIL (2)</span>
+            <span>KOLOM OIL ({allSubModuleTabs.filter((t) => t.category === 'OIL').length})</span>
           </button>
 
           <button
@@ -979,6 +997,19 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             }}
             onSave={onSaveOilDistribution}
             onDelete={onDeleteOilDistribution}
+          />
+        )}
+
+        {/* 7. REPORT SUMMARY PENGGUNAAN OLI SETIAP TYPE / KATEGORI */}
+        {activeSubModule === 'oil_summary_report' && (
+          <OilSummaryReportSubView
+            oilDistributions={oilDistributions}
+            oilStockInputs={oilStockInputs}
+            periodBalance={periodBalance}
+            availableOilTypes={availableOilTypes}
+            equipmentList={units}
+            manpowerList={manpowerList}
+            currentUser={currentUser}
           />
         )}
 

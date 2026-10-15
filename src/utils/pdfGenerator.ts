@@ -10,6 +10,7 @@ import {
   FuelDistributionRecord,
   OutFieldFuelRecord,
   OilDistributionRecord,
+  OilStockInputRecord,
   InventoryPeriodBalance
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
@@ -1825,3 +1826,584 @@ export const exportFuelOilTransactionsToPDF = (params: ExportFuelOilReportParams
   result.download();
   return result;
 };
+
+/**
+ * Parameter untuk Export & Preview Laporan Summary Penggunaan Oli Per Tipe
+ */
+export interface ExportOilSummaryReportParams {
+  startDate?: string;
+  endDate?: string;
+  selectedOilType?: string;
+  // Validasi 3 Pihak:
+  // 1. PIC FOG - Pembuat laporan (Dropdown Manpower jabatan Administrasi)
+  // 2. Inventory - Di Check Oleh (Dropdown Manpower jabatan Administrasi)
+  // 3. Kabag Workshop - Disetujui Oleh (Dodik Mariyadi)
+  picFogName: string;
+  picFogJabatan?: string;
+  inventoryName: string;
+  inventoryJabatan?: string;
+  kabagWorkshopName: string;
+  kabagWorkshopJabatan?: string;
+  currentUser?: UserAccount;
+  oilDistributions: OilDistributionRecord[];
+  oilStockInputs: OilStockInputRecord[];
+  periodBalance?: InventoryPeriodBalance;
+  availableOilTypes?: string[];
+}
+
+/**
+ * Utility Resmi untuk Men-generate Laporan Summary Penggunaan Oli Setiap Tipe / Kategori ke PDF:
+ * - Filter Tanggal & Filter Tipe Oli
+ * - Informasi Saldo Awal, Penerimaan Masuk, Distribusi Keluar, dan Saldo Akhir
+ * - Rincian Distribusi per masing-masing Jenis Oli
+ * - Format Pengesahan 3 Pihak (PIC FOG, Inventory, Kabag Workshop Dodik Mariyadi)
+ */
+export const generateOilSummaryReportPDF = ({
+  startDate,
+  endDate,
+  selectedOilType = 'ALL',
+  picFogName,
+  picFogJabatan = 'Administrasi',
+  inventoryName,
+  inventoryJabatan = 'Administrasi',
+  kabagWorkshopName = 'Dodik Mariyadi',
+  kabagWorkshopJabatan = 'Kabag Workshop',
+  currentUser,
+  oilDistributions = [],
+  oilStockInputs = [],
+  periodBalance,
+  availableOilTypes = [],
+}: ExportOilSummaryReportParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const nowStr = new Date().toLocaleString('id-ID');
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Administrasi FOG';
+
+  // Helper filter tanggal
+  const matchDate = (tgl?: string) => {
+    if (!tgl) return true;
+    const cleanTgl = tgl.trim().split('T')[0];
+    if (startDate && cleanTgl < startDate) return false;
+    if (endDate && cleanTgl > endDate) return false;
+    return true;
+  };
+
+  const isBeforeStart = (tgl?: string) => {
+    if (!startDate || !tgl) return false;
+    const cleanTgl = tgl.trim().split('T')[0];
+    return cleanTgl < startDate;
+  };
+
+  // 1. Daftar semua tipe oli unik
+  const defaultTypes = [
+    'TURALIK 52 PERTAMINA',
+    'RORED HDA SAE 90',
+    'SAE 15W 40',
+    'MEDITRAN SX 15W-40',
+    'TURALIK 48',
+    'RORED HDA SAE 140',
+    'ATF AUTOMATIC TRANSMISSION',
+    'HYDRAULIC OIL ISO VG 68',
+  ];
+  const distinctOilTypes = Array.from(
+    new Set([
+      ...availableOilTypes,
+      ...oilStockInputs.map((i) => i.namaOli),
+      ...oilDistributions.map((d) => d.jenisOli),
+      ...defaultTypes,
+    ])
+  ).filter(Boolean);
+
+  const oilTypesToReport =
+    selectedOilType && selectedOilType !== 'ALL'
+      ? distinctOilTypes.filter((t) => t.trim().toUpperCase() === selectedOilType.trim().toUpperCase())
+      : distinctOilTypes;
+
+  // 2. Filter distribusi oli sesuai filter tanggal dan tipe
+  const filteredDistributions = oilDistributions.filter((d) => {
+    if (!matchDate(d.tanggal)) return false;
+    if (selectedOilType && selectedOilType !== 'ALL') {
+      return d.jenisOli?.trim().toUpperCase() === selectedOilType.trim().toUpperCase();
+    }
+    return true;
+  });
+
+  // 3. Kalkulasi Saldo per Tipe Oli
+  const oilSummaryList = oilTypesToReport.map((tipe) => {
+    const tipeUpper = tipe.trim().toUpperCase();
+
+    // Baseline saldo awal dari period balance
+    const baseline = Number(periodBalance?.sisaPeriodeLaluOli?.[tipe]) || 0;
+
+    // Mutasi sebelum startDate untuk akurasi saldo awal periode
+    const priorMasuk = oilStockInputs
+      .filter((i) => i.namaOli?.trim().toUpperCase() === tipeUpper && isBeforeStart(i.tanggal))
+      .reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+
+    const priorKeluar = oilDistributions
+      .filter((d) => d.jenisOli?.trim().toUpperCase() === tipeUpper && isBeforeStart(d.tanggal))
+      .reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+
+    const saldoAwal = Math.max(0, baseline + priorMasuk - priorKeluar);
+
+    // Mutasi dalam periode terpilih
+    const masuk = oilStockInputs
+      .filter((i) => i.namaOli?.trim().toUpperCase() === tipeUpper && matchDate(i.tanggal))
+      .reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+
+    const keluar = oilDistributions
+      .filter((d) => d.jenisOli?.trim().toUpperCase() === tipeUpper && matchDate(d.tanggal))
+      .reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+
+    const saldoAkhir = Math.max(0, saldoAwal + masuk - keluar);
+
+    const bonCount = oilDistributions.filter(
+      (d) => d.jenisOli?.trim().toUpperCase() === tipeUpper && matchDate(d.tanggal)
+    ).length;
+
+    let status = 'Aman';
+    if (saldoAkhir === 0) status = 'Kosong';
+    else if (saldoAkhir < 20) status = 'Kritis';
+    else if (saldoAkhir < 50) status = 'Menipis';
+
+    return {
+      tipe,
+      saldoAwal,
+      masuk,
+      keluar,
+      saldoAkhir,
+      bonCount,
+      status,
+    };
+  });
+
+  // Urutkan: yang ada aktivitas mutasi atau saldo di atas
+  oilSummaryList.sort((a, b) => b.keluar - a.keluar || b.saldoAkhir - a.saldoAkhir);
+
+  const totalSaldoAwal = oilSummaryList.reduce((acc, c) => acc + c.saldoAwal, 0);
+  const totalMasuk = oilSummaryList.reduce((acc, c) => acc + c.masuk, 0);
+  const totalKeluar = oilSummaryList.reduce((acc, c) => acc + c.keluar, 0);
+  const totalSaldoAkhir = oilSummaryList.reduce((acc, c) => acc + c.saldoAkhir, 0);
+
+  // Label Rentang Tanggal
+  let periodeLabel = 'Semua Periode Transaksi';
+  if (startDate && endDate) {
+    periodeLabel = `${startDate} s/d ${endDate}`;
+  } else if (startDate) {
+    periodeLabel = `Mulai ${startDate}`;
+  } else if (endDate) {
+    periodeLabel = `Sampai ${endDate}`;
+  }
+
+  // Formatting Colors
+  const darkTextColor: [number, number, number] = [15, 23, 42];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+  const emeraldColor: [number, number, number] = [5, 150, 105];
+
+  // Helper Ensure Page Space
+  const ensurePageSpace = (requiredMm: number) => {
+    if (curY + requiredMm > 195) {
+      doc.addPage();
+      curY = 16;
+    }
+  };
+
+  // =========================================================================
+  // HEADER KOP SURAT RESMI PT BKWA
+  // =========================================================================
+  doc.setFillColor(15, 23, 42); // Slate 900
+  doc.rect(14, 10, 270, 22, 'F');
+
+  // Emblem Kotak Logo
+  doc.setFillColor(16, 185, 129); // Emerald
+  doc.roundedRect(17, 12, 18, 18, 2.5, 2.5, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('BKWA', 26, 21.5, { align: 'center' });
+  doc.setFontSize(5);
+  doc.text('OIL FOG', 26, 25.5, { align: 'center' });
+
+  // Teks Kop Perusahaan
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(255, 255, 255);
+  doc.text('PT BATU KALI WELANG AMPUH', 39, 17);
+
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(52, 211, 153); // Emerald light
+  doc.text('LAPORAN SUMMARY PENGGUNAAN OLI SETIAP TYPE / KATEGORI', 39, 22);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(203, 213, 225);
+  doc.text(
+    'Quarry Purwosari • Divisi Maintenance & Logistik Pelumas • Monitoring Saldo Awal, Penerimaan, Distribusi & Sisa Stok',
+    39,
+    26.5
+  );
+
+  // Metadata Dokumen di Kanan
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('DOKUMEN RESMI PELUMAS (OIL)', 280, 16, { align: 'right' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(226, 232, 240);
+  doc.text(`Periode: ${periodeLabel}`, 280, 20.5, { align: 'right' });
+  doc.text(`Kategori: ${selectedOilType === 'ALL' ? 'Semua Jenis Oli' : selectedOilType}`, 280, 24.5, {
+    align: 'right',
+  });
+  doc.text(`Cetak: ${nowStr} • Oleh: ${exporterName}`, 280, 28.5, { align: 'right' });
+
+  let curY = 36;
+
+  // =========================================================================
+  // METRIC HIGHLIGHT CARDS
+  // =========================================================================
+  const cardWidth = 63.5;
+  const cardHeight = 13.5;
+  const cards = [
+    { label: 'TOTAL SALDO AWAL', val: `${totalSaldoAwal.toLocaleString('id-ID')} Liter`, col: [59, 130, 246] as [number, number, number], sub: 'Sisa stok periode lalu' },
+    { label: 'TOTAL PENERIMAAN (MASUK)', val: `${totalMasuk.toLocaleString('id-ID')} Liter`, col: [16, 185, 129] as [number, number, number], sub: 'Drop supplier / gudang' },
+    { label: 'TOTAL PENGGUNAAN (KELUAR)', val: `${totalKeluar.toLocaleString('id-ID')} Liter`, col: [249, 115, 22] as [number, number, number], sub: `${filteredDistributions.length} bon distribusi unit` },
+    { label: 'TOTAL SALDO AKHIR', val: `${totalSaldoAkhir.toLocaleString('id-ID')} Liter`, col: [139, 92, 246] as [number, number, number], sub: 'Sisa fisik siap pakai' },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 5);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(x, curY, cardWidth, cardHeight, 1.5, 1.5, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, curY, cardWidth, cardHeight, 1.5, 1.5, 'S');
+
+    doc.setFillColor(...c.col);
+    doc.rect(x, curY, 2.5, cardHeight, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 5, curY + 4);
+
+    doc.setFontSize(9);
+    doc.setTextColor(...darkTextColor);
+    doc.text(c.val, x + 5, curY + 8.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(5.8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(c.sub, x + 5, curY + 11.8);
+  });
+
+  curY += cardHeight + 5;
+
+  // =========================================================================
+  // SECTION 1: TABEL REKAPITULASI SALDO & MUTASI OLI PER TIPE
+  // =========================================================================
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...emeraldColor);
+  doc.text(
+    `1. REKAPITULASI INFORMASI SALDO OLI SETIAP TYPE / KATEGORI (${oilSummaryList.length} Varian Oli)`,
+    14,
+    curY
+  );
+
+  const summaryTableRows = oilSummaryList.map((item, idx) => {
+    const pct = totalKeluar > 0 ? ((item.keluar / totalKeluar) * 100).toFixed(1) : '0';
+    return [
+      idx + 1,
+      item.tipe,
+      `${item.saldoAwal.toLocaleString('id-ID')} L`,
+      `${item.masuk.toLocaleString('id-ID')} L`,
+      `${item.keluar.toLocaleString('id-ID')} L`,
+      `${item.saldoAkhir.toLocaleString('id-ID')} L`,
+      `${pct} %`,
+      `${item.bonCount} Bon`,
+      item.status,
+    ];
+  });
+
+  // Baris Total Keseluruhan
+  summaryTableRows.push([
+    '',
+    'TOTAL KESELURUHAN OLI',
+    `${totalSaldoAwal.toLocaleString('id-ID')} L`,
+    `${totalMasuk.toLocaleString('id-ID')} L`,
+    `${totalKeluar.toLocaleString('id-ID')} L`,
+    `${totalSaldoAkhir.toLocaleString('id-ID')} L`,
+    '100 %',
+    `${filteredDistributions.length} Bon`,
+    'Rangkuman',
+  ]);
+
+  autoTable(doc, {
+    startY: curY + 2,
+    head: [
+      [
+        'No',
+        'Jenis / Varian Oli',
+        'Saldo Awal',
+        'Masuk (Penerimaan)',
+        'Keluar (Penggunaan)',
+        'Saldo Akhir',
+        '% Pemakaian',
+        'Frekuensi',
+        'Status Stok',
+      ],
+    ],
+    body: summaryTableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [5, 150, 105],
+      textColor: [255, 255, 255],
+      fontSize: 7,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 1.6,
+    },
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 1.4,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 72, fontStyle: 'bold' },
+      2: { cellWidth: 30, halign: 'right' },
+      3: { cellWidth: 32, halign: 'right', textColor: [16, 185, 129] },
+      4: { cellWidth: 34, halign: 'right', fontStyle: 'bold', textColor: [234, 88, 12] },
+      5: { cellWidth: 34, halign: 'right', fontStyle: 'bold', textColor: [15, 23, 42] },
+      6: { cellWidth: 22, halign: 'center' },
+      7: { cellWidth: 20, halign: 'center' },
+      8: { cellWidth: 'auto', halign: 'center', fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      // Baris total highlight
+      if (data.row.index === summaryTableRows.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [241, 245, 249];
+        data.cell.styles.textColor = [15, 23, 42];
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // @ts-ignore
+  curY = doc.lastAutoTable.finalY + 6;
+
+  // =========================================================================
+  // SECTION 2: TABEL RINCIAN DISTRIBUSI PENGGUNAAN OLI KE UNIT
+  // =========================================================================
+  ensurePageSpace(20);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...emeraldColor);
+  doc.text(
+    `2. RINCIAN DISTRIBUSI PENGGUNAAN OLI PER UNIT ALAT BERAT (${filteredDistributions.length} Bon Transaksi, Total: ${totalKeluar.toLocaleString('id-ID')} Liter)`,
+    14,
+    curY
+  );
+
+  const detailRows =
+    filteredDistributions.length > 0
+      ? filteredDistributions.map((r, idx) => [
+          idx + 1,
+          `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+          r.noBon || '-',
+          r.jenisOli || '-',
+          r.noUnit || '-',
+          r.namaAlat || r.namaUnit || '-',
+          (Number(r.hmUnit) || 0).toLocaleString('id-ID'),
+          `${(Number(r.qty) || 0).toLocaleString('id-ID')} L`,
+          r.rincianKerusakan || '-',
+          r.picMekanik || '-',
+          r.picGudangMaterial || '-',
+        ])
+      : [
+          [
+            {
+              content: 'Tidak ada transaksi distribusi oli yang tercatat pada rentang tanggal terpilih.',
+              colSpan: 11,
+              styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+            },
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: curY + 2,
+    head: [
+      [
+        'No',
+        'Tanggal & Jam',
+        'No Bon',
+        'Jenis / Tipe Oli',
+        'CN Unit',
+        'Nama Alat Berat',
+        'HM Unit',
+        'Qty (Ltr)',
+        'Rincian Kerusakan / Kompartemen',
+        'PIC Mekanik',
+        'PIC Gudang',
+      ],
+    ],
+    body: detailRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [16, 185, 129],
+      textColor: [255, 255, 255],
+      fontSize: 7,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 1.6,
+    },
+    styles: {
+      fontSize: 6.7,
+      cellPadding: 1.4,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 24, halign: 'center' },
+      2: { cellWidth: 20, fontStyle: 'bold' },
+      3: { cellWidth: 36, fontStyle: 'bold', textColor: [5, 150, 105] },
+      4: { cellWidth: 18, fontStyle: 'bold' },
+      5: { cellWidth: 30 },
+      6: { cellWidth: 16, halign: 'right' },
+      7: { cellWidth: 18, halign: 'right', fontStyle: 'bold', textColor: [234, 88, 12] },
+      8: { cellWidth: 44 },
+      9: { cellWidth: 26 },
+      10: { cellWidth: 'auto' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // @ts-ignore
+  curY = doc.lastAutoTable.finalY + 8;
+
+  // =========================================================================
+  // SECTION 3: LEMBAR PENGESAHAN LAPORAN (3 PIHAK SESUAI INSTRUKSI USER):
+  // 1. PIC FOG - Pembuat laporan (Dropdown Manpower jabatan Administrasi)
+  // 2. Inventory - Di Check Oleh (Dropdown Manpower jabatan Administrasi)
+  // 3. Kabag Workshop - Disetujui Oleh (Dodik Mariyadi)
+  // =========================================================================
+  if (curY > 160) {
+    doc.addPage();
+    curY = 20;
+  }
+
+  const cleanPicFog = (picFogName || '').trim() || '....................................';
+  const cleanInventory = (inventoryName || '').trim() || '....................................';
+  const cleanKabag = (kabagWorkshopName || 'Dodik Mariyadi').trim() || 'Dodik Mariyadi';
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+
+  // Kolom 1 (Kiri - x=55): 1. PIC FOG - Pembuat Laporan
+  doc.text('1. Yang Membuat Laporan,', 55, curY + 4, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(picFogJabatan || 'Administrasi FOG', 55, curY + 8, { align: 'center' });
+  doc.setDrawColor(148, 163, 184);
+  doc.line(25, curY + 22, 85, curY + 22);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${cleanPicFog} )`, 55, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('PIC FOG (Jabatan Administrasi)', 55, curY + 30, { align: 'center' });
+
+  // Kolom 2 (Tengah - x=148.5): 2. Inventory - Di Check Oleh
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('2. Diperiksa & Dicek Oleh,', 148.5, curY + 4, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(inventoryJabatan || 'Administrasi Inventory', 148.5, curY + 8, { align: 'center' });
+  doc.line(118.5, curY + 22, 178.5, curY + 22);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${cleanInventory} )`, 148.5, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Inventory (Jabatan Administrasi)', 148.5, curY + 30, { align: 'center' });
+
+  // Kolom 3 (Kanan - x=242): 3. Kabag Workshop - Disetujui Oleh (Dodik Mariyadi)
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('3. Mengetahui & Menyetujui,', 242, curY + 4, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(kabagWorkshopJabatan || 'Kabag Workshop', 242, curY + 8, { align: 'center' });
+  doc.line(212, curY + 22, 272, curY + 22);
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${cleanKabag} )`, 242, curY + 26, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop PT BKWA', 242, curY + 30, { align: 'center' });
+
+  // =========================================================================
+  // FOOTER NOMOR HALAMAN DI SELURUH HALAMAN
+  // =========================================================================
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(14, 200, 284, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH • Laporan Summary Penggunaan Oli Per Tipe (${periodeLabel}) • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  // Generate blob URL & filename
+  const cleanStartDate = (startDate || 'Awal').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanEndDate = (endDate || 'Akhir').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanTipe = (selectedOilType && selectedOilType !== 'ALL' ? selectedOilType : 'Semua_Tipe').replace(
+    /[^a-zA-Z0-9_-]/g,
+    '_'
+  );
+  const filename = `Laporan_Summary_Penggunaan_Oli_PT_BKWA_${cleanTipe}_${cleanStartDate}_sd_${cleanEndDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+/**
+ * Utility Resmi untuk Mengekspor Laporan Summary Penggunaan Oli langsung download ke PDF
+ */
+export const exportOilSummaryReportToPDF = (params: ExportOilSummaryReportParams): GeneratedPDFResult => {
+  const result = generateOilSummaryReportPDF(params);
+  result.download();
+  return result;
+};
+

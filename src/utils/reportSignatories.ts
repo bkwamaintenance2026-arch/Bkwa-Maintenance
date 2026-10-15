@@ -222,13 +222,17 @@ export function resolveFogSignatories(
   }
 
   // 3. Mengetahui & Menyetujui: Kabag Workshop
-  let kabagWorkshopName = '';
+  let kabagWorkshopName = 'Dodik Mariyadi';
   let kabagWorkshopJabatan = 'Kabag Workshop';
-  if (kabagList.length > 0) {
+  const foundDodik = kabagList.find((m) => m.nama?.toLowerCase().includes('dodik') || m.nama?.toLowerCase().includes('mariyadi'));
+  if (foundDodik) {
+    kabagWorkshopName = foundDodik.nama;
+    kabagWorkshopJabatan = foundDodik.jabatan || 'Kabag Workshop';
+  } else if (kabagList.length > 0) {
     kabagWorkshopName = kabagList[0].nama;
     kabagWorkshopJabatan = kabagList[0].jabatan || 'Kabag Workshop';
   } else {
-    kabagWorkshopName = 'Kabag Workshop';
+    kabagWorkshopName = 'Dodik Mariyadi';
     kabagWorkshopJabatan = 'Kabag Workshop';
   }
 
@@ -245,3 +249,100 @@ export function resolveFogSignatories(
     allManpowerList: manpowerList,
   };
 }
+
+/**
+ * Validasi 3 Pihak Laporan Summary Penggunaan Oli Per Tipe/Kategori:
+ * 1. PIC FOG - Pembuat laporan (Dropdown Manpower jabatan Administrasi)
+ * 2. Inventory - Di Check Oleh (Dropdown Manpower jabatan Administrasi)
+ * 3. Kabag Workshop - Disetujui Oleh (Dodik Mariyadi)
+ */
+export interface OilSummarySignatories {
+  picFogName: string;
+  picFogJabatan: string;
+  inventoryName: string;
+  inventoryJabatan: string;
+  kabagWorkshopName: string;
+  kabagWorkshopJabatan: string;
+  administrasiList: ManpowerData[];
+  allManpowerList: ManpowerData[];
+}
+
+export function resolveOilSummarySignatories(
+  manpowerList: ManpowerData[] = [],
+  currentUser?: UserAccount
+): OilSummarySignatories {
+  // 1. Filter personil dengan jabatan Administrasi
+  const administrasiList = manpowerList.filter((m) => {
+    const j = (m.jabatan || '').toUpperCase().trim();
+    return j === 'ADMINISTRASI' || j.includes('ADMIN');
+  });
+
+  // PIC FOG - Pembuat laporan (Dropdown Manpower jabatan Administrasi)
+  let picFogName = '';
+  let picFogJabatan = 'Administrasi';
+  if (administrasiList.length > 0) {
+    const match = currentUser
+      ? administrasiList.find(
+          (m) =>
+            m.nama?.toLowerCase().trim() === currentUser.fullName?.toLowerCase().trim() ||
+            m.noWa === currentUser.username
+        )
+      : undefined;
+    const chosen = match || administrasiList[0];
+    picFogName = chosen.nama;
+    picFogJabatan = chosen.jabatan || 'Administrasi';
+  } else if (currentUser?.fullName) {
+    picFogName = currentUser.fullName;
+    picFogJabatan = currentUser.jabatan || 'Administrasi';
+  } else if (manpowerList.length > 0) {
+    picFogName = manpowerList[0].nama;
+    picFogJabatan = manpowerList[0].jabatan || 'Administrasi';
+  } else {
+    picFogName = 'Staff Administrasi FOG';
+    picFogJabatan = 'Administrasi';
+  }
+
+  // Inventory - Di Check Oleh (Dropdown Manpower jabatan Administrasi)
+  let inventoryName = '';
+  let inventoryJabatan = 'Administrasi';
+  if (administrasiList.length > 1) {
+    inventoryName = administrasiList[1].nama;
+    inventoryJabatan = administrasiList[1].jabatan || 'Administrasi';
+  } else if (administrasiList.length === 1) {
+    inventoryName = administrasiList[0].nama;
+    inventoryJabatan = administrasiList[0].jabatan || 'Administrasi';
+  } else {
+    const inventoryOrAny = manpowerList.find((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      return j.includes('INVENTORY') || j.includes('GUDANG');
+    }) || manpowerList[0];
+    inventoryName = inventoryOrAny ? inventoryOrAny.nama : 'Staff Inventory';
+    inventoryJabatan = inventoryOrAny ? inventoryOrAny.jabatan || 'Administrasi' : 'Administrasi';
+  }
+
+  // Kabag Workshop - Disetujui Oleh (Default: Dodik Mariyadi)
+  let kabagWorkshopName = 'Dodik Mariyadi';
+  let kabagWorkshopJabatan = 'Kabag Workshop';
+  const foundDodik = manpowerList.find(
+    (m) =>
+      m.nama?.toLowerCase().includes('dodik') ||
+      m.nama?.toLowerCase().includes('mariyadi') ||
+      (m.jabatan || '').toUpperCase().includes('KABAG')
+  );
+  if (foundDodik) {
+    kabagWorkshopName = foundDodik.nama;
+    kabagWorkshopJabatan = foundDodik.jabatan || 'Kabag Workshop';
+  }
+
+  return {
+    picFogName,
+    picFogJabatan,
+    inventoryName,
+    inventoryJabatan,
+    kabagWorkshopName,
+    kabagWorkshopJabatan,
+    administrasiList,
+    allManpowerList: manpowerList,
+  };
+}
+
