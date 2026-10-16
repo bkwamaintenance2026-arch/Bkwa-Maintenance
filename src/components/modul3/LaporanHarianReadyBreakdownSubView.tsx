@@ -121,7 +121,9 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     pembuatName: '',
     pembuatJabatan: 'Administrasi',
     diperiksaName: '',
-    diperiksaJabatan: 'Supervisor Maintenance',
+    diperiksaJabatan: 'Administrasi',
+    disetujuiName: '',
+    disetujuiJabatan: 'Kabag Workshop',
     diketahuiName: '',
     diketahuiJabatan: 'Kabag Workshop',
   });
@@ -137,7 +139,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
   const kabagCandidates = useMemo(() => {
     return manpowerData.filter((m) => {
       const j = (m.jabatan || '').toUpperCase().trim();
+      const n = (m.nama || '').toLowerCase().trim();
       return (
+        n.includes('dodik') ||
+        n.includes('mariyadi') ||
         j === 'KABAG WORKSHOP' ||
         j.includes('KABAG') ||
         j.includes('KEPALA BAGIAN') ||
@@ -151,15 +156,21 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
   useEffect(() => {
     setSignatories((prev) => {
       const isPembuatInCandidates = administrasiCandidates.some((m) => m.nama === prev.pembuatName);
-      const isDiketahuiInCandidates = kabagCandidates.some((m) => m.nama === prev.diketahuiName);
+      const isDiperiksaInCandidates = administrasiCandidates.some((m) => m.nama === prev.diperiksaName);
+      const isDisetujuiInCandidates = kabagCandidates.some((m) => m.nama === prev.disetujuiName || m.nama === prev.diketahuiName);
+
+      const targetDisetujuiName = (isDisetujuiInCandidates ? (prev.disetujuiName || prev.diketahuiName) : (resolvedSig.disetujuiName || resolvedSig.diketahuiName)) || resolvedSig.disetujuiName || 'Dodik Mariyadi';
+      const targetDisetujuiJabatan = (isDisetujuiInCandidates ? (prev.disetujuiJabatan || prev.diketahuiJabatan) : (resolvedSig.disetujuiJabatan || resolvedSig.diketahuiJabatan)) || resolvedSig.disetujuiJabatan || 'Kabag Workshop';
 
       return {
         pembuatName: (isPembuatInCandidates ? prev.pembuatName : resolvedSig.pembuatName) || resolvedSig.pembuatName,
         pembuatJabatan: (isPembuatInCandidates ? prev.pembuatJabatan : resolvedSig.pembuatJabatan) || resolvedSig.pembuatJabatan,
-        diperiksaName: resolvedSig.diperiksaName || '',
-        diperiksaJabatan: resolvedSig.diperiksaJabatan || '',
-        diketahuiName: (isDiketahuiInCandidates ? prev.diketahuiName : resolvedSig.diketahuiName) || resolvedSig.diketahuiName,
-        diketahuiJabatan: (isDiketahuiInCandidates ? prev.diketahuiJabatan : resolvedSig.diketahuiJabatan) || resolvedSig.diketahuiJabatan,
+        diperiksaName: (isDiperiksaInCandidates ? prev.diperiksaName : resolvedSig.diperiksaName) || resolvedSig.diperiksaName,
+        diperiksaJabatan: (isDiperiksaInCandidates ? prev.diperiksaJabatan : resolvedSig.diperiksaJabatan) || resolvedSig.diperiksaJabatan,
+        disetujuiName: targetDisetujuiName,
+        disetujuiJabatan: targetDisetujuiJabatan,
+        diketahuiName: targetDisetujuiName,
+        diketahuiJabatan: targetDisetujuiJabatan,
       };
     });
   }, [resolvedSig, administrasiCandidates, kabagCandidates]);
@@ -703,12 +714,12 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-          {/* 1. Dibuat Oleh (Pilih Jabatan Administrasi) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          {/* 1. Di Buat Oleh (Dropdown Modul 2 Jabatan Administrasi) */}
           <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[11px] font-mono font-bold text-amber-400 uppercase">
-                1. Dibuat Oleh (Administrasi)
+                1. Di Buat Oleh
               </label>
               <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                 {signatories.pembuatJabatan || 'Administrasi'}
@@ -730,7 +741,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
               >
                 {administrasiCandidates.length > 0 && (
-                  <optgroup label="Personil Administrasi Terdaftar">
+                  <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
                     {administrasiCandidates.map((m) => (
                       <option key={m.id} value={m.nama}>
                         {m.nama} ({m.jabatan || 'Administrasi'})
@@ -752,34 +763,93 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 type="text"
                 value={signatories.pembuatName}
                 onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatName: e.target.value }))}
-                placeholder="Nama Admin / Pembuat..."
+                placeholder="Nama Admin Pembuat..."
                 className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
               />
             )}
             <p className="text-[10px] text-stone-500 font-mono">
-              Administrasi yang ditunjuk sesuai otoritas di Modul 2 Manpower
+              Dropdown Modul 2 jabatan Administrasi
             </p>
           </div>
 
-          {/* 2. Mengetahui & Menyetujui (Kabag Workshop) */}
+          {/* 2. Diperiksa Oleh (Dropdown Modul 2 Jabatan Administrasi) */}
           <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-[11px] font-mono font-bold text-emerald-400 uppercase">
-                2. Mengetahui &amp; Menyetujui (Kabag Workshop)
+              <label className="text-[11px] font-mono font-bold text-sky-400 uppercase">
+                2. Diperiksa Oleh
               </label>
-              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                {signatories.diketahuiJabatan || 'Kabag Workshop'}
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                {signatories.diperiksaJabatan || 'Administrasi'}
               </span>
             </div>
-            {kabagCandidates.length > 0 || manpowerData.length > 0 ? (
+            {administrasiCandidates.length > 0 || manpowerData.length > 0 ? (
               <select
-                id="select-penandatangan-diketahui"
-                value={signatories.diketahuiName}
+                id="select-penandatangan-diperiksa"
+                value={signatories.diperiksaName}
                 onChange={(e) => {
                   const val = e.target.value;
                   const found = manpowerData.find((m) => m.nama === val);
                   setSignatories((prev) => ({
                     ...prev,
+                    diperiksaName: val,
+                    diperiksaJabatan: found?.jabatan || 'Administrasi',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-sky-500 focus:outline-none"
+              >
+                {administrasiCandidates.length > 0 && (
+                  <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
+                    {administrasiCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Administrasi'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : (
+              <input
+                id="input-penandatangan-diperiksa"
+                type="text"
+                value={signatories.diperiksaName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaName: e.target.value }))}
+                placeholder="Nama Admin Pemeriksa..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-sky-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Dropdown Modul 2 jabatan Administrasi
+            </p>
+          </div>
+
+          {/* 3. Disetujui Oleh (Kabag Workshop) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-emerald-400 uppercase">
+                3. Disetujui Oleh
+              </label>
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}
+              </span>
+            </div>
+            {kabagCandidates.length > 0 || manpowerData.length > 0 ? (
+              <select
+                id="select-penandatangan-disetujui"
+                value={signatories.disetujuiName || signatories.diketahuiName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = manpowerData.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    disetujuiName: val,
+                    disetujuiJabatan: found?.jabatan || 'Kabag Workshop',
                     diketahuiName: val,
                     diketahuiJabatan: found?.jabatan || 'Kabag Workshop',
                   }));
@@ -805,16 +875,16 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               </select>
             ) : (
               <input
-                id="input-penandatangan-diketahui"
+                id="input-penandatangan-disetujui"
                 type="text"
-                value={signatories.diketahuiName}
-                onChange={(e) => setSignatories((prev) => ({ ...prev, diketahuiName: e.target.value }))}
-                placeholder="Nama Kabag Workshop..."
+                value={signatories.disetujuiName || signatories.diketahuiName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, disetujuiName: e.target.value, diketahuiName: e.target.value }))}
+                placeholder="Dodik Mariyadi (Kabag Workshop)..."
                 className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
               />
             )}
             <p className="text-[10px] text-stone-500 font-mono">
-              Kabag Workshop yang bertugas sesuai otoritas di Modul 2 Manpower
+              Kabag Workshop (Dodik Mariyadi)
             </p>
           </div>
         </div>
@@ -1653,23 +1723,34 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 </table>
               </div>
 
-              {/* Lembar Tanda Tangan */}
-              <div className="pt-6 border-t border-stone-300 grid grid-cols-2 gap-6 text-center font-mono text-[11px]">
+              {/* Lembar Tanda Tangan (3 Pihak Seragam) */}
+              <div className="pt-6 border-t border-stone-300 grid grid-cols-3 gap-4 text-center font-mono text-[11px]">
                 <div>
-                  Dibuat Oleh,<br />
+                  Di Buat Oleh,<br />
                   <span className="text-[10px] text-stone-500">{signatories.pembuatJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">( {signatories.pembuatName || 'Admin Workshop'} )</strong>
+                  <span className="text-[9px] text-stone-400 block">Administrasi Workshop</span>
                 </div>
                 <div>
-                  Mengetahui &amp; Menyetujui,<br />
-                  <span className="text-[10px] text-stone-500">{signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
+                  Diperiksa Oleh,<br />
+                  <span className="text-[10px] text-stone-500">{signatories.diperiksaJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
-                  <strong className="block border-t border-stone-400 pt-1">( {signatories.diketahuiName || 'Kabag Workshop'} )</strong>
+                  <strong className="block border-t border-stone-400 pt-1">( {signatories.diperiksaName || 'Staff Administrasi'} )</strong>
+                  <span className="text-[9px] text-stone-400 block">Administrasi Workshop</span>
+                </div>
+                <div>
+                  Disetujui Oleh,<br />
+                  <span className="text-[10px] text-stone-500">{signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
+                  <div className="h-16 flex items-end justify-center">
+                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
+                  </div>
+                  <strong className="block border-t border-stone-400 pt-1">( {signatories.disetujuiName || signatories.diketahuiName || 'Dodik Mariyadi'} )</strong>
+                  <span className="text-[9px] text-stone-400 block">Kabag Workshop</span>
                 </div>
               </div>
             </div>

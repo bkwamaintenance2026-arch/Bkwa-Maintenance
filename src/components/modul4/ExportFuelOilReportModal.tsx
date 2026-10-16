@@ -751,15 +751,15 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
               </span>
             </div>
             <p className="text-[11px] text-stone-400">
-              Format lembar pengesahan resmi laporan FOG (Bahan Bakar &amp; Pelumas) divalidasi oleh 3 pihak: <strong>1. Petugas FOG</strong> (Yang membuat Laporan), <strong>2. Petugas Inventory</strong> (Diperiksa oleh), dan <strong>3. Kabag Workshop</strong> (Mengetahui &amp; Menyetujui). Seluruh personil dipilih melalui dropdown dari Modul 2 Manpower:
+              Format lembar pengesahan resmi laporan FOG (Bahan Bakar &amp; Pelumas) diseragamkan 3 pihak: <strong>1. Di Buat Oleh</strong> (Dropdown Modul 2 Jabatan Administrasi), <strong>2. Diperiksa Oleh</strong> (Dropdown Modul 2 Jabatan Administrasi), dan <strong>3. Disetujui Oleh</strong> (Kabag Workshop - Dodik Mariyadi):
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
-              {/* PIHAK 1: PETUGAS FOG (YANG MEMBUAT LAPORAN) */}
+              {/* PIHAK 1: DI BUAT OLEH (DROPDOWN MODUL 2 JABATAN ADMINISTRASI) */}
               <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-mono font-bold text-amber-400 uppercase">
-                    1. Petugas FOG (Pembuat)
+                    1. Di Buat Oleh
                   </label>
                   <button
                     type="button"
@@ -772,7 +772,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                   </button>
                 </div>
                 <p className="text-[10px] text-stone-400 leading-tight">
-                  Yang membuat Laporan • Petugas FOG / BBM Lapangan
+                  Dropdown modul 2 jabatan administrasi
                 </p>
 
                 {!customFogInput ? (
@@ -791,11 +791,11 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     }}
                     className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
                   >
-                    {resolvedFog.fogList.length > 0 && (
-                      <optgroup label="Personil Petugas FOG Terdaftar">
-                        {resolvedFog.fogList.map((m) => (
+                    {resolvedFog.administrasiList.length > 0 && (
+                      <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
+                        {resolvedFog.administrasiList.map((m) => (
                           <option key={m.id} value={m.nama}>
-                            {m.nama} — {m.jabatan || 'Petugas FOG'}
+                            {m.nama} — {m.jabatan || 'Administrasi'}
                           </option>
                         ))}
                       </optgroup>
@@ -815,22 +815,22 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     type="text"
                     value={petugasFog}
                     onChange={(e) => setPetugasFog(e.target.value)}
-                    placeholder="Ketik nama Petugas FOG..."
+                    placeholder="Ketik nama Pembuat Laporan..."
                     className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
                   />
                 )}
 
                 <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
                   <span>Jabatan:</span>
-                  <span className="text-stone-300 font-semibold">{petugasFogJabatan || 'Petugas FOG'}</span>
+                  <span className="text-stone-300 font-semibold">{petugasFogJabatan || 'Administrasi'}</span>
                 </div>
               </div>
 
-              {/* PIHAK 2: PETUGAS INVENTORY (DIPERIKSA OLEH) */}
+              {/* PIHAK 2: DIPERIKSA OLEH (DROPDOWN MODUL 2 JABATAN ADMINISTRASI) */}
               <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-[11px] font-mono font-bold text-blue-400 uppercase">
-                    2. Petugas Inventory (Pemeriksa)
+                  <label className="block text-[11px] font-mono font-bold text-sky-400 uppercase">
+                    2. Diperiksa Oleh
                   </label>
                   <button
                     type="button"
@@ -843,7 +843,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                   </button>
                 </div>
                 <p className="text-[10px] text-stone-400 leading-tight">
-                  Diperiksa oleh • Petugas Inventory / Gudang Material
+                  Dropdown modul 2 jabatan administrasi
                 </p>
 
                 {!customInventoryInput ? (
@@ -860,13 +860,13 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                         if (found?.jabatan) setPetugasInventoryJabatan(found.jabatan);
                       }
                     }}
-                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none transition"
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-sky-500 outline-none transition"
                   >
-                    {resolvedFog.inventoryList.length > 0 && (
-                      <optgroup label="Personil Inventory & Gudang Terdaftar">
-                        {resolvedFog.inventoryList.map((m) => (
+                    {resolvedFog.administrasiList.length > 0 && (
+                      <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
+                        {resolvedFog.administrasiList.map((m) => (
                           <option key={m.id} value={m.nama}>
-                            {m.nama} — {m.jabatan || 'Petugas Inventory'}
+                            {m.nama} — {m.jabatan || 'Administrasi'}
                           </option>
                         ))}
                       </optgroup>
@@ -886,22 +886,22 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     type="text"
                     value={petugasInventory}
                     onChange={(e) => setPetugasInventory(e.target.value)}
-                    placeholder="Ketik nama Petugas Inventory..."
-                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none transition"
+                    placeholder="Ketik nama Pemeriksa Laporan..."
+                    className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-sky-500 outline-none transition"
                   />
                 )}
 
                 <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
                   <span>Jabatan:</span>
-                  <span className="text-stone-300 font-semibold">{petugasInventoryJabatan || 'Petugas Inventory'}</span>
+                  <span className="text-stone-300 font-semibold">{petugasInventoryJabatan || 'Administrasi'}</span>
                 </div>
               </div>
 
-              {/* PIHAK 3: KABAG WORKSHOP (MENGETAHUI & MENYETUJUI) */}
+              {/* PIHAK 3: DISETUJUI OLEH (KABAG WORKSHOP) */}
               <div className="bg-stone-900/90 p-3.5 rounded-xl border border-stone-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-[11px] font-mono font-bold text-emerald-400 uppercase">
-                    3. Kabag Workshop (Menyetujui)
+                    3. Disetujui Oleh
                   </label>
                   <button
                     type="button"
@@ -914,7 +914,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                   </button>
                 </div>
                 <p className="text-[10px] text-stone-400 leading-tight">
-                  Mengetahui &amp; Menyetujui • Kabag Workshop / Kepala Bengkel
+                  Kabag Workshop (Dodik Mariyadi)
                 </p>
 
                 {!customKabagInput ? (
@@ -957,7 +957,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     type="text"
                     value={kabagWorkshop}
                     onChange={(e) => setKabagWorkshop(e.target.value)}
-                    placeholder="Ketik nama Kabag Workshop..."
+                    placeholder="Dodik Mariyadi (Kabag Workshop)..."
                     className="w-full px-2.5 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none transition"
                   />
                 )}

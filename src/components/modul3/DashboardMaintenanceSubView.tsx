@@ -396,17 +396,22 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
         </table>
 
         <br><br>
-        <table style="border: none; margin-top: 30px;">
+        <table style="border: none; margin-top: 30px; width: 100%;">
           <tr style="border: none;">
-            <td style="border: none; width: 50%; text-align: center;">
-              Dibuat Oleh,<br><br><br><br>
-              <strong>(${currentUser?.nama || currentUser?.username || 'Staff Maintenance'})</strong><br>
-              ${currentUser?.accountTier || currentUser?.role || 'Staff'}
+            <td style="border: none; width: 33%; text-align: center;">
+              Di Buat Oleh,<br><br><br><br>
+              <strong>(${currentUser?.fullName || currentUser?.nama || currentUser?.username || 'Admin Workshop'})</strong><br>
+              Administrasi Workshop
             </td>
-            <td style="border: none; width: 50%; text-align: center;">
-              Mengetahui & Menyetujui,<br><br><br><br>
-              <strong>( Kepala Workshop / Developer )</strong><br>
-              PT BATU KALI WELANG AMPUH Quarry Purwosari
+            <td style="border: none; width: 33%; text-align: center;">
+              Diperiksa Oleh,<br><br><br><br>
+              <strong>( Staff Administrasi )</strong><br>
+              Administrasi Workshop
+            </td>
+            <td style="border: none; width: 33%; text-align: center;">
+              Disetujui Oleh,<br><br><br><br>
+              <strong>( Dodik Mariyadi )</strong><br>
+              Kabag Workshop PT BKWA
             </td>
           </tr>
         </table>

@@ -9,7 +9,6 @@ import {
   SparePartTransaction,
   ManpowerData
 } from '../../types';
-import { getAllSparePartTransactions, isDeveloper } from '../../utils/storage';
 import { 
   Search, 
   Filter, 
@@ -34,8 +33,11 @@ import {
   Hash,
   ArrowRight,
   Trash2,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
+import { getAllSparePartTransactions, isDeveloper, getAllManpower } from '../../utils/storage';
+import { resolveReportSignatories } from '../../utils/reportSignatories';
 import { PartRequirementModal } from './PartRequirementModal';
 import { exportDetailHistoryToPDF, generateDetailHistoryPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
@@ -337,6 +339,76 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
     window.print();
   };
 
+  // Penandatangan Dokumen Resmi (3 Pihak Seragam)
+  const manpowerData = useMemo(() => {
+    if (manpowerList && manpowerList.length > 0) return manpowerList;
+    try {
+      return getAllManpower();
+    } catch {
+      return [];
+    }
+  }, [manpowerList]);
+
+  const resolvedSig = useMemo(() => {
+    return resolveReportSignatories(manpowerData, currentUser);
+  }, [manpowerData, currentUser]);
+
+  const administrasiCandidates = useMemo(() => {
+    return manpowerData.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      return j === 'ADMINISTRASI' || j.includes('ADMIN');
+    });
+  }, [manpowerData]);
+
+  const kabagCandidates = useMemo(() => {
+    return manpowerData.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase().trim();
+      const n = (m.nama || '').toLowerCase().trim();
+      return (
+        n.includes('dodik') ||
+        n.includes('mariyadi') ||
+        j === 'KABAG WORKSHOP' ||
+        j.includes('KABAG') ||
+        j.includes('KEPALA BAGIAN') ||
+        j.includes('HEAD WORKSHOP') ||
+        j.includes('KEPALA BENGKEL')
+      );
+    });
+  }, [manpowerData]);
+
+  const [signatories, setSignatories] = useState({
+    pembuatName: '',
+    pembuatJabatan: 'Administrasi',
+    diperiksaName: '',
+    diperiksaJabatan: 'Administrasi',
+    disetujuiName: '',
+    disetujuiJabatan: 'Kabag Workshop',
+    diketahuiName: '',
+    diketahuiJabatan: 'Kabag Workshop',
+  });
+
+  useEffect(() => {
+    setSignatories((prev) => {
+      const isPembuatInCandidates = administrasiCandidates.some((m) => m.nama === prev.pembuatName);
+      const isDiperiksaInCandidates = administrasiCandidates.some((m) => m.nama === prev.diperiksaName);
+      const isDisetujuiInCandidates = kabagCandidates.some((m) => m.nama === prev.disetujuiName || m.nama === prev.diketahuiName);
+
+      const targetDisetujuiName = (isDisetujuiInCandidates ? (prev.disetujuiName || prev.diketahuiName) : (resolvedSig.disetujuiName || resolvedSig.diketahuiName)) || resolvedSig.disetujuiName || 'Dodik Mariyadi';
+      const targetDisetujuiJabatan = (isDisetujuiInCandidates ? (prev.disetujuiJabatan || prev.diketahuiJabatan) : (resolvedSig.disetujuiJabatan || resolvedSig.diketahuiJabatan)) || resolvedSig.disetujuiJabatan || 'Kabag Workshop';
+
+      return {
+        pembuatName: (isPembuatInCandidates ? prev.pembuatName : resolvedSig.pembuatName) || resolvedSig.pembuatName,
+        pembuatJabatan: (isPembuatInCandidates ? prev.pembuatJabatan : resolvedSig.pembuatJabatan) || resolvedSig.pembuatJabatan,
+        diperiksaName: (isDiperiksaInCandidates ? prev.diperiksaName : resolvedSig.diperiksaName) || resolvedSig.diperiksaName,
+        diperiksaJabatan: (isDiperiksaInCandidates ? prev.diperiksaJabatan : resolvedSig.diperiksaJabatan) || resolvedSig.diperiksaJabatan,
+        disetujuiName: targetDisetujuiName,
+        disetujuiJabatan: targetDisetujuiJabatan,
+        diketahuiName: targetDisetujuiName,
+        diketahuiJabatan: targetDisetujuiJabatan,
+      };
+    });
+  }, [resolvedSig, administrasiCandidates, kabagCandidates]);
+
   // State untuk Pratinjau Dokumen PDF Resmi
   const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -346,7 +418,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   const handlePreviewPDF = () => {
     if (filteredBreakdowns.length === 0) return;
     try {
-      const result = generateDetailHistoryPDF(filteredBreakdowns, selectedUnit, currentUser);
+      const result = generateDetailHistoryPDF(filteredBreakdowns, selectedUnit, currentUser, signatories);
       setPreviewPdfUrl(result.blobUrl);
       setPreviewFilename(result.filename);
       setShowPdfPreview(true);
@@ -360,7 +432,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   const handleExportPDF = () => {
     if (filteredBreakdowns.length === 0) return;
     try {
-      exportDetailHistoryToPDF(filteredBreakdowns, selectedUnit, currentUser);
+      exportDetailHistoryToPDF(filteredBreakdowns, selectedUnit, currentUser, signatories);
     } catch (e) {
       console.error('Error generating Detail Breakdown PDF with jsPDF', e);
       window.print();
@@ -426,6 +498,190 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
               <span>Export CSV</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PEJABAT PENANDATANGAN LAPORAN (3 PIHAK SERAGAM) */}
+      <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+              Pejabat Penandatangan Laporan (Sesuai Otoritas Modul 2 Manpower)
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-stone-400">
+            Digunakan saat Pratinjau PDF (Preview) &amp; Cetak/Export Resmi
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+          {/* 1. Di Buat Oleh (Dropdown Modul 2 Jabatan Administrasi) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-amber-400 uppercase">
+                1. Di Buat Oleh
+              </label>
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {signatories.pembuatJabatan || 'Administrasi'}
+              </span>
+            </div>
+            {administrasiCandidates.length > 0 || manpowerData.length > 0 ? (
+              <select
+                value={signatories.pembuatName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = manpowerData.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    pembuatName: val,
+                    pembuatJabatan: found?.jabatan || 'Administrasi',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+              >
+                {administrasiCandidates.length > 0 && (
+                  <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
+                    {administrasiCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Administrasi'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={signatories.pembuatName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatName: e.target.value }))}
+                placeholder="Nama Admin Pembuat..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-amber-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Dropdown Modul 2 jabatan Administrasi
+            </p>
+          </div>
+
+          {/* 2. Diperiksa Oleh (Dropdown Modul 2 Jabatan Administrasi) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-sky-400 uppercase">
+                2. Diperiksa Oleh
+              </label>
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                {signatories.diperiksaJabatan || 'Administrasi'}
+              </span>
+            </div>
+            {administrasiCandidates.length > 0 || manpowerData.length > 0 ? (
+              <select
+                value={signatories.diperiksaName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = manpowerData.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    diperiksaName: val,
+                    diperiksaJabatan: found?.jabatan || 'Administrasi',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-sky-500 focus:outline-none"
+              >
+                {administrasiCandidates.length > 0 && (
+                  <optgroup label="Personil Administrasi Terdaftar (Modul 2)">
+                    {administrasiCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Administrasi'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={signatories.diperiksaName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaName: e.target.value }))}
+                placeholder="Nama Admin Pemeriksa..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-sky-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Dropdown Modul 2 jabatan Administrasi
+            </p>
+          </div>
+
+          {/* 3. Disetujui Oleh (Kabag Workshop) */}
+          <div className="bg-stone-950/70 p-3.5 rounded-xl border border-stone-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-mono font-bold text-emerald-400 uppercase">
+                3. Disetujui Oleh
+              </label>
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}
+              </span>
+            </div>
+            {kabagCandidates.length > 0 || manpowerData.length > 0 ? (
+              <select
+                value={signatories.disetujuiName || signatories.diketahuiName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = manpowerData.find((m) => m.nama === val);
+                  setSignatories((prev) => ({
+                    ...prev,
+                    disetujuiName: val,
+                    disetujuiJabatan: found?.jabatan || 'Kabag Workshop',
+                    diketahuiName: val,
+                    diketahuiJabatan: found?.jabatan || 'Kabag Workshop',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+              >
+                {kabagCandidates.length > 0 && (
+                  <optgroup label="Personil Kabag Workshop Terdaftar">
+                    {kabagCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} ({m.jabatan || 'Kabag Workshop'})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Semua Personil Modul 2 Manpower">
+                  {manpowerData.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Manpower'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={signatories.disetujuiName || signatories.diketahuiName}
+                onChange={(e) => setSignatories((prev) => ({ ...prev, disetujuiName: e.target.value, diketahuiName: e.target.value }))}
+                placeholder="Dodik Mariyadi (Kabag Workshop)..."
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs text-stone-100 font-mono focus:border-emerald-500 focus:outline-none"
+              />
+            )}
+            <p className="text-[10px] text-stone-500 font-mono">
+              Kabag Workshop (Dodik Mariyadi)
+            </p>
           </div>
         </div>
       </div>

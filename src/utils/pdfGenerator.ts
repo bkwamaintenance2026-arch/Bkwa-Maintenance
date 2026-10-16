@@ -250,13 +250,13 @@ export const generatePartRequirementPDF = (
 
   const namaPembuat = signatories?.pembuatName || currentUser.fullName || currentUser.username || 'Admin Workshop';
   const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
-  const namaDiperiksa = signatories?.diperiksaName || 'Supervisor Maintenance';
-  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Supervisor Maintenance';
-  const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
-  const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
+  const namaDiperiksa = signatories?.diperiksaName || 'Staff Administrasi';
+  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Administrasi';
+  const namaDisetujui = signatories?.disetujuiName || signatories?.diketahuiName || 'Dodik Mariyadi';
+  const jabatanDisetujui = signatories?.disetujuiJabatan || signatories?.diketahuiJabatan || 'Kabag Workshop';
 
-  // Kolom 1: Yang Membuat (Admin yang ditunjuk - Jabatan Administrasi)
-  doc.text('Yang Membuat,', 42, sigBoxY, { align: 'center' });
+  // Kolom 1: Di Buat Oleh (Dropdown Modul 2 Jabatan Administrasi)
+  doc.text('Di Buat Oleh,', 42, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
   doc.text(jabatanPembuat, 42, sigBoxY + 4, { align: 'center' });
@@ -266,7 +266,7 @@ export const generatePartRequirementPDF = (
   doc.setTextColor(...darkTextColor);
   doc.text(`( ${namaPembuat} )`, 42, sigBoxY + 26, { align: 'center' });
 
-  // Kolom 2: Diperiksa Oleh (SPV / Kabag Workshop)
+  // Kolom 2: Diperiksa Oleh (Dropdown Modul 2 Jabatan Administrasi)
   doc.setFont('helvetica', 'normal');
   doc.text('Diperiksa Oleh,', 105, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
@@ -278,17 +278,17 @@ export const generatePartRequirementPDF = (
   doc.setTextColor(...darkTextColor);
   doc.text(`( ${namaDiperiksa} )`, 105, sigBoxY + 26, { align: 'center' });
 
-  // Kolom 3: Diketahui Oleh (Kabag Workshop) / Disetujui Head Office Malang
+  // Kolom 3: Disetujui Oleh (Kabag Workshop - Dodik Mariyadi)
   doc.setFont('helvetica', 'normal');
-  doc.text('Diketahui Oleh,', 168, sigBoxY, { align: 'center' });
+  doc.text('Disetujui Oleh,', 168, sigBoxY, { align: 'center' });
   doc.setFontSize(7.5);
-  doc.setTextColor(190, 18, 60);
-  doc.text(jabatanDiketahui, 168, sigBoxY + 4, { align: 'center' });
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanDisetujui, 168, sigBoxY + 4, { align: 'center' });
   doc.line(146, sigBoxY + 22, 190, sigBoxY + 22);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiketahui} )`, 168, sigBoxY + 26, { align: 'center' });
+  doc.text(`( ${namaDisetujui} )`, 168, sigBoxY + 26, { align: 'center' });
 
   // Footer on all pages
   const totalPages = doc.getNumberOfPages();
@@ -337,6 +337,8 @@ export interface DailyReportSignatoryOptions {
   diperiksaJabatan?: string;
   diketahuiName?: string;
   diketahuiJabatan?: string;
+  disetujuiName?: string;
+  disetujuiJabatan?: string;
 }
 
 /**
@@ -633,50 +635,71 @@ export const generateDailyBreakdownPDF = (options: {
     sigY = 20;
   }
 
-  // 5. LEMBAR PENGESAHAN (VALIDASI 2 PIHAK SESUAI INSTRUKSI USER):
-  // 1. Administrasi = Dibuat Oleh
-  // 2. Kabag Workshop = Mengetahui & Menyetujui
+  // 5. LEMBAR PENGESAHAN (VALIDASI 3 PIHAK SERAGAM SESUAI INSTRUKSI USER):
+  // 1. Di Buat Oleh = Dropdown modul 2 jabatan administrasi
+  // 2. Diperiksa Oleh = Dropdown modul 2 jabatan administrasi
+  // 3. Disetujui Oleh = Kabag Workshop (Dodik Mariyadi)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
   const namaPembuat = signatories?.pembuatName || exporterName;
   const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
-  const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
-  const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
+  const namaDiperiksa = signatories?.diperiksaName || 'Staff Administrasi';
+  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Administrasi';
+  const namaDisetujui = signatories?.disetujuiName || signatories?.diketahuiName || 'Dodik Mariyadi';
+  const jabatanDisetujui = signatories?.disetujuiJabatan || signatories?.diketahuiJabatan || 'Kabag Workshop';
 
-  // Kolom 1: Dibuat Oleh (Administrasi)
-  doc.text('Dibuat Oleh,', 80, sigY, { align: 'center' });
+  // Kolom 1 (x=55): Di Buat Oleh (Administrasi)
+  doc.text('Di Buat Oleh,', 55, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanPembuat, 80, sigY + 4, { align: 'center' });
-  doc.line(45, sigY + 18, 115, sigY + 18);
+  doc.text(jabatanPembuat, 55, sigY + 4, { align: 'center' });
+  doc.line(25, sigY + 18, 85, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaPembuat} )`, 80, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaPembuat} )`, 55, sigY + 22, { align: 'center' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Administrasi Workshop', 80, sigY + 26, { align: 'center' });
+  doc.text('Administrasi Workshop', 55, sigY + 26, { align: 'center' });
 
-  // Kolom 2: Mengetahui & Menyetujui (Kabag Workshop)
+  // Kolom 2 (x=148.5): Diperiksa Oleh (Administrasi)
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...darkTextColor);
-  doc.text('Mengetahui & Menyetujui,', 217, sigY, { align: 'center' });
+  doc.text('Diperiksa Oleh,', 148.5, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiketahui, 217, sigY + 4, { align: 'center' });
-  doc.line(182, sigY + 18, 252, sigY + 18);
+  doc.text(jabatanDiperiksa, 148.5, sigY + 4, { align: 'center' });
+  doc.line(118.5, sigY + 18, 178.5, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiketahui} )`, 217, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaDiperiksa} )`, 148.5, sigY + 22, { align: 'center' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Kabag Workshop / Kepala Bengkel', 217, sigY + 26, { align: 'center' });
+  doc.text('Administrasi Workshop', 148.5, sigY + 26, { align: 'center' });
+
+  // Kolom 3 (x=242): Disetujui Oleh (Kabag Workshop)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...darkTextColor);
+  doc.text('Disetujui Oleh,', 242, sigY, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanDisetujui, 242, sigY + 4, { align: 'center' });
+  doc.line(212, sigY + 18, 272, sigY + 18);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${namaDisetujui} )`, 242, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop PT BKWA', 242, sigY + 26, { align: 'center' });
 
   // Footer di semua halaman
   const totalPages = doc.getNumberOfPages();
@@ -862,41 +885,61 @@ export const generateDetailHistoryPDF = (
 
   const namaPembuat = signatories?.pembuatName || exporterName;
   const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
-  const namaDiketahui = signatories?.diketahuiName || 'Kabag Workshop';
-  const jabatanDiketahui = signatories?.diketahuiJabatan || 'Kabag Workshop';
+  const namaDiperiksa = signatories?.diperiksaName || 'Staff Administrasi';
+  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Administrasi';
+  const namaDisetujui = signatories?.disetujuiName || signatories?.diketahuiName || 'Dodik Mariyadi';
+  const jabatanDisetujui = signatories?.disetujuiJabatan || signatories?.diketahuiJabatan || 'Kabag Workshop';
 
-  // Kolom 1: Dibuat Oleh (Administrasi)
-  doc.text('Dibuat Oleh,', 80, sigY, { align: 'center' });
+  // Kolom 1 (x=55): Di Buat Oleh (Administrasi)
+  doc.text('Di Buat Oleh,', 55, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanPembuat, 80, sigY + 4, { align: 'center' });
-  doc.line(45, sigY + 18, 115, sigY + 18);
+  doc.text(jabatanPembuat, 55, sigY + 4, { align: 'center' });
+  doc.line(25, sigY + 18, 85, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaPembuat} )`, 80, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaPembuat} )`, 55, sigY + 22, { align: 'center' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Administrasi Workshop', 80, sigY + 26, { align: 'center' });
+  doc.text('Administrasi Workshop', 55, sigY + 26, { align: 'center' });
 
-  // Kolom 2: Mengetahui & Menyetujui (Kabag Workshop)
+  // Kolom 2 (x=148.5): Diperiksa Oleh (Administrasi)
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...darkTextColor);
-  doc.text('Mengetahui & Menyetujui,', 217, sigY, { align: 'center' });
+  doc.text('Diperiksa Oleh,', 148.5, sigY, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(jabatanDiketahui, 217, sigY + 4, { align: 'center' });
-  doc.line(182, sigY + 18, 252, sigY + 18);
+  doc.text(jabatanDiperiksa, 148.5, sigY + 4, { align: 'center' });
+  doc.line(118.5, sigY + 18, 178.5, sigY + 18);
   doc.setFontSize(8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...darkTextColor);
-  doc.text(`( ${namaDiketahui} )`, 217, sigY + 22, { align: 'center' });
+  doc.text(`( ${namaDiperiksa} )`, 148.5, sigY + 22, { align: 'center' });
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Kabag Workshop / Kepala Bengkel', 217, sigY + 26, { align: 'center' });
+  doc.text('Administrasi Workshop', 148.5, sigY + 26, { align: 'center' });
+
+  // Kolom 3 (x=242): Disetujui Oleh (Kabag Workshop)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...darkTextColor);
+  doc.text('Disetujui Oleh,', 242, sigY, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanDisetujui, 242, sigY + 4, { align: 'center' });
+  doc.line(212, sigY + 18, 272, sigY + 18);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${namaDisetujui} )`, 242, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop PT BKWA', 242, sigY + 26, { align: 'center' });
 
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
@@ -1741,11 +1784,11 @@ export const generateFuelOilTransactionsPDF = ({
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
-  // Kolom 1 (Kiri - x=55): 1. Yang Membuat Laporan: Petugas FOG
-  doc.text('Yang Membuat Laporan,', 55, curY + 4, { align: 'center' });
+  // Kolom 1 (Kiri - x=55): 1. Di Buat Oleh (Dropdown Modul 2 Administrasi)
+  doc.text('Di Buat Oleh,', 55, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(fogJabatan, 55, curY + 8, { align: 'center' });
+  doc.text(fogJabatan || 'Administrasi FOG', 55, curY + 8, { align: 'center' });
   doc.line(25, curY + 22, 85, curY + 22);
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
@@ -1754,15 +1797,15 @@ export const generateFuelOilTransactionsPDF = ({
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Petugas FOG / BBM & Pelumas', 55, curY + 30, { align: 'center' });
+  doc.text('Administrasi Workshop / FOG', 55, curY + 30, { align: 'center' });
 
-  // Kolom 2 (Tengah - x=148.5): 2. Diperiksa Oleh: Petugas Inventory
+  // Kolom 2 (Tengah - x=148.5): 2. Diperiksa Oleh (Dropdown Modul 2 Administrasi)
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
   doc.text('Diperiksa Oleh,', 148.5, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(inventoryJabatan, 148.5, curY + 8, { align: 'center' });
+  doc.text(inventoryJabatan || 'Administrasi Inventory', 148.5, curY + 8, { align: 'center' });
   doc.line(118.5, curY + 22, 178.5, curY + 22);
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
@@ -1771,15 +1814,15 @@ export const generateFuelOilTransactionsPDF = ({
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Petugas Inventory / Logistik Gudang', 148.5, curY + 30, { align: 'center' });
+  doc.text('Administrasi Workshop / Inventory', 148.5, curY + 30, { align: 'center' });
 
-  // Kolom 3 (Kanan - x=242): 3. Mengetahui & Menyetujui: Kabag Workshop
+  // Kolom 3 (Kanan - x=242): 3. Disetujui Oleh (Kabag Workshop)
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
-  doc.text('Mengetahui & Menyetujui,', 242, curY + 4, { align: 'center' });
+  doc.text('Disetujui Oleh,', 242, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(kabagJabatan, 242, curY + 8, { align: 'center' });
+  doc.text(kabagJabatan || 'Kabag Workshop', 242, curY + 8, { align: 'center' });
   doc.line(212, curY + 22, 272, curY + 22);
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
@@ -1788,7 +1831,7 @@ export const generateFuelOilTransactionsPDF = ({
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Kabag Workshop / Kepala Bengkel', 242, curY + 30, { align: 'center' });
+  doc.text('Kabag Workshop PT BKWA', 242, curY + 30, { align: 'center' });
 
   // ==========================================
   // FOOTER HALAMAN OTOMATIS
@@ -2312,11 +2355,11 @@ export const generateOilSummaryReportPDF = ({
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
 
-  // Kolom 1 (Kiri - x=55): 1. PIC FOG - Pembuat Laporan
-  doc.text('1. Yang Membuat Laporan,', 55, curY + 4, { align: 'center' });
+  // Kolom 1 (Kiri - x=55): Di Buat Oleh (Dropdown Modul 2 Administrasi)
+  doc.text('Di Buat Oleh,', 55, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(picFogJabatan || 'Administrasi FOG', 55, curY + 8, { align: 'center' });
+  doc.text(picFogJabatan || 'Administrasi', 55, curY + 8, { align: 'center' });
   doc.setDrawColor(148, 163, 184);
   doc.line(25, curY + 22, 85, curY + 22);
   doc.setFontSize(8.5);
@@ -2326,15 +2369,15 @@ export const generateOilSummaryReportPDF = ({
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('PIC FOG (Jabatan Administrasi)', 55, curY + 30, { align: 'center' });
+  doc.text('Administrasi Workshop / FOG', 55, curY + 30, { align: 'center' });
 
-  // Kolom 2 (Tengah - x=148.5): 2. Inventory - Di Check Oleh
+  // Kolom 2 (Tengah - x=148.5): Diperiksa Oleh (Dropdown Modul 2 Administrasi)
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
-  doc.text('2. Diperiksa & Dicek Oleh,', 148.5, curY + 4, { align: 'center' });
+  doc.text('Diperiksa Oleh,', 148.5, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text(inventoryJabatan || 'Administrasi Inventory', 148.5, curY + 8, { align: 'center' });
+  doc.text(inventoryJabatan || 'Administrasi', 148.5, curY + 8, { align: 'center' });
   doc.line(118.5, curY + 22, 178.5, curY + 22);
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
@@ -2343,12 +2386,12 @@ export const generateOilSummaryReportPDF = ({
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...grayTextColor);
-  doc.text('Inventory (Jabatan Administrasi)', 148.5, curY + 30, { align: 'center' });
+  doc.text('Administrasi Workshop / Inventory', 148.5, curY + 30, { align: 'center' });
 
-  // Kolom 3 (Kanan - x=242): 3. Kabag Workshop - Disetujui Oleh (Dodik Mariyadi)
+  // Kolom 3 (Kanan - x=242): Disetujui Oleh (Kabag Workshop)
   doc.setFontSize(8);
   doc.setTextColor(...darkTextColor);
-  doc.text('3. Mengetahui & Menyetujui,', 242, curY + 4, { align: 'center' });
+  doc.text('Disetujui Oleh,', 242, curY + 4, { align: 'center' });
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
   doc.text(kabagWorkshopJabatan || 'Kabag Workshop', 242, curY + 8, { align: 'center' });

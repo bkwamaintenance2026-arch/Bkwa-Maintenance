@@ -698,11 +698,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* PIHAK 1: PIC FOG (Pembuat Laporan - Dropdown Manpower Jabatan Administrasi) */}
+          {/* PIHAK 1: DI BUAT OLEH (DROPDOWN MODUL 2 JABATAN ADMINISTRASI) */}
           <div className="bg-stone-950/80 p-3.5 rounded-xl border border-stone-800/90 space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-[11px] font-mono font-bold text-emerald-400 uppercase">
-                1. PIC FOG (Pembuat Laporan)
+                1. Di Buat Oleh
               </label>
               <button
                 type="button"
@@ -715,7 +715,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               </button>
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
-              Dropdown Manpower Jabatan Administrasi
+              Dropdown modul 2 jabatan administrasi
             </p>
 
             {!customPicFog ? (
@@ -753,7 +753,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                 type="text"
                 value={picFog}
                 onChange={(e) => setPicFog(e.target.value)}
-                placeholder="Nama PIC FOG..."
+                placeholder="Nama Pembuat Laporan..."
                 className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none"
               />
             )}
@@ -764,11 +764,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </div>
           </div>
 
-          {/* PIHAK 2: Inventory (Di Check Oleh - Dropdown Manpower Jabatan Administrasi) */}
+          {/* PIHAK 2: DIPERIKSA OLEH (DROPDOWN MODUL 2 JABATAN ADMINISTRASI) */}
           <div className="bg-stone-950/80 p-3.5 rounded-xl border border-stone-800/90 space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-[11px] font-mono font-bold text-blue-400 uppercase">
-                2. Inventory (Di Check Oleh)
+                2. Diperiksa Oleh
               </label>
               <button
                 type="button"
@@ -781,7 +781,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               </button>
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
-              Dropdown Manpower Jabatan Administrasi
+              Dropdown modul 2 jabatan administrasi
             </p>
 
             {!customInventory ? (
@@ -819,7 +819,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                 type="text"
                 value={inventoryUser}
                 onChange={(e) => setInventoryUser(e.target.value)}
-                placeholder="Nama Petugas Inventory..."
+                placeholder="Nama Pemeriksa Laporan..."
                 className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none"
               />
             )}
@@ -830,11 +830,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </div>
           </div>
 
-          {/* PIHAK 3: Kabag Workshop (Disetujui Oleh - Default: Dodik Mariyadi) */}
+          {/* PIHAK 3: DISETUJUI OLEH (KABAG WORKSHOP DODIK MARIYADI) */}
           <div className="bg-stone-950/80 p-3.5 rounded-xl border border-stone-800/90 space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-[11px] font-mono font-bold text-amber-400 uppercase">
-                3. Kabag Workshop (Disetujui)
+                3. Disetujui Oleh
               </label>
               <button
                 type="button"
@@ -847,7 +847,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               </button>
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
-              Default: Dodik Mariyadi (Kabag Workshop)
+              Kabag Workshop (Dodik Mariyadi)
             </p>
 
             {!customKabag ? (
@@ -1329,38 +1329,38 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                 {/* Lembar Pengesahan Tanda Tangan 3 Pihak */}
                 <div className="pt-6 border-t border-stone-800 print:border-black">
                   <div className="grid grid-cols-3 gap-6 text-center text-xs font-mono">
-                    {/* 1. PIC FOG */}
+                    {/* 1. Di Buat Oleh */}
                     <div className="space-y-12">
                       <p className="text-stone-400 print:text-black">
-                        Yang Membuat Laporan,<br />
+                        Di Buat Oleh,<br />
                         <span className="text-[10px] text-stone-500 print:text-gray-600">{picFogJabatan || 'Administrasi'}</span>
                       </p>
                       <div>
                         <div className="font-bold underline text-stone-100 print:text-black">
                           ( {picFog || '.......................'} )
                         </div>
-                        <p className="text-[10px] text-stone-400 print:text-gray-600">PIC FOG Lapangan</p>
+                        <p className="text-[10px] text-stone-400 print:text-gray-600">Administrasi Workshop / FOG</p>
                       </div>
                     </div>
 
-                    {/* 2. Inventory */}
+                    {/* 2. Diperiksa Oleh */}
                     <div className="space-y-12">
                       <p className="text-stone-400 print:text-black">
-                        Diperiksa &amp; Dicek Oleh,<br />
+                        Diperiksa Oleh,<br />
                         <span className="text-[10px] text-stone-500 print:text-gray-600">{inventoryJabatan || 'Administrasi'}</span>
                       </p>
                       <div>
                         <div className="font-bold underline text-stone-100 print:text-black">
                           ( {inventoryUser || '.......................'} )
                         </div>
-                        <p className="text-[10px] text-stone-400 print:text-gray-600">Inventory &amp; Gudang</p>
+                        <p className="text-[10px] text-stone-400 print:text-gray-600">Administrasi Workshop / Inventory</p>
                       </div>
                     </div>
 
-                    {/* 3. Kabag Workshop Dodik Mariyadi */}
+                    {/* 3. Disetujui Oleh */}
                     <div className="space-y-12">
                       <p className="text-stone-400 print:text-black">
-                        Mengetahui &amp; Menyetujui,<br />
+                        Disetujui Oleh,<br />
                         <span className="text-[10px] text-stone-500 print:text-gray-600">{kabagWorkshopJabatan || 'Kabag Workshop'}</span>
                       </p>
                       <div>

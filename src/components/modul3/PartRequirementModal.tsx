@@ -229,19 +229,19 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
         <table class="sig-table">
           <tr>
             <td>
-              Yang Membuat,<br><br><br><br>
+              Di Buat Oleh,<br><br><br><br>
               <strong>( ${signatories.pembuatName} )</strong><br>
               ${signatories.pembuatJabatan || 'Administrasi'}
             </td>
             <td>
               Diperiksa Oleh,<br><br><br><br>
               <strong>( ${signatories.diperiksaName} )</strong><br>
-              ${signatories.diperiksaJabatan || 'Supervisor Maintenance'}
+              ${signatories.diperiksaJabatan || 'Administrasi'}
             </td>
             <td>
-              Diketahui Oleh,<br><br><br><br>
-              <strong>( ${signatories.diketahuiName} )</strong><br>
-              ${signatories.diketahuiJabatan || 'Kabag Workshop'}
+              Disetujui Oleh,<br><br><br><br>
+              <strong>( ${signatories.disetujuiName || signatories.diketahuiName} )</strong><br>
+              ${signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}
             </td>
           </tr>
         </table>
@@ -528,7 +528,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
             <div className="pt-6 border-t-2 border-stone-300">
               <div className="grid grid-cols-3 gap-4 text-center font-mono text-[11px] text-stone-800">
                 <div className="space-y-1">
-                  <span className="block font-bold">Yang Membuat,</span>
+                  <span className="block font-bold">Di Buat Oleh,</span>
                   <span className="text-[10px] text-stone-500 block">{signatories.pembuatJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
@@ -536,28 +536,31 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
                   <strong className="block border-t border-stone-400 pt-1">
                     ( {signatories.pembuatName} )
                   </strong>
+                  <span className="text-[9px] text-stone-400 block">Administrasi Workshop</span>
                 </div>
 
                 <div className="space-y-1">
                   <span className="block font-bold">Diperiksa Oleh,</span>
-                  <span className="text-[10px] text-stone-500 block">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
+                  <span className="text-[10px] text-stone-500 block">{signatories.diperiksaJabatan || 'Administrasi'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">
                     ( {signatories.diperiksaName} )
                   </strong>
+                  <span className="text-[9px] text-stone-400 block">Administrasi Workshop</span>
                 </div>
 
                 <div className="space-y-1">
-                  <span className="block font-bold">Diketahui Oleh,</span>
-                  <span className="text-[10px] text-rose-700 font-bold block uppercase">{signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
+                  <span className="block font-bold">Disetujui Oleh,</span>
+                  <span className="text-[10px] text-rose-700 font-bold block uppercase">{signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}</span>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan / Stempel )</span>
                   </div>
                   <strong className="block border-t border-stone-400 pt-1">
-                    ( {signatories.diketahuiName} )
+                    ( {signatories.disetujuiName || signatories.diketahuiName || 'Dodik Mariyadi'} )
                   </strong>
+                  <span className="text-[9px] text-stone-400 block">Kabag Workshop</span>
                 </div>
               </div>
 
