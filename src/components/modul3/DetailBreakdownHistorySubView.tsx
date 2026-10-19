@@ -1607,6 +1607,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           setSelectedBreakdownForPartReq(null);
         }}
         currentUser={currentUser}
+        manpowerList={manpowerData}
       />
 
       {/* Modal Pratinjau PDF Riwayat Detail Breakdown */}

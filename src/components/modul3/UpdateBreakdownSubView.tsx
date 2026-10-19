@@ -1090,6 +1090,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
           setSelectedModalBreakdown(null);
         }}
         currentUser={currentUser}
+        manpowerList={manpowerList}
       />
 
       {/* Modal Konfirmasi Hapus Laporan Breakdown */}

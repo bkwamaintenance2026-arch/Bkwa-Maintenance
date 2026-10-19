@@ -1767,6 +1767,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
           setSelectedBreakdownForParts(null);
         }}
         currentUser={currentUser}
+        manpowerList={manpowerData}
       />
 
       {/* Modal Pratinjau PDF Resmi Laporan Harian Ready & Breakdown */}
