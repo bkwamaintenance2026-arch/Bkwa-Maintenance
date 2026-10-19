@@ -47,6 +47,53 @@ export interface FogReportSignatories {
   allManpowerList: ManpowerData[];
 }
 
+export interface SavedSignatoriesConfig {
+  pembuatName: string;
+  pembuatJabatan: string;
+  diperiksaName: string;
+  diperiksaJabatan: string;
+  disetujuiName: string;
+  disetujuiJabatan: string;
+  updatedAt?: string;
+}
+
+export const STORAGE_KEY_REPORT_SIGNATORIES = 'bkwa_saved_report_signatories_v1';
+
+export const getSavedReportSignatories = (): SavedSignatoriesConfig | null => {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(STORAGE_KEY_REPORT_SIGNATORIES);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+export const saveReportSignatories = (config: Partial<SavedSignatoriesConfig>): SavedSignatoriesConfig => {
+  const existing = getSavedReportSignatories() || {
+    pembuatName: '',
+    pembuatJabatan: 'Administrasi',
+    diperiksaName: '',
+    diperiksaJabatan: 'Administrasi',
+    disetujuiName: 'Dodik Mariyadi',
+    disetujuiJabatan: 'Kabag Workshop',
+  };
+  const updated: SavedSignatoriesConfig = {
+    ...existing,
+    ...config,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY_REPORT_SIGNATORIES, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.error('Failed to save report signatories to localStorage', e);
+  }
+  return updated;
+};
+
 /**
  * Helper untuk menentukan penandatangan resmi Laporan (3 Pihak Seragam):
  * 1. Di Buat Oleh = Dropdown Modul 2 Jabatan Administrasi
@@ -84,11 +131,17 @@ export function resolveReportSignatories(
     return j === 'SPV' || j.includes('SPV') || j.includes('SUPERVISOR');
   });
 
+  // Cek konfigurasi penandatangan tersimpan di localStorage pengguna
+  const saved = getSavedReportSignatories();
+
   // 1. Di Buat Oleh: Dropdown Modul 2 Jabatan Administrasi
   let pembuatName = '';
   let pembuatJabatan = 'Administrasi';
 
-  if (administrasiList.length > 0) {
+  if (saved?.pembuatName) {
+    pembuatName = saved.pembuatName;
+    pembuatJabatan = saved.pembuatJabatan || 'Administrasi';
+  } else if (administrasiList.length > 0) {
     const currentAdminMatch = currentUser
       ? administrasiList.find(
           (m) =>
@@ -115,7 +168,10 @@ export function resolveReportSignatories(
   let diperiksaName = '';
   let diperiksaJabatan = 'Administrasi';
 
-  if (administrasiList.length > 1) {
+  if (saved?.diperiksaName) {
+    diperiksaName = saved.diperiksaName;
+    diperiksaJabatan = saved.diperiksaJabatan || 'Administrasi';
+  } else if (administrasiList.length > 1) {
     diperiksaName = administrasiList[1].nama;
     diperiksaJabatan = administrasiList[1].jabatan || 'Administrasi';
   } else if (administrasiList.length === 1) {
@@ -136,18 +192,23 @@ export function resolveReportSignatories(
   let disetujuiName = 'Dodik Mariyadi';
   let disetujuiJabatan = 'Kabag Workshop';
 
-  const foundDodik = kabagList.find(
-    (m) => m.nama?.toLowerCase().includes('dodik') || m.nama?.toLowerCase().includes('mariyadi')
-  );
-  if (foundDodik) {
-    disetujuiName = foundDodik.nama;
-    disetujuiJabatan = foundDodik.jabatan || 'Kabag Workshop';
-  } else if (kabagList.length > 0) {
-    disetujuiName = kabagList[0].nama;
-    disetujuiJabatan = kabagList[0].jabatan || 'Kabag Workshop';
+  if (saved?.disetujuiName) {
+    disetujuiName = saved.disetujuiName;
+    disetujuiJabatan = saved.disetujuiJabatan || 'Kabag Workshop';
   } else {
-    disetujuiName = 'Dodik Mariyadi';
-    disetujuiJabatan = 'Kabag Workshop';
+    const foundDodik = kabagList.find(
+      (m) => m.nama?.toLowerCase().includes('dodik') || m.nama?.toLowerCase().includes('mariyadi')
+    );
+    if (foundDodik) {
+      disetujuiName = foundDodik.nama;
+      disetujuiJabatan = foundDodik.jabatan || 'Kabag Workshop';
+    } else if (kabagList.length > 0) {
+      disetujuiName = kabagList[0].nama;
+      disetujuiJabatan = kabagList[0].jabatan || 'Kabag Workshop';
+    } else {
+      disetujuiName = 'Dodik Mariyadi';
+      disetujuiJabatan = 'Kabag Workshop';
+    }
   }
 
   return {

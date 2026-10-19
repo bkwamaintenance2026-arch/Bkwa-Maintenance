@@ -35,6 +35,8 @@ import {
   FileCheck,
   Edit3,
   Eye,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface ExportFuelOilReportModalProps {
@@ -173,6 +175,22 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
     if (kabagWorkshop) localStorage.setItem(STORAGE_KEY_KABAG, kabagWorkshop);
     if (kabagWorkshopJabatan) localStorage.setItem(STORAGE_KEY_KABAG_JABATAN, kabagWorkshopJabatan);
   }, [kabagWorkshop, kabagWorkshopJabatan]);
+
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
+
+  const handleSaveSignatories = () => {
+    if (petugasFog) localStorage.setItem(STORAGE_KEY_FOG, petugasFog);
+    if (petugasFogJabatan) localStorage.setItem(STORAGE_KEY_FOG_JABATAN, petugasFogJabatan);
+    if (petugasInventory) localStorage.setItem(STORAGE_KEY_INVENTORY, petugasInventory);
+    if (petugasInventoryJabatan) localStorage.setItem(STORAGE_KEY_INVENTORY_JABATAN, petugasInventoryJabatan);
+    if (kabagWorkshop) localStorage.setItem(STORAGE_KEY_KABAG, kabagWorkshop);
+    if (kabagWorkshopJabatan) localStorage.setItem(STORAGE_KEY_KABAG_JABATAN, kabagWorkshopJabatan);
+
+    setSaveSuccessMsg('Pengesahan Disimpan!');
+    setTimeout(() => {
+      setSaveSuccessMsg('');
+    }, 3500);
+  };
 
   // Search filter inside preview table
   const [previewSearch, setPreviewSearch] = useState<string>('');
@@ -739,16 +757,31 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
           {/* 3. Kabag Workshop = Mengetahui & Menyetujui */}
           {/* ========================================================================= */}
           <div className="bg-stone-950/70 border border-stone-800/90 rounded-2xl p-4 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-stone-800/60 pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/60 pb-2.5">
               <div className="flex items-center gap-2">
                 <FileCheck className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs font-bold text-stone-200 font-mono uppercase tracking-wider">
                   Lembar Pengesahan Laporan FOG (3 Pihak Penandatangan)
                 </span>
               </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 w-fit">
-                Dropdown dari Modul 2 Manpower
-              </span>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {saveSuccessMsg && (
+                  <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 font-bold animate-fadeIn">
+                    <Check className="w-3.5 h-3.5" />
+                    {saveSuccessMsg}
+                  </span>
+                )}
+                <button
+                  id="btn-simpan-penandatangan-fog"
+                  type="button"
+                  onClick={handleSaveSignatories}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-mono font-black text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
+                  title="Simpan pilihan pejabat penandatangan"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Simpan Pengesahan</span>
+                </button>
+              </div>
             </div>
             <p className="text-[11px] text-stone-400">
               Format lembar pengesahan resmi laporan FOG (Bahan Bakar &amp; Pelumas) diseragamkan 3 pihak: <strong>1. Di Buat Oleh</strong> (Dropdown Modul 2 Jabatan Administrasi), <strong>2. Diperiksa Oleh</strong> (Dropdown Modul 2 Jabatan Administrasi), dan <strong>3. Disetujui Oleh</strong> (Kabag Workshop - Dodik Mariyadi):

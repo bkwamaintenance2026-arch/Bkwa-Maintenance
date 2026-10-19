@@ -228,7 +228,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             <div className="w-full h-full flex flex-col">
               <iframe
                 id="pdf-preview-iframe"
-                key={iframeKey}
+                key={`${pdfBlobUrl || 'empty'}-${iframeKey}`}
                 src={`${pdfBlobUrl}#toolbar=1&navpanes=1&scrollbar=1`}
                 className="w-full flex-1 rounded-2xl border border-stone-800 bg-stone-900 shadow-inner"
                 title={title}

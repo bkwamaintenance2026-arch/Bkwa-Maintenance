@@ -34,7 +34,8 @@ import {
   X, 
   ChevronRight, 
   Check, 
-  Edit3 
+  Edit3,
+  Save
 } from 'lucide-react';
 
 interface OilSummaryReportSubViewProps {
@@ -116,6 +117,22 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
     if (kabagWorkshop) localStorage.setItem(STORAGE_KEY_KABAG, kabagWorkshop);
     if (kabagWorkshopJabatan) localStorage.setItem(STORAGE_KEY_KABAG_JABATAN, kabagWorkshopJabatan);
   }, [picFog, picFogJabatan, inventoryUser, inventoryJabatan, kabagWorkshop, kabagWorkshopJabatan]);
+
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
+
+  const handleSaveSignatories = () => {
+    if (picFog) localStorage.setItem(STORAGE_KEY_PIC_FOG, picFog);
+    if (picFogJabatan) localStorage.setItem(STORAGE_KEY_PIC_FOG_JABATAN, picFogJabatan);
+    if (inventoryUser) localStorage.setItem(STORAGE_KEY_INVENTORY, inventoryUser);
+    if (inventoryJabatan) localStorage.setItem(STORAGE_KEY_INVENTORY_JABATAN, inventoryJabatan);
+    if (kabagWorkshop) localStorage.setItem(STORAGE_KEY_KABAG, kabagWorkshop);
+    if (kabagWorkshopJabatan) localStorage.setItem(STORAGE_KEY_KABAG_JABATAN, kabagWorkshopJabatan);
+
+    setSaveSuccessMsg('Pengesahan Disimpan!');
+    setTimeout(() => {
+      setSaveSuccessMsg('');
+    }, 3500);
+  };
 
   // Modal State
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -685,16 +702,31 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
       {/* Sesuai spesifikasi prompt user: Dropdown Manpower jabatan Administrasi */}
       {/* ========================================================================= */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex items-center justify-between border-b border-stone-800 pb-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-2.5">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <h3 className="text-xs sm:text-sm font-bold text-stone-100 font-mono uppercase tracking-wider">
               Validasi &amp; Lembar Pengesahan Laporan (3 Pihak)
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-stone-500">
-            Tercantum resmi pada PDF &amp; Cetak
-          </span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {saveSuccessMsg && (
+              <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 font-bold animate-fadeIn">
+                <Check className="w-3.5 h-3.5" />
+                {saveSuccessMsg}
+              </span>
+            )}
+            <button
+              id="btn-simpan-penandatangan-oil-summary"
+              type="button"
+              onClick={handleSaveSignatories}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-mono font-black text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
+              title="Simpan pilihan pejabat penandatangan"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Simpan Pengesahan</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

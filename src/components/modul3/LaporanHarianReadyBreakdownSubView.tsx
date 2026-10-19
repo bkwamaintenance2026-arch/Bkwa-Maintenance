@@ -31,10 +31,15 @@ import {
   ExternalLink,
   ChevronRight,
   Users,
+  Save,
 } from 'lucide-react';
 import { PartRequirementModal } from './PartRequirementModal';
 import { exportDailyBreakdownToPDF, generateDailyBreakdownPDF } from '../../utils/pdfGenerator';
-import { resolveReportSignatories } from '../../utils/reportSignatories';
+import { 
+  resolveReportSignatories, 
+  getSavedReportSignatories, 
+  saveReportSignatories 
+} from '../../utils/reportSignatories';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
 interface LaporanHarianReadyBreakdownSubViewProps {
@@ -117,16 +122,35 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     return resolveReportSignatories(manpowerData, currentUser);
   }, [manpowerData, currentUser]);
 
+  const savedConfig = useMemo(() => getSavedReportSignatories(), []);
+
   const [signatories, setSignatories] = useState({
-    pembuatName: '',
-    pembuatJabatan: 'Administrasi',
-    diperiksaName: '',
-    diperiksaJabatan: 'Administrasi',
-    disetujuiName: '',
-    disetujuiJabatan: 'Kabag Workshop',
-    diketahuiName: '',
-    diketahuiJabatan: 'Kabag Workshop',
+    pembuatName: savedConfig?.pembuatName || resolvedSig.pembuatName,
+    pembuatJabatan: savedConfig?.pembuatJabatan || resolvedSig.pembuatJabatan || 'Administrasi',
+    diperiksaName: savedConfig?.diperiksaName || resolvedSig.diperiksaName,
+    diperiksaJabatan: savedConfig?.diperiksaJabatan || resolvedSig.diperiksaJabatan || 'Administrasi',
+    disetujuiName: savedConfig?.disetujuiName || resolvedSig.disetujuiName || 'Dodik Mariyadi',
+    disetujuiJabatan: savedConfig?.disetujuiJabatan || resolvedSig.disetujuiJabatan || 'Kabag Workshop',
+    diketahuiName: savedConfig?.disetujuiName || resolvedSig.disetujuiName || 'Dodik Mariyadi',
+    diketahuiJabatan: savedConfig?.disetujuiJabatan || resolvedSig.disetujuiJabatan || 'Kabag Workshop',
   });
+
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
+
+  const handleSaveSignatories = () => {
+    saveReportSignatories({
+      pembuatName: signatories.pembuatName,
+      pembuatJabatan: signatories.pembuatJabatan,
+      diperiksaName: signatories.diperiksaName,
+      diperiksaJabatan: signatories.diperiksaJabatan,
+      disetujuiName: signatories.disetujuiName || signatories.diketahuiName,
+      disetujuiJabatan: signatories.disetujuiJabatan || signatories.diketahuiJabatan,
+    });
+    setSaveSuccessMsg('Pengesahan Disimpan!');
+    setTimeout(() => {
+      setSaveSuccessMsg('');
+    }, 3500);
+  };
 
   // List kandidat personil dari data Manpower Modul 2
   const administrasiCandidates = useMemo(() => {
@@ -152,28 +176,25 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     });
   }, [manpowerData]);
 
-  // Sinkronisasi otomatis saat personil Manpower terdeteksi
+  // Sinkronisasi HANYA jika signatories belum terisi (jangan timpa pilihan user)
   useEffect(() => {
     setSignatories((prev) => {
-      const isPembuatInCandidates = administrasiCandidates.some((m) => m.nama === prev.pembuatName);
-      const isDiperiksaInCandidates = administrasiCandidates.some((m) => m.nama === prev.diperiksaName);
-      const isDisetujuiInCandidates = kabagCandidates.some((m) => m.nama === prev.disetujuiName || m.nama === prev.diketahuiName);
-
-      const targetDisetujuiName = (isDisetujuiInCandidates ? (prev.disetujuiName || prev.diketahuiName) : (resolvedSig.disetujuiName || resolvedSig.diketahuiName)) || resolvedSig.disetujuiName || 'Dodik Mariyadi';
-      const targetDisetujuiJabatan = (isDisetujuiInCandidates ? (prev.disetujuiJabatan || prev.diketahuiJabatan) : (resolvedSig.disetujuiJabatan || resolvedSig.diketahuiJabatan)) || resolvedSig.disetujuiJabatan || 'Kabag Workshop';
-
+      if (prev.pembuatName && prev.diperiksaName) {
+        return prev;
+      }
+      const saved = getSavedReportSignatories();
       return {
-        pembuatName: (isPembuatInCandidates ? prev.pembuatName : resolvedSig.pembuatName) || resolvedSig.pembuatName,
-        pembuatJabatan: (isPembuatInCandidates ? prev.pembuatJabatan : resolvedSig.pembuatJabatan) || resolvedSig.pembuatJabatan,
-        diperiksaName: (isDiperiksaInCandidates ? prev.diperiksaName : resolvedSig.diperiksaName) || resolvedSig.diperiksaName,
-        diperiksaJabatan: (isDiperiksaInCandidates ? prev.diperiksaJabatan : resolvedSig.diperiksaJabatan) || resolvedSig.diperiksaJabatan,
-        disetujuiName: targetDisetujuiName,
-        disetujuiJabatan: targetDisetujuiJabatan,
-        diketahuiName: targetDisetujuiName,
-        diketahuiJabatan: targetDisetujuiJabatan,
+        pembuatName: prev.pembuatName || saved?.pembuatName || resolvedSig.pembuatName,
+        pembuatJabatan: prev.pembuatJabatan || saved?.pembuatJabatan || resolvedSig.pembuatJabatan || 'Administrasi',
+        diperiksaName: prev.diperiksaName || saved?.diperiksaName || resolvedSig.diperiksaName,
+        diperiksaJabatan: prev.diperiksaJabatan || saved?.diperiksaJabatan || resolvedSig.diperiksaJabatan || 'Administrasi',
+        disetujuiName: prev.disetujuiName || saved?.disetujuiName || resolvedSig.disetujuiName || 'Dodik Mariyadi',
+        disetujuiJabatan: prev.disetujuiJabatan || saved?.disetujuiJabatan || resolvedSig.disetujuiJabatan || 'Kabag Workshop',
+        diketahuiName: prev.disetujuiName || saved?.disetujuiName || resolvedSig.disetujuiName || 'Dodik Mariyadi',
+        diketahuiJabatan: prev.disetujuiJabatan || saved?.disetujuiJabatan || resolvedSig.disetujuiJabatan || 'Kabag Workshop',
       };
     });
-  }, [resolvedSig, administrasiCandidates, kabagCandidates]);
+  }, [resolvedSig]);
 
   // Cek otorisasi export
   const canExport = useMemo(() => {
@@ -510,15 +531,23 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
 
         <table class="sig-table">
           <tr>
-            <td style="width: 50%;">
-              Dibuat Oleh,<br>
+            <td style="width: 33%;">
+              Di Buat Oleh,<br>
               <span style="font-size: 8.5pt; color: #64748b;">${signatories.pembuatJabatan || 'Administrasi'}</span><br><br><br><br>
-              <strong>( ${signatories.pembuatName || 'Admin Workshop'} )</strong>
+              <strong>( ${signatories.pembuatName || 'Admin Workshop'} )</strong><br>
+              <span style="font-size: 8pt; color: #94a3b8;">Administrasi Modul 2</span>
             </td>
-            <td style="width: 50%;">
-              Mengetahui & Menyetujui,<br>
-              <span style="font-size: 8.5pt; color: #64748b;">${signatories.diketahuiJabatan || 'Kabag Workshop'}</span><br><br><br><br>
-              <strong>( ${signatories.diketahuiName || 'Kabag Workshop'} )</strong>
+            <td style="width: 33%;">
+              Diperiksa Oleh,<br>
+              <span style="font-size: 8.5pt; color: #64748b;">${signatories.diperiksaJabatan || 'Administrasi'}</span><br><br><br><br>
+              <strong>( ${signatories.diperiksaName || 'Staff Administrasi'} )</strong><br>
+              <span style="font-size: 8pt; color: #94a3b8;">Administrasi Modul 2</span>
+            </td>
+            <td style="width: 33%;">
+              Disetujui Oleh,<br>
+              <span style="font-size: 8.5pt; color: #64748b;">${signatories.disetujuiJabatan || signatories.diketahuiJabatan || 'Kabag Workshop'}</span><br><br><br><br>
+              <strong>( ${signatories.disetujuiName || signatories.diketahuiName || 'Dodik Mariyadi'} )</strong><br>
+              <span style="font-size: 8pt; color: #94a3b8;">Kabag Workshop</span>
             </td>
           </tr>
         </table>
@@ -702,16 +731,31 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
 
       {/* KARTU PEJABAT PENANDATANGAN LAPORAN (OTORITAS MODUL 2 MANPOWER) */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/80 pb-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800/80 pb-3">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-amber-400" />
             <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
               Pejabat Penandatangan Laporan (Sesuai Otoritas Modul 2 Manpower)
             </span>
           </div>
-          <span className="text-[11px] font-mono text-stone-400">
-            Otomatis terisi dari data personil &amp; hak akses Modul 2
-          </span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {saveSuccessMsg && (
+              <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 font-bold animate-fadeIn">
+                <Check className="w-3.5 h-3.5" />
+                {saveSuccessMsg}
+              </span>
+            )}
+            <button
+              id="btn-simpan-penandatangan-laporan"
+              type="button"
+              onClick={handleSaveSignatories}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-mono font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition cursor-pointer"
+              title="Simpan pilihan pejabat penandatangan agar selalu otomatis dipakai di semua preview dan cetak"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Simpan Pengesahan</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
