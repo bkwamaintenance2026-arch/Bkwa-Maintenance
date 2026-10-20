@@ -29,7 +29,8 @@ import {
   Eye,
   Users,
   Save,
-  Check
+  Check,
+  Truck
 } from 'lucide-react';
 
 interface PartRequirementModalProps {
@@ -369,6 +370,10 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
                 </span>
                 <span className="text-xs text-stone-400 font-mono">
                   Unit: <strong className="text-stone-200">{breakdown.noUnit}</strong>
+                </span>
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                  <Truck className="w-3 h-3 text-blue-400" />
+                  <span>Sync Modul 6</span>
                 </span>
               </div>
               <h3 className="text-sm font-bold text-stone-100 font-mono mt-0.5">

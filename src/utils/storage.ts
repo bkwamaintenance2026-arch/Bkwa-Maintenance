@@ -43,7 +43,11 @@ import {
   GreaseStockRecord,
   GreaseDistributionRecord,
   MechanicWorkLogRecord,
-  CatatanHarianManpowerRecord
+  CatatanHarianManpowerRecord,
+  SupplyFulfillmentStatus,
+  PartSupplyItemTracking,
+  NonUnitCategory,
+  NonUnitPurchaseRequest
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -84,11 +88,14 @@ const STORAGE_KEYS = {
   P2H_RECORDS: 'bkwa_p2h_records_v1',
   P2H_COUNTER: 'bkwa_p2h_counter_v1',
   FLEET_SETTINGS: 'bkwa_fleet_settings_v1',
-  // Modul 6 Inventory Management (Spare Part & Transaksi)
+  // Modul 6 Inventory Management (Spare Part, Transaksi, Supply Tracking & SPB Non-Unit)
   SPARE_PARTS: 'bkwa_spare_parts_v1',
   SPARE_PART_TRANSACTIONS: 'bkwa_sp_transactions_v1',
   PURCHASE_REQUESTS: 'bkwa_purchase_requests_v1',
   PURCHASE_REQUEST_COUNTER: 'bkwa_pr_counter_v1',
+  PART_SUPPLY_TRACKINGS: 'bkwa_part_supply_trackings_v1',
+  NON_UNIT_PURCHASE_REQUESTS: 'bkwa_non_unit_purchase_requests_v1',
+  NON_UNIT_PR_COUNTER: 'bkwa_non_unit_pr_counter_v1',
   // Modul 7 Tyre Management System
   TYRE_REGISTRATIONS: 'bkwa_tyre_registrations_v1',
   TYRE_INSTALLS: 'bkwa_tyre_installs_v1',
@@ -3876,6 +3883,375 @@ export const saveSparePartItem = addOrUpdateSparePart;
 export const deleteSparePartItem = deleteSparePart;
 export const getStoredSparePartTransactions = getAllSparePartTransactions;
 export const getStoredPurchaseRequests = getAllPurchaseRequests;
+
+// ============================================================
+// MODUL 6 SUB-MODUL 3: MONITORING SUPPLY & OUTSTANDING PART
+// ============================================================
+
+export function getAllPartSupplyTrackings(): PartSupplyItemTracking[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PART_SUPPLY_TRACKINGS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePartSupplyTrackings(items: PartSupplyItemTracking[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PART_SUPPLY_TRACKINGS, JSON.stringify(items));
+    window.dispatchEvent(new CustomEvent('bkwa-part-supply-updated'));
+  } catch (e) {
+    console.error('Error saving part supply trackings:', e);
+  }
+}
+
+/**
+ * Sinkronisasi otomatis daftar kebutuhan suku cadang dari Modul 3 (BreakdownRecord)
+ * ke tabel monitoring supply Modul 6.
+ * Menggunakan No Maintenance Order (No MO) / No Notifikasi yang identik.
+ */
+export function syncBreakdownPartsToSupplyTrackings(
+  breakdowns: BreakdownRecord[]
+): PartSupplyItemTracking[] {
+  try {
+    const existingList = getAllPartSupplyTrackings();
+    const existingMap = new Map<string, PartSupplyItemTracking>();
+    existingList.forEach((item) => {
+      existingMap.set(item.partKey, item);
+    });
+
+    const syncedList: PartSupplyItemTracking[] = [];
+    const now = new Date().toISOString();
+
+    // Loop seluruh breakdown yang memiliki kebutuhan part
+    breakdowns.forEach((b) => {
+      const refNumber = b.noMaintenanceOrder || b.noNotifikasi || '-';
+      if (b.partsJasa && Array.isArray(b.partsJasa)) {
+        b.partsJasa.forEach((p, idx) => {
+          // Part key unik kombinasi breakdown ID, index, dan identitas part
+          const pKey = `${b.id}_item_${idx}_${(p.partNumber || p.namaPart || '').trim()}`;
+          const existing = existingMap.get(pKey);
+          const requestedQty = Number(p.qty) || 1;
+
+          if (existing) {
+            // Update info jika ada perubahan di Modul 3 namun jaga status pemenuhan & catatan supply
+            const updated: PartSupplyItemTracking = {
+              ...existing,
+              refNumber,
+              noUnit: b.noUnit || existing.noUnit,
+              namaAlat: b.namaAlat || b.jenis || existing.namaAlat,
+              partNumber: p.partNumber || existing.partNumber,
+              namaPart: p.namaPart || existing.namaPart,
+              qtyDiminta: requestedQty,
+              satuan: p.satuan || existing.satuan,
+            };
+            syncedList.push(updated);
+            existingMap.delete(pKey);
+          } else {
+            // Entri baru otomatis dari Modul 3
+            const newItem: PartSupplyItemTracking = {
+              id: `pst-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+              sourceType: 'UNIT_BREAKDOWN',
+              refNumber,
+              breakdownId: b.id,
+              noUnit: b.noUnit,
+              namaAlat: b.namaAlat || b.jenis,
+              partKey: pKey,
+              partNumber: p.partNumber || '-',
+              namaPart: p.namaPart,
+              qtyDiminta: requestedQty,
+              qtyDiterima: 0,
+              satuan: p.satuan || 'Pcs',
+              status: 'PENDING',
+              updatedAt: now,
+            };
+            syncedList.push(newItem);
+          }
+        });
+      }
+    });
+
+    // Pertahankan entri non-unit atau entri lainnya yang ada di existingMap
+    existingMap.forEach((val) => {
+      if (val.sourceType === 'NON_UNIT') {
+        syncedList.push(val);
+      }
+    });
+
+    savePartSupplyTrackings(syncedList);
+    return syncedList;
+  } catch (e) {
+    console.error('Error syncing breakdown parts to supply trackings:', e);
+    return getAllPartSupplyTrackings();
+  }
+}
+
+/**
+ * Update status pemenuhan supply item (Checklist, Qty Supply Diterima, Surat Jalan Malang)
+ */
+export function updatePartSupplyStatus(
+  trackingId: string,
+  status: SupplyFulfillmentStatus,
+  details?: {
+    qtyDiterima?: number;
+    tanggalSupply?: string;
+    noSuratJalanMalang?: string;
+    catatan?: string;
+    updatedBy?: string;
+  }
+): { success: boolean; message: string; updatedItem?: PartSupplyItemTracking } {
+  try {
+    const list = getAllPartSupplyTrackings();
+    const idx = list.findIndex((item) => item.id === trackingId);
+    if (idx === -1) {
+      return { success: false, message: 'Item part supply tidak ditemukan.' };
+    }
+
+    const current = list[idx];
+    const now = new Date().toISOString();
+    const dateStr = details?.tanggalSupply || new Date().toISOString().split('T')[0];
+
+    // Jika status TERPENUHI, qty diterima otomatis disamakan dengan qty diminta jika tidak dispesifikasikan
+    let finalQtyDiterima = details?.qtyDiterima !== undefined 
+      ? Number(details.qtyDiterima) 
+      : (status === 'TERPENUHI' ? current.qtyDiminta : current.qtyDiterima);
+
+    if (status === 'PENDING') {
+      finalQtyDiterima = 0;
+    }
+
+    const updated: PartSupplyItemTracking = {
+      ...current,
+      status,
+      qtyDiterima: finalQtyDiterima,
+      tanggalSupply: status !== 'PENDING' ? dateStr : undefined,
+      noSuratJalanMalang: details?.noSuratJalanMalang || current.noSuratJalanMalang || '',
+      catatan: details?.catatan !== undefined ? details.catatan : current.catatan,
+      updatedBy: details?.updatedBy || current.updatedBy,
+      updatedAt: now,
+    };
+
+    list[idx] = updated;
+    savePartSupplyTrackings(list);
+    syncItemToFirestore('part_supply_trackings', updated.id, updated);
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Status supply part [${updated.namaPart}] Reff ${updated.refNumber} diubah menjadi ${status} (${updated.qtyDiterima}/${updated.qtyDiminta} ${updated.satuan})`,
+      detailUnit: updated.noUnit,
+    });
+
+    return {
+      success: true,
+      message: `Status part [${updated.namaPart}] berhasil diupdate menjadi ${status}!`,
+      updatedItem: updated,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal mengupdate supply part: ${e?.message || 'Error'}` };
+  }
+}
+
+/**
+ * Checklist Cepat (1-Klik toggle antara Belum Supply -> Terpenuhi)
+ */
+export function quickTogglePartSupplyStatus(
+  trackingId: string,
+  updatedBy?: string
+): { success: boolean; message: string; newStatus?: SupplyFulfillmentStatus } {
+  try {
+    const list = getAllPartSupplyTrackings();
+    const item = list.find((i) => i.id === trackingId);
+    if (!item) return { success: false, message: 'Item tidak ditemukan.' };
+
+    const nextStatus: SupplyFulfillmentStatus = item.status === 'TERPENUHI' ? 'PENDING' : 'TERPENUHI';
+    return updatePartSupplyStatus(trackingId, nextStatus, {
+      qtyDiterima: nextStatus === 'TERPENUHI' ? item.qtyDiminta : 0,
+      tanggalSupply: nextStatus === 'TERPENUHI' ? new Date().toISOString().split('T')[0] : undefined,
+      updatedBy,
+    });
+  } catch (e: any) {
+    return { success: false, message: e?.message || 'Error toggle status supply' };
+  }
+}
+
+// --- FORM SURAT PERMINTAAN BARANG KHUSUS NON-UNIT STORAGE ---
+
+export function getAllNonUnitPurchaseRequests(): NonUnitPurchaseRequest[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.NON_UNIT_PURCHASE_REQUESTS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveNonUnitPurchaseRequests(requests: NonUnitPurchaseRequest[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.NON_UNIT_PURCHASE_REQUESTS, JSON.stringify(requests));
+    window.dispatchEvent(new CustomEvent('bkwa-non-unit-pr-updated'));
+  } catch (e) {
+    console.error('Error saving non-unit purchase requests:', e);
+  }
+}
+
+export function createNonUnitPurchaseRequest(
+  data: Omit<NonUnitPurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'updatedAt' | 'statusSupply' | 'statusPengajuan'>
+): { success: boolean; message: string; request?: NonUnitPurchaseRequest } {
+  try {
+    const requests = getAllNonUnitPurchaseRequests();
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().slice(0, 5);
+    const year2Digits = String(now.getFullYear()).slice(-2);
+
+    let counter = 1;
+    try {
+      const storedCounter = localStorage.getItem(STORAGE_KEYS.NON_UNIT_PR_COUNTER);
+      counter = storedCounter ? parseInt(storedCounter, 10) + 1 : requests.length + 1;
+    } catch {
+      counter = requests.length + 1;
+    }
+    localStorage.setItem(STORAGE_KEYS.NON_UNIT_PR_COUNTER, String(counter));
+
+    const noPermintaan = `SPB-NU-${year2Digits}${String(counter).padStart(4, '0')}`;
+
+    const newRequest: NonUnitPurchaseRequest = {
+      ...data,
+      id: `spb-nu-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      noPermintaan,
+      tanggal: data.tanggal || dateStr,
+      jam: data.jam || timeStr,
+      statusSupply: 'PENDING',
+      statusPengajuan: 'DIAJUKAN',
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    requests.unshift(newRequest);
+    saveNonUnitPurchaseRequests(requests);
+    syncItemToFirestore('non_unit_purchase_requests', newRequest.id, newRequest);
+
+    // Otomatis masukkan item ke PartSupplyItemTracking agar muncul di tabel monitoring bersama
+    const trackings = getAllPartSupplyTrackings();
+    newRequest.items.forEach((item, idx) => {
+      const trackingEntry: PartSupplyItemTracking = {
+        id: `pst-nu-${newRequest.id}-${idx}`,
+        sourceType: 'NON_UNIT',
+        refNumber: noPermintaan,
+        partKey: `${newRequest.id}_nu_${idx}_${item.namaBarang}`,
+        namaAlat: data.kategori === 'TOOLS_ALAT_KERJA' 
+          ? 'Tools & Alat Kerja' 
+          : data.kategori === 'KONSUMABEL_WORKSHOP' 
+          ? 'Konsumabel Workshop' 
+          : 'Fasilitas Umum',
+        partNumber: item.spesifikasi || '-',
+        namaPart: item.namaBarang,
+        qtyDiminta: item.qtyDiminta,
+        qtyDiterima: 0,
+        satuan: item.satuan,
+        status: 'PENDING',
+        updatedAt: now.toISOString(),
+      };
+      trackings.push(trackingEntry);
+    });
+    savePartSupplyTrackings(trackings);
+
+    logActivity({
+      aksi: 'REGISTRASI',
+      keterangan: `SPB Non-Unit [${noPermintaan}] (${data.kategori}) diajukan oleh ${data.pemohon} (${data.items.length} item)`,
+    });
+
+    return {
+      success: true,
+      message: `Surat Permintaan Barang Non-Unit [${noPermintaan}] berhasil dibuat dan terintegrasi ke monitoring supply!`,
+      request: newRequest,
+    };
+  } catch (e: any) {
+    return { success: false, message: `Gagal membuat SPB Non-Unit: ${e?.message || 'Error'}` };
+  }
+}
+
+export function updateNonUnitSupplyStatus(
+  id: string,
+  statusSupply: SupplyFulfillmentStatus,
+  details?: {
+    tanggalSupply?: string;
+    noSuratJalanMalang?: string;
+    catatanSupply?: string;
+    statusPengajuan?: 'DIAJUKAN' | 'DISETUJUI' | 'SELESAI';
+  }
+): { success: boolean; message: string } {
+  try {
+    const requests = getAllNonUnitPurchaseRequests();
+    const idx = requests.findIndex((r) => r.id === id);
+    if (idx === -1) return { success: false, message: 'SPB Non-Unit tidak ditemukan.' };
+
+    const req = requests[idx];
+    req.statusSupply = statusSupply;
+    if (details?.tanggalSupply) req.tanggalSupply = details.tanggalSupply;
+    if (details?.noSuratJalanMalang) req.noSuratJalanMalang = details.noSuratJalanMalang;
+    if (details?.catatanSupply) req.catatanSupply = details.catatanSupply;
+    if (details?.statusPengajuan) req.statusPengajuan = details.statusPengajuan;
+    if (statusSupply === 'TERPENUHI') req.statusPengajuan = 'SELESAI';
+    req.updatedAt = new Date().toISOString();
+
+    saveNonUnitPurchaseRequests(requests);
+    syncItemToFirestore('non_unit_purchase_requests', req.id, req);
+
+    // Sync juga status di PartSupplyItemTracking yang ber-refNumber SPB ini
+    const trackings = getAllPartSupplyTrackings();
+    let hasChanged = false;
+    trackings.forEach((t) => {
+      if (t.refNumber === req.noPermintaan) {
+        t.status = statusSupply;
+        if (statusSupply === 'TERPENUHI') t.qtyDiterima = t.qtyDiminta;
+        if (details?.tanggalSupply) t.tanggalSupply = details.tanggalSupply;
+        if (details?.noSuratJalanMalang) t.noSuratJalanMalang = details.noSuratJalanMalang;
+        t.updatedAt = new Date().toISOString();
+        hasChanged = true;
+      }
+    });
+    if (hasChanged) {
+      savePartSupplyTrackings(trackings);
+    }
+
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Status Supply SPB Non-Unit [${req.noPermintaan}] diupdate menjadi ${statusSupply}`,
+    });
+
+    return { success: true, message: `Status SPB Non-Unit [${req.noPermintaan}] berhasil diperbarui.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal update status: ${e?.message || 'Error'}` };
+  }
+}
+
+export function deleteNonUnitPurchaseRequest(id: string): { success: boolean; message: string } {
+  try {
+    const requests = getAllNonUnitPurchaseRequests();
+    const target = requests.find((r) => r.id === id);
+    if (!target) return { success: false, message: 'Data tidak ditemukan.' };
+
+    const filtered = requests.filter((r) => r.id !== id);
+    saveNonUnitPurchaseRequests(filtered);
+    deleteItemFromFirestore('non_unit_purchase_requests', id);
+
+    // Hapus juga trackings terkait
+    const trackings = getAllPartSupplyTrackings().filter((t) => t.refNumber !== target.noPermintaan);
+    savePartSupplyTrackings(trackings);
+
+    logActivity({
+      aksi: 'DELETE',
+      keterangan: `Menghapus SPB Non-Unit [${target.noPermintaan}]`,
+    });
+
+    return { success: true, message: `SPB Non-Unit [${target.noPermintaan}] berhasil dihapus.` };
+  } catch (e: any) {
+    return { success: false, message: `Gagal menghapus SPB Non-Unit: ${e?.message || 'Error'}` };
+  }
+}
+
 
 // ============================================================
 // MODUL 7: TYRE MANAGEMENT SYSTEM STORAGE

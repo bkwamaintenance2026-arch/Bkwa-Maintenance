@@ -5,7 +5,8 @@ import {
   SparePartTransaction, 
   SparePartTransactionItem,
   PurchaseRequest,
-  UserAccount 
+  UserAccount,
+  ManpowerData
 } from '../../types';
 import { 
   getStoredSpareParts, 
@@ -21,6 +22,7 @@ import {
 } from '../../utils/storage';
 import { InputSparePartSubView } from './InputSparePartSubView';
 import { TransaksiSparePartSubView } from './TransaksiSparePartSubView';
+import { MonitoringSupplySubView } from './MonitoringSupplySubView';
 import { 
   Boxes, 
   Package, 
@@ -30,21 +32,24 @@ import {
   CheckCircle2, 
   Clock, 
   TrendingUp,
-  RotateCcw
+  RotateCcw,
+  Truck
 } from 'lucide-react';
 
 interface InventoryManagementViewProps {
   breakdowns: BreakdownRecord[];
   currentUser: UserAccount;
+  manpowerList?: ManpowerData[];
   onRefreshData?: () => void;
 }
 
 export const InventoryManagementView: React.FC<InventoryManagementViewProps> = ({
   breakdowns,
   currentUser,
+  manpowerList = [],
   onRefreshData,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'INPUT' | 'TRANSAKSI'>('INPUT');
+  const [activeSubTab, setActiveSubTab] = useState<'INPUT' | 'TRANSAKSI' | 'MONITORING_SUPPLY'>('INPUT');
   
   // State data inventory
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
@@ -197,7 +202,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         </div>
 
         {/* SUB MODUL NAVIGATION TABS */}
-        <div className="flex items-center gap-2 mt-6 pt-4 border-t border-stone-800">
+        <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t border-stone-800">
           <button
             type="button"
             onClick={() => setActiveSubTab('INPUT')}
@@ -223,6 +228,19 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             <ShoppingCart className="w-4 h-4" />
             <span>2. Transaksi Spare Part &amp; Order Part</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('MONITORING_SUPPLY')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-mono text-xs font-bold transition ${
+              activeSubTab === 'MONITORING_SUPPLY'
+                ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
+                : 'bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-100'
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            <span>3. Monitoring Supply &amp; Outstanding Part (Kiriman Malang)</span>
+          </button>
         </div>
       </div>
 
@@ -236,7 +254,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           onAddStock={handleAddStock}
           onDeletePart={handleDeletePart}
         />
-      ) : (
+      ) : activeSubTab === 'TRANSAKSI' ? (
         <TransaksiSparePartSubView
           breakdowns={breakdowns}
           spareParts={spareParts}
@@ -247,6 +265,17 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           onRecordTransaction={handleRecordTransaction}
           onSubmitPurchaseRequest={handleSubmitPurchaseRequest}
           onUpdatePRStatus={handleUpdatePRStatus}
+        />
+      ) : (
+        <MonitoringSupplySubView
+          breakdowns={breakdowns}
+          currentUser={currentUser}
+          canEdit={canEdit}
+          manpowerList={manpowerList}
+          onRefreshData={() => {
+            loadData();
+            if (onRefreshData) onRefreshData();
+          }}
         />
       )}
     </div>

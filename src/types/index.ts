@@ -906,6 +906,89 @@ export interface PurchaseRequest {
   createdAt: string;
 }
 
+// Status Pemenuhan Supply Barang dari Malang
+export type SupplyFulfillmentStatus = 'PENDING' | 'PARSIAL' | 'TERPENUHI';
+
+export const SUPPLY_STATUS_OPTIONS: {
+  value: SupplyFulfillmentStatus;
+  label: string;
+  color: string;
+  badge: string;
+}[] = [
+  { value: 'PENDING', label: 'Belum Disupply (Outstanding)', color: 'text-rose-400', badge: 'bg-rose-500/10 text-rose-400 border border-rose-500/20' },
+  { value: 'PARSIAL', label: 'Supply Parsial / Sebagian', color: 'text-amber-400', badge: 'bg-amber-500/10 text-amber-400 border border-amber-500/20' },
+  { value: 'TERPENUHI', label: 'Terpenuhi Lengkap', color: 'text-emerald-400', badge: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
+];
+
+// Tracking Pemenuhan Suku Cadang per Item (Unit Breakdown atau Non-Unit)
+export interface PartSupplyItemTracking {
+  id: string;
+  sourceType: 'UNIT_BREAKDOWN' | 'NON_UNIT';
+  refNumber: string;               // No MO (cth: 260001) atau No SPB Non-Unit (cth: SPB-NU-260001)
+  breakdownId?: string;            // ID Breakdown Record terkait
+  noUnit?: string;                 // CN New
+  namaAlat?: string;               // Model / Nama Alat
+  partKey: string;                 // Unique key: refNumber + '-' + itemIndex / partNumber
+  partNumber: string;
+  namaPart: string;
+  qtyDiminta: number;
+  qtyDiterima: number;
+  satuan: string;
+  status: SupplyFulfillmentStatus;
+  tanggalSupply?: string;          // YYYY-MM-DD kedatangan dari Malang
+  noSuratJalanMalang?: string;     // No DO / Resi / Surat Jalan dari Malang
+  catatan?: string;
+  updatedBy?: string;
+  updatedAt: string;
+}
+
+// Form Permintaan Barang Khusus Non-Unit
+export type NonUnitCategory = 'TOOLS_ALAT_KERJA' | 'KONSUMABEL_WORKSHOP' | 'FASILITAS_UMUM';
+
+export const NON_UNIT_CATEGORY_OPTIONS: {
+  value: NonUnitCategory;
+  label: string;
+  desc: string;
+  color: string;
+}[] = [
+  { value: 'TOOLS_ALAT_KERJA', label: 'Tools & Alat Kerja', desc: 'Kunci-kunci, impact, multimeter, jack stand, SST', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+  { value: 'KONSUMABEL_WORKSHOP', label: 'Konsumabel Workshop', desc: 'WD-40, majun/kain lap, kawat las, gas, grease, sabun', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
+  { value: 'FASILITAS_UMUM', label: 'Fasilitas Umum', desc: 'Lampu penerangan, terpal, selang kompresor, APD workshop', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+];
+
+export interface NonUnitPurchaseRequestItem {
+  no: number;
+  namaBarang: string;
+  spesifikasi?: string;
+  qtyDiminta: number;
+  satuan: string;
+  keterangan?: string;
+}
+
+export interface NonUnitPurchaseRequest {
+  id: string;
+  noPermintaan: string;            // Format: SPB-NU-260001
+  tanggal: string;                 // YYYY-MM-DD
+  jam: string;                     // HH:mm
+  kategori: NonUnitCategory;
+  pemohon: string;                 // Nama Pemohon (dari Modul 2)
+  jabatanPemohon: string;
+  urgensi: 'NORMAL' | 'URGENT' | 'EMERGENCY';
+  alasanPermintaan: string;
+  items: NonUnitPurchaseRequestItem[];
+  statusSupply: SupplyFulfillmentStatus;
+  statusPengajuan: 'DIAJUKAN' | 'DISETUJUI' | 'SELESAI';
+  disetujuiOleh?: string;
+  diperiksaOleh?: string;
+  dibuatOleh?: string;
+  tanggalSupply?: string;
+  noSuratJalanMalang?: string;
+  catatanSupply?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
 // ============================================================
 // MODUL 7: TYRE MANAGEMENT SYSTEM
 // ============================================================

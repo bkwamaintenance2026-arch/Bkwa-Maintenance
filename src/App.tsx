@@ -771,6 +771,7 @@ export default function App() {
           <SparePartInventoryView
             breakdowns={breakdowns}
             currentUser={currentUser}
+            manpowerList={manpowerList}
             onRefreshData={refreshAllData}
           />
         ) : (
