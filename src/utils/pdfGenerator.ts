@@ -1456,14 +1456,15 @@ export const generateFuelOilTransactionsPDF = ({
               (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
               (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
               (Number(r.qty) || 0).toLocaleString('id-ID'),
-              r.driverFtName || r.picFogName || '-',
+              r.driverFtName || '-',
+              r.picFogName || '-',
               r.lokasi || r.remark || '-',
             ]);
           });
           distRows.push([
             {
               content: `SUBTOTAL UNIT [ ${unitKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
-              colSpan: 12,
+              colSpan: 13,
               styles: {
                 fillColor: [254, 243, 199] as [number, number, number],
                 textColor: [180, 83, 9] as [number, number, number],
@@ -1477,7 +1478,7 @@ export const generateFuelOilTransactionsPDF = ({
         distRows.push([
           {
             content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
-            colSpan: 12,
+            colSpan: 13,
             styles: {
               fillColor: [253, 230, 138] as [number, number, number],
               textColor: [146, 64, 14] as [number, number, number],
@@ -1511,14 +1512,15 @@ export const generateFuelOilTransactionsPDF = ({
               (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
               (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
               (Number(r.qty) || 0).toLocaleString('id-ID'),
-              r.driverFtName || r.picFogName || '-',
+              r.driverFtName || '-',
+              r.picFogName || '-',
               r.lokasi || r.remark || '-',
             ]);
           });
           distRows.push([
             {
               content: `SUBTOTAL TANGGAL [ ${dateKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
-              colSpan: 12,
+              colSpan: 13,
               styles: {
                 fillColor: [254, 243, 199] as [number, number, number],
                 textColor: [180, 83, 9] as [number, number, number],
@@ -1532,7 +1534,7 @@ export const generateFuelOilTransactionsPDF = ({
         distRows.push([
           {
             content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
-            colSpan: 12,
+            colSpan: 13,
             styles: {
               fillColor: [253, 230, 138] as [number, number, number],
               textColor: [146, 64, 14] as [number, number, number],
@@ -1555,14 +1557,15 @@ export const generateFuelOilTransactionsPDF = ({
             (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
             (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
             (Number(r.qty) || 0).toLocaleString('id-ID'),
-            r.driverFtName || r.picFogName || '-',
+            r.driverFtName || '-',
+            r.picFogName || '-',
             r.lokasi || r.remark || '-',
           ]);
         });
         distRows.push([
           {
             content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
-            colSpan: 12,
+            colSpan: 13,
             styles: {
               fillColor: [253, 230, 138] as [number, number, number],
               textColor: [146, 64, 14] as [number, number, number],
@@ -1577,7 +1580,7 @@ export const generateFuelOilTransactionsPDF = ({
       distRows.push([
         {
           content: 'Tidak ada data transaksi distribusi solar fuel truck ke unit pada periode ini.',
-          colSpan: 12,
+          colSpan: 13,
           styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
         },
       ]);
@@ -1597,7 +1600,8 @@ export const generateFuelOilTransactionsPDF = ({
           'FM Start',
           'FM Stop',
           'Qty (Ltr)',
-          'Driver FT / PIC',
+          'Driver FT',
+          'PIC FOG',
           'Lokasi / Remark',
         ],
       ],
@@ -1619,18 +1623,19 @@ export const generateFuelOilTransactionsPDF = ({
         lineWidth: 0.2,
       },
       columnStyles: {
-        0: { cellWidth: 8, halign: 'center' },
-        1: { cellWidth: 24, halign: 'center' },
-        2: { cellWidth: 20, fontStyle: 'bold' },
-        3: { cellWidth: 20, fontStyle: 'bold', textColor: [234, 88, 12] },
-        4: { cellWidth: 32 },
-        5: { cellWidth: 34 },
-        6: { cellWidth: 16, halign: 'right' },
-        7: { cellWidth: 18, halign: 'right' },
-        8: { cellWidth: 18, halign: 'right' },
-        9: { cellWidth: 20, halign: 'right', fontStyle: 'bold', textColor: [234, 88, 12] },
-        10: { cellWidth: 26 },
-        11: { cellWidth: 'auto' },
+        0: { cellWidth: 7, halign: 'center' },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 18, fontStyle: 'bold' },
+        3: { cellWidth: 18, fontStyle: 'bold', textColor: [234, 88, 12] },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 28 },
+        6: { cellWidth: 15, halign: 'right' },
+        7: { cellWidth: 15, halign: 'right' },
+        8: { cellWidth: 15, halign: 'right' },
+        9: { cellWidth: 18, halign: 'right', fontStyle: 'bold', textColor: [234, 88, 12] },
+        10: { cellWidth: 23 },
+        11: { cellWidth: 23 },
+        12: { cellWidth: 'auto' },
       },
       margin: { left: 14, right: 14 },
     });

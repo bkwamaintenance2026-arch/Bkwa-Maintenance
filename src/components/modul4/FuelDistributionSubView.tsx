@@ -697,6 +697,8 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                 <th className="py-3 px-3 text-right">HM</th>
                 <th className="py-3 px-3 font-mono">Flowmeter (Start - Stop)</th>
                 <th className="py-3 px-3 text-right">Qty (Ltr)</th>
+                <th className="py-3 px-3">Driver FT</th>
+                <th className="py-3 px-3">PIC FOG</th>
                 <th className="py-3 px-3">Lokasi Pit</th>
                 <th className="py-3 px-3 text-center">Aksi</th>
               </tr>
@@ -707,7 +709,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                   <React.Fragment key={grp.key}>
                     {/* Header Group */}
                     <tr className="bg-blue-950/40 border-y border-blue-500/30">
-                      <td colSpan={9} className="py-2 px-3 font-mono font-bold text-blue-300 text-xs">
+                      <td colSpan={11} className="py-2 px-3 font-mono font-bold text-blue-300 text-xs">
                         ▸ {sortBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon Transaksi)
                       </td>
                     </tr>
@@ -752,6 +754,12 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                         <td className="py-3 px-3 font-mono font-black text-orange-400 text-right text-sm">
                           {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
                         </td>
+                        <td className="py-3 px-3 font-mono text-amber-300/90 whitespace-nowrap">
+                          {item.driverFtName || '-'}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-emerald-300/90 whitespace-nowrap">
+                          {item.picFogName || '-'}
+                        </td>
                         <td className="py-3 px-3">
                           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 border border-stone-700">
                             {item.lokasi || 'Tambang -Front Pit'}
@@ -787,7 +795,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                       <td className="py-2 px-3 text-right font-black text-amber-400 text-sm">
                         {grp.subtotalLtr.toLocaleString('id-ID')} Ltr
                       </td>
-                      <td colSpan={2}></td>
+                      <td colSpan={4}></td>
                     </tr>
                   </React.Fragment>
                 ))
@@ -833,6 +841,12 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                     <td className="py-3 px-3 font-mono font-black text-orange-400 text-right text-sm">
                       {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
                     </td>
+                    <td className="py-3 px-3 font-mono text-amber-300/90 whitespace-nowrap">
+                      {item.driverFtName || '-'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-emerald-300/90 whitespace-nowrap">
+                      {item.picFogName || '-'}
+                    </td>
                     <td className="py-3 px-3">
                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 border border-stone-700">
                         {item.lokasi || 'Tambang -Front Pit'}
@@ -864,7 +878,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
 
               {filteredList.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-stone-500">
+                  <td colSpan={11} className="py-8 text-center text-stone-500">
                     Belum ada data transaksi bon pengisian fuel untuk unit alat yang sesuai filter.
                   </td>
                 </tr>
@@ -876,7 +890,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                   <td className="py-3 px-3 text-right font-black text-amber-400 text-base">
                     {totalFilteredQty.toLocaleString('id-ID')} Ltr
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={4}></td>
                 </tr>
               )}
 

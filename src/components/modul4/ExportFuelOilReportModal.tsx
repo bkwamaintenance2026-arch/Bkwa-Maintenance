@@ -1319,6 +1319,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                       <th className="py-2 px-3 text-right">HM Unit</th>
                       <th className="py-2 px-3 text-right">Qty Solar (L)</th>
                       <th className="py-2 px-3">Driver FT</th>
+                      <th className="py-2 px-3">PIC FOG</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-900 text-stone-300">
@@ -1326,7 +1327,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                       ftGroupedPreview.map((grp) => (
                         <React.Fragment key={grp.key}>
                           <tr className="bg-blue-950/40 border-y border-blue-500/30">
-                            <td colSpan={8} className="py-1.5 px-3 font-bold text-blue-300 text-[11px]">
+                            <td colSpan={9} className="py-1.5 px-3 font-bold text-blue-300 text-[11px]">
                               ▸ {groupBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon)
                             </td>
                           </tr>
@@ -1343,7 +1344,8 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                               <td className="py-2 px-3 text-right font-bold text-blue-400">
                                 {(Number(r.qty) || 0).toLocaleString('id-ID')} L
                               </td>
-                              <td className="py-2 px-3">{r.driverFtName || '-'}</td>
+                              <td className="py-2 px-3 text-amber-300/90">{r.driverFtName || '-'}</td>
+                              <td className="py-2 px-3 text-emerald-300/90">{r.picFogName || '-'}</td>
                             </tr>
                           ))}
                           <tr className="bg-amber-500/10 border-b border-amber-500/30 font-bold text-amber-300">
@@ -1353,7 +1355,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                             <td className="py-1.5 px-3 text-right font-mono text-amber-400 text-xs">
                               {grp.subtotalLtr.toLocaleString('id-ID')} L
                             </td>
-                            <td></td>
+                            <td colSpan={2}></td>
                           </tr>
                         </React.Fragment>
                       ))
@@ -1371,13 +1373,14 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                           <td className="py-2 px-3 text-right font-bold text-blue-400">
                             {(Number(r.qty) || 0).toLocaleString('id-ID')} L
                           </td>
-                          <td className="py-2 px-3">{r.driverFtName || '-'}</td>
+                          <td className="py-2 px-3 text-amber-300/90">{r.driverFtName || '-'}</td>
+                          <td className="py-2 px-3 text-emerald-300/90">{r.picFogName || '-'}</td>
                         </tr>
                       ))
                     )}
                     {filteredDistributions.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="py-4 text-center text-stone-500 italic">
+                        <td colSpan={9} className="py-4 text-center text-stone-500 italic">
                           Tidak ada data distribusi fuel truck ke unit pada rentang tanggal ini.
                         </td>
                       </tr>
@@ -1389,7 +1392,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                         <td className="py-2 px-3 text-right font-mono text-amber-400 text-xs">
                           {metrics.totalDistribusiFT.toLocaleString('id-ID')} L
                         </td>
-                        <td></td>
+                        <td colSpan={2}></td>
                       </tr>
                     )}
                   </tbody>
