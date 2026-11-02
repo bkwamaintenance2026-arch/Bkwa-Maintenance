@@ -177,6 +177,23 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       canExport: canUserExportModule(currentUser, 7),
       devOnlyForm: false,
     },
+    {
+      id: 8,
+      code: 'MOD-08',
+      title: 'Modul 8: Master Part',
+      subtitle: 'Katalog Master Suku Cadang & Material per Unit',
+      desc: 'Input part per unit (Jenis dahulu -> No Unit) dengan Kategori (Fast Moving, Slow Moving, Death Stock), Jenis Part, Merk, Fungsi, Nama Part, PN, Qty, dan tabel katalog.',
+      icon: Boxes,
+      color: 'amber',
+      accentBg: 'from-amber-500/10 to-transparent',
+      borderColor: 'border-amber-500/30',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+      statLabel: 'Master Material & Part',
+      isViewable: canUserViewModule(currentUser, 8),
+      canEdit: canUserEditModule(currentUser, 8),
+      canExport: canUserExportModule(currentUser, 8),
+      devOnlyForm: false,
+    },
   ];
 
   // Role Badge Renderer

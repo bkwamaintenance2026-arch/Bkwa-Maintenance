@@ -46,6 +46,8 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
         return <Boxes className="w-5 h-5" />;
       case 7:
         return <Disc className="w-5 h-5" />;
+      case 8:
+        return <Boxes className="w-5 h-5" />;
       default:
         return <Truck className="w-5 h-5" />;
     }
@@ -67,6 +69,8 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
         return { label: 'INVENTORY MANAGEMENT', statusText: 'Modul 6 (Aktif)', sub: 'Spare Part & Order Part' };
       case 7:
         return { label: 'TYRE MANAGEMENT', statusText: 'Modul 7 (Aktif)', sub: 'Registrasi & Utilisasi Ban Unit' };
+      case 8:
+        return { label: 'MASTER PART', statusText: 'Modul 8 (Aktif)', sub: 'Katalog Master Part & Suku Cadang' };
       default:
         return { label: `MODUL ${id}`, statusText: 'Tersedia', sub: '' };
     }
@@ -79,7 +83,7 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
             <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-stone-400">
-              6 Modul Terintegrasi BKWA
+              Modul Terintegrasi BKWA
             </h2>
           </div>
           <span className="text-[11px] text-stone-400 font-mono">
@@ -94,13 +98,19 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
                 ? 'Modul 4 (FOG)'
                 : activeModuleId === 5
                 ? 'Modul 5 (Divisi Operation)'
-                : 'Modul 6 (Inventory Management)'}
+                : activeModuleId === 6
+                ? 'Modul 6 (Inventory Management)'
+                : activeModuleId === 7
+                ? 'Modul 7 (Tyre Management)'
+                : activeModuleId === 8
+                ? 'Modul 8 (Master Part)'
+                : `Modul ${activeModuleId}`}
             </strong>
           </span>
         </div>
 
-        {/* 6 Large Module Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-3.5">
+        {/* Module Buttons Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-2.5 sm:gap-3">
           {modules.map((m) => {
             const isActive = m.id === activeModuleId;
             const isModul1 = m.id === 1;

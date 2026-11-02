@@ -64,6 +64,15 @@ export const INITIAL_MODULES: ModuleInfo[] = [
     status: 'AKTIF',
     badge: 'TYRE MANAGEMENT',
   },
+  {
+    id: 8,
+    code: 'MOD-08',
+    title: 'Modul 8: Master Part',
+    subtitle: 'Master Part & Material Katalog Unit',
+    description: 'Database Master Material per Unit: Pemilihan Jenis Alat & No Unit Aset, Registrasi Part (Kategori, Jenis, Merk, Fungsi, Nama, PN, Qty, Remark) serta Tabel Master Material komprehensif.',
+    status: 'AKTIF',
+    badge: 'MASTER PART',
+  },
 ];
 
 export const INITIAL_ADMIN_USER: UserAccount = {
@@ -86,6 +95,7 @@ export const INITIAL_ADMIN_USER: UserAccount = {
     modul5P2H: true,
     modul6SparePart: true,
     modul7Tyre: true,
+    modul8MasterPart: true,
     canExportModul1: true,
     canExportModul2: true,
     canExportModul3: true,
@@ -93,6 +103,7 @@ export const INITIAL_ADMIN_USER: UserAccount = {
     canExportModul5: true,
     canExportModul6: true,
     canExportModul7: true,
+    canExportModul8: true,
   },
   permissions: {
     modul1: { viewer: true, input: true, edit: true, delete: true, export: true },
@@ -102,13 +113,14 @@ export const INITIAL_ADMIN_USER: UserAccount = {
     modul5: { viewer: true, input: true, edit: true, delete: true, export: true },
     modul6: { viewer: true, input: true, edit: true, delete: true, export: true },
     modul7: { viewer: true, input: true, edit: true, delete: true, export: true },
+    modul8: { viewer: true, input: true, edit: true, delete: true, export: true },
   },
   createdAt: '2026-01-01T08:00:00Z',
   lastLogin: new Date().toISOString(),
 };
 
 export const INITIAL_KARYAWAN_USERS: UserAccount[] = [
-  // 2. Akun Admin: Bisa Input dan Export modul 3, 4, 5 & 6
+  // 2. Akun Admin: Bisa Input dan Export modul 3, 4, 5, 6, 7 & 8
   {
     id: 'usr-admin-02',
     username: 'admin',
@@ -129,6 +141,7 @@ export const INITIAL_KARYAWAN_USERS: UserAccount[] = [
       modul5P2H: true,
       modul6SparePart: true,
       modul7Tyre: true,
+      modul8MasterPart: true,
       canExportModul1: false,
       canExportModul2: false,
       canExportModul3: true,
@@ -136,6 +149,7 @@ export const INITIAL_KARYAWAN_USERS: UserAccount[] = [
       canExportModul5: true,
       canExportModul6: true,
       canExportModul7: true,
+      canExportModul8: true,
     },
     createdAt: '2026-01-10T09:00:00Z',
     lastLogin: '2026-09-20T10:00:00Z',
@@ -168,6 +182,7 @@ export const INITIAL_KARYAWAN_USERS: UserAccount[] = [
       canExportModul5: true,
       canExportModul6: true,
       canExportModul7: true,
+      canExportModul8: true,
     },
     createdAt: '2026-01-12T11:00:00Z',
     lastLogin: '2026-09-21T08:00:00Z',

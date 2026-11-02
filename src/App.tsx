@@ -81,6 +81,7 @@ import { InventoryManagementView as FOGInventoryView } from './components/modul4
 import { InventoryManagementView as SparePartInventoryView } from './components/modul6/InventoryManagementView';
 import { DivisiOperationView } from './components/modul5/DivisiOperationView';
 import { TyreManagementView } from './components/modul7/TyreManagementView';
+import { MasterPartView } from './components/modul8/MasterPartView';
 import { MenuUtamaLauncher } from './components/MenuUtamaLauncher';
 import { LoginModal } from './components/LoginModal';
 import { BkwaLogo } from './components/BkwaLogo';
@@ -774,13 +775,19 @@ export default function App() {
             manpowerList={manpowerList}
             onRefreshData={refreshAllData}
           />
-        ) : (
+        ) : activeModuleId === 7 ? (
           /* Modul 7: Tyre Management System */
           <TyreManagementView
             units={units}
             manpowerList={manpowerList}
             currentUser={currentUser}
             onBackToMainMenu={handleGoHome}
+          />
+        ) : (
+          /* Modul 8: Master Part & Material Katalog */
+          <MasterPartView
+            units={units}
+            currentUser={currentUser}
           />
         )}
       </main>
@@ -798,7 +805,7 @@ export default function App() {
             </div>
           </div>
           <div className="text-center sm:text-right text-[11px] text-stone-500">
-            <p>Sistem Maintenance Terintegrasi • 6 Modul</p>
+            <p>Sistem Maintenance Terintegrasi • 8 Modul</p>
             <p className="text-amber-500/80 font-mono mt-0.5">
               Akun Aktif: {currentUser.role === 'ADMIN' ? 'Developer' : (currentUser.fullName || currentUser.username)} ({currentUser.accountTier || 'Member'})
             </p>

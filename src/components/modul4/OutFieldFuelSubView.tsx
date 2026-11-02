@@ -47,7 +47,12 @@ interface OutFieldFuelSubViewProps {
   manpowerList: ManpowerData[];
   outFieldFuelRecords: OutFieldFuelRecord[];
   currentUser: UserAccount;
-  onOpenExportPDF?: () => void;
+  onOpenExportPDF?: (settings?: {
+    groupBy?: 'NONE' | 'UNIT' | 'DATE';
+    unitFilter?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => void;
   onSaveRecord: (
     data: Omit<OutFieldFuelRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -85,6 +90,8 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'DEFAULT' | 'UNIT' | 'DATE'>('DEFAULT');
+  const [filterUnit, setFilterUnit] = useState<string>('ALL');
   const [filterJob, setFilterJob] = useState<string>('ALL');
   const [filterDate, setFilterDate] = useState<string>('');
 
@@ -458,6 +465,15 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
     };
   }, [outFieldFuelRecords, metricsMode, currentYearMonth]);
 
+  // Daftar unit unik untuk filter unit
+  const availableUnitList = useMemo(() => {
+    const set = new Set<string>();
+    outFieldFuelRecords.forEach((r) => {
+      if (r.cnNew) set.add(r.cnNew.trim().toUpperCase());
+    });
+    return Array.from(set).sort();
+  }, [outFieldFuelRecords]);
+
   // Filtered Table Records
   const filteredRecords = useMemo(() => {
     return outFieldFuelRecords.filter((rec) => {
@@ -470,10 +486,70 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
 
       const matchJob = filterJob === 'ALL' || rec.job === filterJob;
       const matchDate = !filterDate || rec.tanggal === filterDate;
+      const matchUnit = filterUnit === 'ALL' || (rec.cnNew || '').trim().toUpperCase() === filterUnit.trim().toUpperCase();
 
-      return matchSearch && matchJob && matchDate;
+      return matchSearch && matchJob && matchDate && matchUnit;
     });
-  }, [outFieldFuelRecords, searchTerm, filterJob, filterDate]);
+  }, [outFieldFuelRecords, searchTerm, filterJob, filterDate, filterUnit]);
+
+  // Grouped Records untuk Sort By & Subtotal per Unit / per Hari
+  const groupedRecords = useMemo(() => {
+    if (sortBy === 'DEFAULT') return null;
+    const map = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        items: OutFieldFuelRecord[];
+        subtotalLtr: number;
+        subtotalRp: number;
+        subtotalCash: number;
+        subtotalSisa: number;
+      }
+    >();
+
+    filteredRecords.forEach((rec) => {
+      const key = sortBy === 'UNIT' ? (rec.cnNew || 'LAINNYA').trim().toUpperCase() : (rec.tanggal || '-');
+      const label = sortBy === 'UNIT'
+        ? `${rec.cnNew || 'LAINNYA'}${rec.namaAlat ? ` • ${rec.namaAlat}` : ''}`
+        : `Tanggal: ${rec.tanggal}`;
+      const cur = map.get(key) || {
+        key,
+        label,
+        items: [],
+        subtotalLtr: 0,
+        subtotalRp: 0,
+        subtotalCash: 0,
+        subtotalSisa: 0,
+      };
+      cur.items.push(rec);
+      cur.subtotalLtr += Number(rec.jmlLtr) || 0;
+      cur.subtotalRp += Number(rec.totalNominal) || Number(rec.nominalFuelSetelahPembulatan) || 0;
+      cur.subtotalCash += Number(rec.nominalCashSopir) || 0;
+      const rowKeluar = Number(rec.totalNominal) || 0;
+      const rowCash = Number(rec.nominalCashSopir) || 0;
+      const rowSisa = Number(rec.sisaSelisihCash) !== undefined ? Number(rec.sisaSelisihCash) : (rowCash - rowKeluar);
+      cur.subtotalSisa += rowSisa;
+      map.set(key, cur);
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredRecords, sortBy]);
+
+  const grandTotalFiltered = useMemo(() => {
+    const ltr = filteredRecords.reduce((acc, r) => acc + (Number(r.jmlLtr) || 0), 0);
+    const rp = filteredRecords.reduce((acc, r) => acc + (Number(r.totalNominal) || 0), 0);
+    const cash = filteredRecords.reduce((acc, r) => acc + (Number(r.nominalCashSopir) || 0), 0);
+    const sisa = filteredRecords.reduce(
+      (acc, r) =>
+        acc +
+        (Number(r.sisaSelisihCash) !== undefined
+          ? Number(r.sisaSelisihCash)
+          : (Number(r.nominalCashSopir) || 0) - (Number(r.totalNominal) || 0)),
+      0
+    );
+    return { ltr, rp, cash, sisa };
+  }, [filteredRecords]);
 
   // Export CSV
   const handleExportCsv = () => {
@@ -615,7 +691,14 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
               <button
                 id="btn-export-pdf-out-field-fuel"
                 type="button"
-                onClick={onOpenExportPDF}
+                onClick={() => {
+                  onOpenExportPDF({
+                    groupBy: sortBy === 'UNIT' ? 'UNIT' : sortBy === 'DATE' ? 'DATE' : 'NONE',
+                    unitFilter: filterUnit !== 'ALL' ? filterUnit : undefined,
+                    startDate: filterDate || undefined,
+                    endDate: filterDate || undefined,
+                  });
+                }}
                 className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/50 text-xs font-mono font-bold transition shadow-md active:scale-95"
                 title="Export Laporan PDF Pembelian Solar SPBU Luar (PT BATU KALI WELANG AMPUH)"
               >
@@ -766,56 +849,127 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
         </div>
       )}
 
-      {/* Filter & Search Bar */}
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Cari CN Unit, No Transaksi, SPBU, atau Operator..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-3.5 py-2 bg-stone-950 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500 font-mono"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Filter Job */}
-          <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
-            <span className="text-[10px] text-stone-500 font-mono uppercase">Job:</span>
-            <select
-              value={filterJob}
-              onChange={(e) => setFilterJob(e.target.value)}
-              className="bg-transparent text-xs text-stone-300 font-mono focus:outline-none"
-            >
-              <option value="ALL">Semua Job</option>
-              {OUT_FIELD_FUEL_JOBS.map((j) => (
-                <option key={j} value={j}>{j}</option>
-              ))}
-            </select>
+      {/* Filter & Search Bar with Sort By & Subtotal */}
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-lg space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Cari CN Unit, No Transaksi, SPBU, atau Operator..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-3.5 py-2 bg-stone-950 border border-stone-800 rounded-xl text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-amber-500 font-mono"
+            />
           </div>
 
-          {/* Filter Tanggal */}
-          <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
-            <Calendar className="w-3.5 h-3.5 text-stone-500" />
-            <input
-              type="date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="bg-transparent text-xs text-stone-300 font-mono focus:outline-none"
-            />
-            {filterDate && (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sort By & Sub Total Selector */}
+            <div className="inline-flex rounded-xl bg-stone-950 p-1 border border-stone-800">
               <button
                 type="button"
-                onClick={() => setFilterDate('')}
-                className="text-stone-500 hover:text-stone-200"
-                title="Hapus filter tanggal"
+                onClick={() => setSortBy('DEFAULT')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition ${
+                  sortBy === 'DEFAULT'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
               >
-                <X className="w-3.5 h-3.5" />
+                Standar
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => setSortBy('UNIT')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1 ${
+                  sortBy === 'UNIT'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>🚜 Per Unit (+Subtotal)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy('DATE')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1 ${
+                  sortBy === 'DATE'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>📅 Per Hari (+Subtotal)</span>
+              </button>
+            </div>
+
+            {/* Filter Unit */}
+            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+              <span className="text-[10px] text-stone-500 font-mono uppercase">Unit:</span>
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                className="bg-transparent text-xs text-stone-300 font-mono focus:outline-none"
+              >
+                <option value="ALL">Semua Unit ({availableUnitList.length})</option>
+                {availableUnitList.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter Job */}
+            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+              <span className="text-[10px] text-stone-500 font-mono uppercase">Job:</span>
+              <select
+                value={filterJob}
+                onChange={(e) => setFilterJob(e.target.value)}
+                className="bg-transparent text-xs text-stone-300 font-mono focus:outline-none"
+              >
+                <option value="ALL">Semua Job</option>
+                {OUT_FIELD_FUEL_JOBS.map((j) => (
+                  <option key={j} value={j}>{j}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter Tanggal */}
+            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+              <Calendar className="w-3.5 h-3.5 text-stone-500" />
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="bg-transparent text-xs text-stone-300 font-mono focus:outline-none"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  className="text-stone-500 hover:text-stone-200"
+                  title="Hapus filter tanggal"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {(sortBy !== 'DEFAULT' || filterUnit !== 'ALL' || filterDate || filterJob !== 'ALL') && (
+          <div className="text-[11px] font-mono text-amber-400 pt-1 border-t border-stone-800/60 flex items-center justify-between flex-wrap gap-2">
+            <span>
+              ✓ Mode Aktif:{' '}
+              <strong>
+                {sortBy === 'UNIT' ? 'Dikelompokkan Per Unit dengan Subtotal' : sortBy === 'DATE' ? 'Dikelompokkan Per Hari dengan Subtotal' : 'Standar'}
+              </strong>
+              {filterUnit !== 'ALL' && ` • Unit: ${filterUnit}`}
+              {filterJob !== 'ALL' && ` • Job: ${filterJob}`}
+              {filterDate && ` • Tanggal: ${filterDate}`}
+            </span>
+            <span className="text-stone-400">
+              Ditemukan: <strong>{filteredRecords.length}</strong> transaksi • <strong>{grandTotalFiltered.ltr.toLocaleString('id-ID')}</strong> Ltr • Total: <strong>Rp {grandTotalFiltered.rp.toLocaleString('id-ID')}</strong>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Tabel Data Out Field Fuel Used dengan Kolom Finansial & Rekonsiliasi Cash */}
@@ -844,6 +998,221 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
                     Belum ada catatan pemakaian solar SPBU luar yang sesuai filter.
                   </td>
                 </tr>
+              ) : groupedRecords ? (
+                groupedRecords.map((grp) => (
+                  <React.Fragment key={grp.key}>
+                    {/* Header Group */}
+                    <tr className="bg-rose-950/40 border-y border-rose-500/30">
+                      <td colSpan={11} className="py-2 px-3 font-mono font-bold text-rose-300 text-xs">
+                        ▸ {sortBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon Transaksi)
+                      </td>
+                    </tr>
+                    {grp.items.map((r, itemIdx) => {
+                      const fuelNet = Number(r.nominalFuelSetelahPembulatan) || Number(r.nominalPembelianFuel) || 0;
+                      const pembulatan = Number(r.angkaPembulatan) || 0;
+                      const totalKeluar = Number(r.totalNominal) || 0;
+                      const cashSopir = Number(r.nominalCashSopir) || 0;
+                      const sisaCash = Number(r.sisaSelisihCash) !== undefined ? Number(r.sisaSelisihCash) : (cashSopir - totalKeluar);
+
+                      return (
+                        <tr key={r.id} className="hover:bg-stone-850/60 transition">
+                          <td className="py-3 px-3 text-center text-stone-500">{itemIdx + 1}</td>
+                          
+                          {/* Tanggal & Jam */}
+                          <td className="py-3 px-3 whitespace-nowrap">
+                            <div className="text-stone-200 font-bold">{formatIndoDate(r.tanggal)}</div>
+                            <div className="text-[11px] text-amber-400 flex items-center gap-1 mt-0.5">
+                              <Clock className="w-3 h-3 text-stone-500" />
+                              <span>{r.jam || '08:00'}</span>
+                              <span className="text-stone-600">•</span>
+                              <span className="text-[10px] text-stone-500">{r.noTransaksi}</span>
+                            </div>
+                          </td>
+
+                          {/* Kode SPBU */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center gap-1.5 text-stone-200 font-semibold">
+                              <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                              <span className="truncate max-w-[130px]">{r.kodeSpbu}</span>
+                            </div>
+                            {r.namaOperator && (
+                              <div className="text-[10px] text-stone-400 truncate max-w-[140px] mt-0.5 flex items-center gap-1">
+                                <span className="text-stone-300 font-semibold">{r.namaOperator}</span>
+                                <span className="text-stone-600">•</span>
+                                <span className="text-amber-400 font-medium">
+                                  {resolveDriverJabatan(r.namaOperator, r.jabatanOperator)}
+                                </span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Unit CN & Jenis */}
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-amber-400">{r.cnNew}</div>
+                            <div className="text-[11px] text-stone-400 truncate max-w-[130px]">{r.namaAlat}</div>
+                            <span className="text-[9.5px] text-stone-500 px-1.5 py-0.2 rounded bg-stone-950 border border-stone-800 inline-block mt-0.5">
+                              {r.jenisAlat || 'Dump Truck'}
+                            </span>
+                          </td>
+
+                          {/* Jml Solar (Ltr) */}
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <span className="text-sm font-bold text-stone-100">{r.jmlLtr.toLocaleString('id-ID')}</span>
+                            <span className="text-[10px] text-stone-500 block">Ltr</span>
+                          </td>
+
+                          {/* Job & Ritase */}
+                          <td className="py-3 px-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 inline-block mb-1">
+                              {r.job || 'Batu Baik'}
+                            </span>
+                            <div className="text-[11px] text-stone-300 font-bold">
+                              {r.ritaseTotal || 0} Ritase
+                            </div>
+                          </td>
+
+                          {/* Pembelian Solar & Angka Pembulatan */}
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-stone-200">
+                              Rp {fuelNet.toLocaleString('id-ID')}
+                            </div>
+                            <div className="text-[10px] text-stone-400 flex items-center justify-end gap-1 mt-0.5">
+                              {pembulatan !== 0 ? (
+                                <span className={pembulatan > 0 ? 'text-amber-400 font-semibold' : 'text-blue-400 font-semibold'}>
+                                  {pembulatan > 0 ? `+Rp ${pembulatan.toLocaleString('id-ID')}` : `-Rp ${Math.abs(pembulatan).toLocaleString('id-ID')}`} (bulat)
+                                </span>
+                              ) : (
+                                <span className="text-stone-500">Pas (bulat 0)</span>
+                              )}
+                            </div>
+                            <div className="text-[9px] text-stone-600">
+                              @ Rp {Number(r.hargaSolarPerLiter || 6800).toLocaleString('id-ID')}/L
+                            </div>
+                          </td>
+
+                          {/* Pengeluaran Total */}
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-extrabold text-amber-400 text-sm">
+                              Rp {totalKeluar.toLocaleString('id-ID')}
+                            </div>
+                            {r.nominalLainLain > 0 && (
+                              <div className="text-[9.5px] text-stone-400 mt-0.5 truncate max-w-[120px]" title={r.lainLain}>
+                                +Lain Rp {r.nominalLainLain.toLocaleString('id-ID')}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Cash Diberikan ke Sopir */}
+                          <td className="py-3 px-3 text-right">
+                            <div className="font-bold text-blue-300 text-xs">
+                              Rp {cashSopir.toLocaleString('id-ID')}
+                            </div>
+                            <span className="text-[9.5px] text-stone-500 block">Uang Jalan</span>
+                          </td>
+
+                          {/* Sisa Kas Sopir: (Cash Diberikan Sopir - Pengeluaran Total) */}
+                          <td className="py-3 px-3 text-right whitespace-nowrap">
+                            <div className={`font-bold text-xs inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border ${
+                              sisaCash > 0
+                                ? 'bg-emerald-950/60 border-emerald-600/40 text-emerald-300'
+                                : sisaCash === 0
+                                ? 'bg-stone-800 border-stone-700 text-stone-300'
+                                : 'bg-rose-950/60 border-rose-600/40 text-rose-300'
+                            }`}>
+                              <span>{sisaCash > 0 ? '+' : ''}Rp {sisaCash.toLocaleString('id-ID')}</span>
+                            </div>
+                            <div className="text-[9px] text-stone-500 mt-0.5">
+                              {sisaCash > 0 ? 'Sisa Kembalian' : sisaCash === 0 ? 'Klop / Pas' : 'Kurang Bayar'}
+                            </div>
+                          </td>
+
+                          {/* Aksi */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1 font-sans">
+                              {/* Detail Button */}
+                              <button
+                                type="button"
+                                onClick={() => setViewingRecord(r)}
+                                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition"
+                                title="Lihat Detail Bon & Finansial"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-blue-400" />
+                              </button>
+
+                              {/* Edit Button */}
+                              {canEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEdit(r)}
+                                  className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 transition"
+                                  title="Edit Data Out Field Fuel"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
+                                  title="Edit dibatasi"
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Delete Button */}
+                              {canDelete ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Hapus catatan Out Field Fuel ${r.noTransaksi} untuk unit ${r.cnNew}?`)) {
+                                      onDeleteRecord(r.id);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg bg-rose-950/50 hover:bg-rose-900/70 text-rose-400 border border-rose-800/40 transition"
+                                  title="Hapus Data (Developer Only)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
+                                  title="Hapus dibatasi"
+                                >
+                                  <Lock className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* Baris Subtotal Group */}
+                    <tr className="bg-amber-500/10 border-b-2 border-amber-500/30 font-mono font-bold text-amber-300">
+                      <td colSpan={4} className="py-2.5 px-3 text-right uppercase text-[11px] tracking-wider">
+                        SUBTOTAL {sortBy === 'UNIT' ? `UNIT [${grp.key}]` : `TANGGAL [${grp.key}]`} ({grp.items.length} Bon):
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-black text-amber-400 text-sm">
+                        {grp.subtotalLtr.toLocaleString('id-ID')} L
+                      </td>
+                      <td colSpan={2}></td>
+                      <td className="py-2.5 px-3 text-right font-black text-amber-400 text-sm">
+                        Rp {grp.subtotalRp.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-bold text-blue-300 text-xs">
+                        Rp {grp.subtotalCash.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-xs">
+                        <span className={grp.subtotalSisa >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                          {grp.subtotalSisa >= 0 ? '+' : ''}Rp {grp.subtotalSisa.toLocaleString('id-ID')}
+                        </span>
+                      </td>
+                      <td></td>
+                    </tr>
+                  </React.Fragment>
+                ))
               ) : (
                 filteredRecords.map((r, idx) => {
                   const fuelNet = Number(r.nominalFuelSetelahPembulatan) || Number(r.nominalPembelianFuel) || 0;
@@ -1027,6 +1396,30 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
                     </tr>
                   );
                 })
+              )}
+
+              {filteredRecords.length > 0 && (
+                <tr className="bg-stone-950 font-mono font-bold text-stone-100 border-t-2 border-stone-700">
+                  <td colSpan={4} className="py-3 px-3 text-right uppercase text-xs tracking-wider text-amber-400">
+                    GRAND TOTAL SPBU LUAR ({filteredRecords.length} Bon Transaksi):
+                  </td>
+                  <td className="py-3 px-3 text-right font-black text-amber-400 text-sm">
+                    {grandTotalFiltered.ltr.toLocaleString('id-ID')} L
+                  </td>
+                  <td colSpan={2}></td>
+                  <td className="py-3 px-3 text-right font-black text-amber-400 text-sm">
+                    Rp {grandTotalFiltered.rp.toLocaleString('id-ID')}
+                  </td>
+                  <td className="py-3 px-3 text-right font-bold text-blue-300 text-sm">
+                    Rp {grandTotalFiltered.cash.toLocaleString('id-ID')}
+                  </td>
+                  <td className="py-3 px-3 text-right text-xs">
+                    <span className={grandTotalFiltered.sisa >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                      {grandTotalFiltered.sisa >= 0 ? '+' : ''}Rp {grandTotalFiltered.sisa.toLocaleString('id-ID')}
+                    </span>
+                  </td>
+                  <td></td>
+                </tr>
               )}
             </tbody>
           </table>

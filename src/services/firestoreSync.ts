@@ -146,6 +146,10 @@ export function getDeterministicDocId(collectionName: string, item: any): string
     const no = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return no ? `dml_${no}` : String(Date.now());
   }
+  if (collectionName === 'master_parts') {
+    const id = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return id ? `mpart_${id}` : `mpart_${Date.now()}`;
+  }
 
   return String(item.id || Date.now());
 }
@@ -326,6 +330,17 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
     return Array.from(map.values());
   }
 
+  if (collectionName === 'master_parts') {
+    const map = new Map<string, any>();
+    list.forEach((item) => {
+      if (!item) return;
+      const key = String(item.id || `${item.noUnit || ''}_${item.pn || ''}_${item.namaPart || ''}`).trim().toLowerCase();
+      if (!key) return;
+      map.set(key, item);
+    });
+    return Array.from(map.values());
+  }
+
   // Default: deduplikasi berdasarkan id
   const map = new Map<string, any>();
   list.forEach((item) => {
@@ -374,6 +389,7 @@ export function cleanLocalDuplicates(): void {
     cleanKey('bkwa_inventory_suppliers_v2', 'suppliers');
     cleanKey('bkwa_inventory_grease_stocks_v1', 'grease_stocks');
     cleanKey('bkwa_inventory_grease_dist_v1', 'grease_distributions');
+    cleanKey('bkwa_master_parts_v1', 'master_parts');
   } catch (e) {
     console.warn('Error saat membersihkan duplikat lokal:', e);
   }
@@ -481,6 +497,9 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
     // 9. Activity Logs
     await uploadCollectionFromKey('bkwa_activity_logs_v2', 'activity_logs', 'activity_logs');
 
+    // 10. Modul 8: Master Part & Material Katalog
+    await uploadCollectionFromKey('bkwa_master_parts_v1', 'master_parts', 'master_parts');
+
     updateStatus({
       connected: true,
       isSyncing: false,
@@ -490,7 +509,7 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
 
     return {
       success: true,
-      message: `Berhasil menyinkronkan seluruh modul (Modul 1 s/d 7, total ${count} data) ke Cloud Firebase Firestore secara terpusat!`,
+      message: `Berhasil menyinkronkan seluruh modul (Modul 1 s/d 8, total ${count} data) ke Cloud Firebase Firestore secara terpusat!`,
       count,
     };
   } catch (err) {
@@ -579,6 +598,9 @@ export async function downloadAllFirestoreDataToLocal(): Promise<{
     // 9. Activity Logs
     await pullCollection('activity_logs', 'bkwa_activity_logs_v2', 'activity_logs');
 
+    // 10. Modul 8: Master Part & Material Katalog
+    await pullCollection('master_parts', 'bkwa_master_parts_v1', 'master_parts');
+
     updateStatus({
       connected: true,
       isSyncing: false,
@@ -628,6 +650,7 @@ export async function checkFirestoreDatabaseCounts(): Promise<{
     { module: 'Modul 6', name: 'Inventory Master Spare Part', collection: 'spare_parts' },
     { module: 'Modul 6', name: 'Purchase Request (PR)', collection: 'purchase_requests' },
     { module: 'Modul 7', name: 'Registrasi Master Tyre (Ban)', collection: 'tyre_records' },
+    { module: 'Modul 8', name: 'Master Part & Material Katalog', collection: 'master_parts' },
     { module: 'Sistem', name: 'Akun Pengguna & Hak Akses', collection: 'users' },
   ];
 
@@ -754,6 +777,9 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
 
   // 9. Activity Logs
   attachListener('activity_logs', 'bkwa_activity_logs_v2', 'activity_logs');
+
+  // 10. Modul 8: Master Part & Material Katalog
+  attachListener('master_parts', 'bkwa_master_parts_v1', 'master_parts');
 
   return () => {
     unsubscribes.forEach((unsub) => unsub());

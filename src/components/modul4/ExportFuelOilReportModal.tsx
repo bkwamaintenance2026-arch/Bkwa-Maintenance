@@ -51,6 +51,10 @@ interface ExportFuelOilReportModalProps {
   currentUser: UserAccount;
   defaultCategory?: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE';
   manpowerList?: ManpowerData[];
+  initialGroupBy?: 'NONE' | 'UNIT' | 'DATE';
+  initialUnitFilter?: string;
+  initialStartDate?: string;
+  initialEndDate?: string;
 }
 
 const STORAGE_KEY_FOG = 'bkwa_fog_sig_pembuat';
@@ -72,24 +76,38 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   currentUser,
   defaultCategory = 'ALL',
   manpowerList: propManpowerList,
+  initialGroupBy = 'NONE',
+  initialUnitFilter = 'ALL',
+  initialStartDate,
+  initialEndDate,
 }) => {
   // Category tab
   const [reportCategory, setReportCategory] = useState<
     'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE'
   >(defaultCategory);
 
-  // Sync category if defaultCategory changes when opening
+  // Sort By & Pengelompokan Subtotal
+  const [groupBy, setGroupBy] = useState<'NONE' | 'UNIT' | 'DATE'>(initialGroupBy);
+  const [unitFilter, setUnitFilter] = useState<string>(initialUnitFilter);
+
+  // Sync state if initial props change when opening
   useEffect(() => {
     if (isOpen) {
       setReportCategory(defaultCategory);
+      if (initialGroupBy) setGroupBy(initialGroupBy);
+      if (initialUnitFilter) setUnitFilter(initialUnitFilter);
+      if (initialStartDate) setStartDate(initialStartDate);
+      if (initialEndDate) setEndDate(initialEndDate);
     }
-  }, [isOpen, defaultCategory]);
+  }, [isOpen, defaultCategory, initialGroupBy, initialUnitFilter, initialStartDate, initialEndDate]);
 
   // Date filters
   const todayStr = new Date().toISOString().split('T')[0];
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [activeDatePreset, setActiveDatePreset] = useState<string>('all');
+  const [startDate, setStartDate] = useState<string>(initialStartDate || '');
+  const [endDate, setEndDate] = useState<string>(initialEndDate || '');
+  const [activeDatePreset, setActiveDatePreset] = useState<string>(
+    initialStartDate || initialEndDate ? 'custom' : 'all'
+  );
 
   // Daftar personil Manpower Modul 2
   const effectiveManpowerList = useMemo(() => {
@@ -249,6 +267,27 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
     return true;
   };
 
+  // Daftar unit unik untuk filter unit
+  const availableUnits = useMemo(() => {
+    const set = new Set<string>();
+    fuelDistributions.forEach((d) => {
+      if (d.cnAlat) set.add(d.cnAlat.trim().toUpperCase());
+    });
+    outFieldFuelRecords.forEach((r) => {
+      if (r.cnNew) set.add(r.cnNew.trim().toUpperCase());
+    });
+    oilDistributions.forEach((o) => {
+      if (o.noUnit) set.add(o.noUnit.trim().toUpperCase());
+    });
+    return Array.from(set).sort();
+  }, [fuelDistributions, outFieldFuelRecords, oilDistributions]);
+
+  // Helper unit checker
+  const matchUnit = (unitCode?: string) => {
+    if (!unitFilter || unitFilter === 'ALL') return true;
+    return (unitCode || '').trim().toUpperCase() === unitFilter.trim().toUpperCase();
+  };
+
   // Filtered Datasets
   const filteredStockInputs = useMemo(() => {
     return fuelStockInputs.filter((r) => matchDate(r.tanggal));
@@ -259,16 +298,16 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   }, [fuelTransfers, startDate, endDate]);
 
   const filteredDistributions = useMemo(() => {
-    return fuelDistributions.filter((r) => matchDate(r.tanggal));
-  }, [fuelDistributions, startDate, endDate]);
+    return fuelDistributions.filter((r) => matchDate(r.tanggal) && matchUnit(r.cnAlat));
+  }, [fuelDistributions, startDate, endDate, unitFilter]);
 
   const filteredOutField = useMemo(() => {
-    return outFieldFuelRecords.filter((r) => matchDate(r.tanggal));
-  }, [outFieldFuelRecords, startDate, endDate]);
+    return outFieldFuelRecords.filter((r) => matchDate(r.tanggal) && matchUnit(r.cnNew));
+  }, [outFieldFuelRecords, startDate, endDate, unitFilter]);
 
   const filteredOilDist = useMemo(() => {
-    return oilDistributions.filter((r) => matchDate(r.tanggal));
-  }, [oilDistributions, startDate, endDate]);
+    return oilDistributions.filter((r) => matchDate(r.tanggal) && matchUnit(r.noUnit));
+  }, [oilDistributions, startDate, endDate, unitFilter]);
 
   // Aggregate Metrics
   const metrics = useMemo(() => {
@@ -308,6 +347,54 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
     };
   }, [filteredStockInputs, filteredTransfers, filteredDistributions, filteredOutField, filteredOilDist]);
 
+  // Grouped datasets for live preview table matching the PDF output
+  const ftGroupedPreview = useMemo(() => {
+    if (groupBy === 'NONE') return null;
+    const map = new Map<string, { key: string; label: string; items: FuelDistributionRecord[]; subtotalLtr: number }>();
+    filteredDistributions.forEach((item) => {
+      const groupKey = groupBy === 'UNIT' ? (item.cnAlat || 'LAINNYA').trim() : (item.tanggal || '-');
+      const label = groupBy === 'UNIT'
+        ? `${item.cnAlat || 'LAINNYA'}${item.namaAlat ? ` • ${item.namaAlat}` : ''}`
+        : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(groupKey) || { key: groupKey, label, items: [], subtotalLtr: 0 };
+      cur.items.push(item);
+      cur.subtotalLtr += Number(item.qty) || 0;
+      map.set(groupKey, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredDistributions, groupBy]);
+
+  const spbuGroupedPreview = useMemo(() => {
+    if (groupBy === 'NONE') return null;
+    const map = new Map<string, { key: string; label: string; items: OutFieldFuelRecord[]; subtotalLtr: number; subtotalRp: number }>();
+    filteredOutField.forEach((item) => {
+      const groupKey = groupBy === 'UNIT' ? (item.cnNew || 'LAINNYA').trim() : (item.tanggal || '-');
+      const label = groupBy === 'UNIT'
+        ? `${item.cnNew || 'LAINNYA'}${item.namaAlat ? ` • ${item.namaAlat}` : ''}`
+        : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(groupKey) || { key: groupKey, label, items: [], subtotalLtr: 0, subtotalRp: 0 };
+      cur.items.push(item);
+      cur.subtotalLtr += Number(item.jmlLtr) || 0;
+      cur.subtotalRp += Number(item.totalNominal) || Number(item.nominalFuelSetelahPembulatan) || 0;
+      map.set(groupKey, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredOutField, groupBy]);
+
+  const oliGroupedPreview = useMemo(() => {
+    if (groupBy === 'NONE') return null;
+    const map = new Map<string, { key: string; label: string; items: OilDistributionRecord[]; subtotalLtr: number }>();
+    filteredOilDist.forEach((item) => {
+      const groupKey = groupBy === 'UNIT' ? (item.noUnit || 'LAINNYA').trim() : (item.tanggal || '-');
+      const label = groupBy === 'UNIT' ? `Unit: ${item.noUnit || 'LAINNYA'}` : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(groupKey) || { key: groupKey, label, items: [], subtotalLtr: 0 };
+      cur.items.push(item);
+      cur.subtotalLtr += Number(item.qty) || 0;
+      map.set(groupKey, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredOilDist, groupBy]);
+
   // State untuk Pratinjau Dokumen PDF
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
@@ -319,6 +406,8 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       reportCategory,
+      groupBy,
+      unitFilter: unitFilter !== 'ALL' ? unitFilter : undefined,
       petugasFog,
       petugasFogJabatan,
       petugasInventory,
@@ -344,6 +433,8 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       reportCategory,
+      groupBy,
+      unitFilter: unitFilter !== 'ALL' ? unitFilter : undefined,
       petugasFog,
       petugasFogJabatan,
       petugasInventory,
@@ -641,6 +732,112 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                   Rekapitulasi Varian Oli
                 </span>
               </button>
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* 2B. PENGATURAN SORT BY & SUB TOTAL (PER UNIT / PER HARI) & FILTER UNIT */}
+          {/* ========================================================================= */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-800/60 pb-2">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-stone-200 font-mono uppercase tracking-wider">
+                  Pengaturan Sort By &amp; Sub Total Laporan
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-stone-400">
+                Pilihan ini otomatis diterapkan pada Pratinjau &amp; File PDF
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Opsi Grouping & Subtotal */}
+              <div>
+                <label className="block text-[11px] font-mono text-stone-400 mb-1.5 font-bold uppercase">
+                  Metode Pengelompokan &amp; Sub Total:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy('NONE')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition text-center ${
+                      groupBy === 'NONE'
+                        ? 'bg-amber-500 text-stone-950 border-amber-500 shadow-sm'
+                        : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-stone-100 hover:border-stone-700'
+                    }`}
+                  >
+                    Standar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy('UNIT')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition text-center ${
+                      groupBy === 'UNIT'
+                        ? 'bg-amber-500 text-stone-950 border-amber-500 shadow-sm'
+                        : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-stone-100 hover:border-stone-700'
+                    }`}
+                  >
+                    Per Unit (+Subtotal)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupBy('DATE')}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition text-center ${
+                      groupBy === 'DATE'
+                        ? 'bg-amber-500 text-stone-950 border-amber-500 shadow-sm'
+                        : 'bg-stone-900 border-stone-800 text-stone-300 hover:text-stone-100 hover:border-stone-700'
+                    }`}
+                  >
+                    Per Hari (+Subtotal)
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-400 mt-1.5 font-mono">
+                  {groupBy === 'UNIT' && '✓ Menghasilkan baris Subtotal per unit alat beserta jumlah liter & nominal.'}
+                  {groupBy === 'DATE' && '✓ Menghasilkan baris Subtotal per tanggal transaksi harian.'}
+                  {groupBy === 'NONE' && '• Urutan kronologis standar tanpa pemisahan blok subtotal.'}
+                </p>
+              </div>
+
+              {/* Filter Unit Spesifik */}
+              <div>
+                <label className="block text-[11px] font-mono text-stone-400 mb-1.5 font-bold uppercase">
+                  Filter Khusus Unit Alat (Opsional):
+                </label>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={unitFilter}
+                    onChange={(e) => setUnitFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none transition"
+                  >
+                    <option value="ALL">Semua Unit Alat ({availableUnits.length} Unit Terdaftar)</option>
+                    {availableUnits.map((u) => (
+                      <option key={u} value={u}>
+                        Unit: {u}
+                      </option>
+                    ))}
+                  </select>
+                  {unitFilter !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => setUnitFilter('ALL')}
+                      className="px-2.5 py-2 rounded-xl bg-stone-800 text-stone-400 hover:text-stone-200 text-xs font-mono shrink-0"
+                      title="Reset filter unit"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-stone-400 mt-1.5 font-mono">
+                  {unitFilter !== 'ALL' ? (
+                    <span className="text-amber-400 font-bold">
+                      Hanya menampilkan transaksi untuk unit <strong>{unitFilter}</strong>.
+                    </span>
+                  ) : (
+                    'Menampilkan transaksi seluruh unit armada tambang & quarry.'
+                  )}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1125,27 +1322,74 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-900 text-stone-300">
-                    {filteredDistributions.map((r, idx) => (
-                      <tr key={r.id || idx} className="hover:bg-stone-900/40">
-                        <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
-                        <td className="py-2 px-3 font-bold text-blue-400">{r.noBon || '-'}</td>
-                        <td className="py-2 px-3 font-bold text-stone-100">{r.cnAlat}</td>
-                        <td className="py-2 px-3">{r.namaAlat}</td>
-                        <td className="py-2 px-3">{r.operatorName || '-'}</td>
-                        <td className="py-2 px-3 text-right">
-                          {(Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID')}
-                        </td>
-                        <td className="py-2 px-3 text-right font-bold text-blue-400">
-                          {(Number(r.qty) || 0).toLocaleString('id-ID')} L
-                        </td>
-                        <td className="py-2 px-3">{r.driverFtName || '-'}</td>
-                      </tr>
-                    ))}
-                    {filteredDistributions.length === 0 && (
+                    {ftGroupedPreview ? (
+                      ftGroupedPreview.map((grp) => (
+                        <React.Fragment key={grp.key}>
+                          <tr className="bg-blue-950/40 border-y border-blue-500/30">
+                            <td colSpan={8} className="py-1.5 px-3 font-bold text-blue-300 text-[11px]">
+                              ▸ {groupBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon)
+                            </td>
+                          </tr>
+                          {grp.items.map((r, idx) => (
+                            <tr key={r.id || idx} className="hover:bg-stone-900/40">
+                              <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
+                              <td className="py-2 px-3 font-bold text-blue-400">{r.noBon || '-'}</td>
+                              <td className="py-2 px-3 font-bold text-stone-100">{r.cnAlat}</td>
+                              <td className="py-2 px-3">{r.namaAlat}</td>
+                              <td className="py-2 px-3">{r.operatorName || '-'}</td>
+                              <td className="py-2 px-3 text-right">
+                                {(Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID')}
+                              </td>
+                              <td className="py-2 px-3 text-right font-bold text-blue-400">
+                                {(Number(r.qty) || 0).toLocaleString('id-ID')} L
+                              </td>
+                              <td className="py-2 px-3">{r.driverFtName || '-'}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-amber-500/10 border-b border-amber-500/30 font-bold text-amber-300">
+                            <td colSpan={6} className="py-1.5 px-3 text-right uppercase text-[10px] tracking-wider">
+                              SUBTOTAL {groupBy === 'UNIT' ? `UNIT [${grp.key}]` : `TANGGAL [${grp.key}]`} ({grp.items.length} Bon):
+                            </td>
+                            <td className="py-1.5 px-3 text-right font-mono text-amber-400 text-xs">
+                              {grp.subtotalLtr.toLocaleString('id-ID')} L
+                            </td>
+                            <td></td>
+                          </tr>
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      filteredDistributions.map((r, idx) => (
+                        <tr key={r.id || idx} className="hover:bg-stone-900/40">
+                          <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
+                          <td className="py-2 px-3 font-bold text-blue-400">{r.noBon || '-'}</td>
+                          <td className="py-2 px-3 font-bold text-stone-100">{r.cnAlat}</td>
+                          <td className="py-2 px-3">{r.namaAlat}</td>
+                          <td className="py-2 px-3">{r.operatorName || '-'}</td>
+                          <td className="py-2 px-3 text-right">
+                            {(Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-blue-400">
+                            {(Number(r.qty) || 0).toLocaleString('id-ID')} L
+                          </td>
+                          <td className="py-2 px-3">{r.driverFtName || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                    {filteredDistributions.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="py-4 text-center text-stone-500 italic">
                           Tidak ada data distribusi fuel truck ke unit pada rentang tanggal ini.
                         </td>
+                      </tr>
+                    ) : (
+                      <tr className="bg-stone-900 font-bold text-stone-100 border-t-2 border-stone-700">
+                        <td colSpan={6} className="py-2 px-3 text-right font-mono text-xs uppercase tracking-wider text-amber-400">
+                          GRAND TOTAL FUEL TRUCK ({filteredDistributions.length} Bon):
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-amber-400 text-xs">
+                          {metrics.totalDistribusiFT.toLocaleString('id-ID')} L
+                        </td>
+                        <td></td>
                       </tr>
                     )}
                   </tbody>
@@ -1166,26 +1410,78 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-900 text-stone-300">
-                    {filteredOutField.map((r, idx) => (
-                      <tr key={r.id || idx} className="hover:bg-stone-900/40">
-                        <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
-                        <td className="py-2 px-3 font-bold text-rose-400">{r.noTransaksi || '-'}</td>
-                        <td className="py-2 px-3">{r.kodeSpbu || '-'}</td>
-                        <td className="py-2 px-3 font-bold text-stone-100">{r.cnNew || '-'}</td>
-                        <td className="py-2 px-3 text-right font-bold">
-                          {(Number(r.jmlLtr) || 0).toLocaleString('id-ID')} L
-                        </td>
-                        <td className="py-2 px-3 text-right font-bold text-rose-400">
-                          Rp {(Number(r.totalNominal) || 0).toLocaleString('id-ID')}
-                        </td>
-                        <td className="py-2 px-3">{r.job || '-'}</td>
-                      </tr>
-                    ))}
-                    {filteredOutField.length === 0 && (
+                    {spbuGroupedPreview ? (
+                      spbuGroupedPreview.map((grp) => (
+                        <React.Fragment key={grp.key}>
+                          <tr className="bg-rose-950/40 border-y border-rose-500/30">
+                            <td colSpan={7} className="py-1.5 px-3 font-bold text-rose-300 text-[11px]">
+                              ▸ {groupBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon)
+                            </td>
+                          </tr>
+                          {grp.items.map((r, idx) => (
+                            <tr key={r.id || idx} className="hover:bg-stone-900/40">
+                              <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
+                              <td className="py-2 px-3 font-bold text-rose-400">{r.noTransaksi || '-'}</td>
+                              <td className="py-2 px-3">{r.kodeSpbu || '-'}</td>
+                              <td className="py-2 px-3 font-bold text-stone-100">{r.cnNew || '-'}</td>
+                              <td className="py-2 px-3 text-right font-bold">
+                                {(Number(r.jmlLtr) || 0).toLocaleString('id-ID')} L
+                              </td>
+                              <td className="py-2 px-3 text-right font-bold text-rose-400">
+                                Rp {(Number(r.totalNominal) || 0).toLocaleString('id-ID')}
+                              </td>
+                              <td className="py-2 px-3">{r.job || '-'}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-amber-500/10 border-b border-amber-500/30 font-bold text-amber-300">
+                            <td colSpan={4} className="py-1.5 px-3 text-right uppercase text-[10px] tracking-wider">
+                              SUBTOTAL {groupBy === 'UNIT' ? `UNIT [${grp.key}]` : `TANGGAL [${grp.key}]`} ({grp.items.length} Bon):
+                            </td>
+                            <td className="py-1.5 px-3 text-right font-mono text-amber-400 text-xs">
+                              {grp.subtotalLtr.toLocaleString('id-ID')} L
+                            </td>
+                            <td className="py-1.5 px-3 text-right font-mono text-amber-400 text-xs">
+                              Rp {grp.subtotalRp.toLocaleString('id-ID')}
+                            </td>
+                            <td></td>
+                          </tr>
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      filteredOutField.map((r, idx) => (
+                        <tr key={r.id || idx} className="hover:bg-stone-900/40">
+                          <td className="py-2 px-3 text-stone-400">{r.tanggal}</td>
+                          <td className="py-2 px-3 font-bold text-rose-400">{r.noTransaksi || '-'}</td>
+                          <td className="py-2 px-3">{r.kodeSpbu || '-'}</td>
+                          <td className="py-2 px-3 font-bold text-stone-100">{r.cnNew || '-'}</td>
+                          <td className="py-2 px-3 text-right font-bold">
+                            {(Number(r.jmlLtr) || 0).toLocaleString('id-ID')} L
+                          </td>
+                          <td className="py-2 px-3 text-right font-bold text-rose-400">
+                            Rp {(Number(r.totalNominal) || 0).toLocaleString('id-ID')}
+                          </td>
+                          <td className="py-2 px-3">{r.job || '-'}</td>
+                        </tr>
+                      ))
+                    )}
+                    {filteredOutField.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-4 text-center text-stone-500 italic">
                           Tidak ada data pembelian solar SPBU luar pada rentang tanggal ini.
                         </td>
+                      </tr>
+                    ) : (
+                      <tr className="bg-stone-900 font-bold text-stone-100 border-t-2 border-stone-700">
+                        <td colSpan={4} className="py-2 px-3 text-right font-mono text-xs uppercase tracking-wider text-amber-400">
+                          GRAND TOTAL SPBU LUAR ({filteredOutField.length} Bon):
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-amber-400 text-xs">
+                          {metrics.totalOutFieldLiter.toLocaleString('id-ID')} L
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-amber-400 text-xs">
+                          Rp {metrics.totalOutFieldNominal.toLocaleString('id-ID')}
+                        </td>
+                        <td></td>
                       </tr>
                     )}
                   </tbody>

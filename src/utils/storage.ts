@@ -47,7 +47,11 @@ import {
   SupplyFulfillmentStatus,
   PartSupplyItemTracking,
   NonUnitCategory,
-  NonUnitPurchaseRequest
+  NonUnitPurchaseRequest,
+  MasterPartItem,
+  MasterPartKategori,
+  MasterPartJenis,
+  MasterPartFungsi
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -102,6 +106,7 @@ const STORAGE_KEYS = {
   TYRE_REMOVES: 'bkwa_tyre_removes_v1',
   ACTIVITY_LOGS: 'bkwa_activity_logs_v2',
   CUSTOM_LOGO: 'bkwa_company_custom_logo',
+  MASTER_PARTS: 'bkwa_master_parts_v1',
 };
 
 // --- LOGO STORAGE MANAGEMENT (Menjaga custom logo ref yang dipilih pengguna) ---
@@ -182,6 +187,7 @@ export function getAllUsers(): UserAccount[] {
         modul5: { viewer: true, input: true, edit: true, delete: true, export: true },
         modul6: { viewer: true, input: true, edit: true, delete: true, export: true },
         modul7: { viewer: true, input: true, edit: true, delete: true, export: true },
+        modul8: { viewer: true, input: true, edit: true, delete: true, export: true },
       };
       modified = true;
     } else {
@@ -369,7 +375,7 @@ export function canUserInsertModule(user: UserAccount | null | undefined, module
   }
 
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
-  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
   if (tier === 'MEMBER') return moduleId === 5;
   return false;
 }
@@ -386,7 +392,7 @@ export function canUserEditModule(user: UserAccount | null | undefined, moduleId
   }
 
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
-  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
   return false;
 }
 
@@ -419,8 +425,8 @@ export function canUserExportModule(user: UserAccount | null | undefined, module
   }
 
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
-  if (tier === 'ADMIN') return [3, 4, 5, 6, 7].includes(moduleId);
-  if (tier === 'KHUSUS') return [1, 2, 3, 4, 5, 6, 7].includes(moduleId);
+  if (tier === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
+  if (tier === 'KHUSUS') return [1, 2, 3, 4, 5, 6, 7, 8].includes(moduleId);
   return false;
 }
 
@@ -1093,10 +1099,15 @@ export function registerDailyManpowerLog(
 } {
   const list = getAllDailyManpowerLogs();
   const now = new Date().toISOString();
+  const todayDate = now.split('T')[0];
 
   const newRecord: CatatanHarianManpowerRecord = {
     ...data,
     id: `dml-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    dibuatOleh: data.dibuatOleh?.trim() || 'Staf Administrasi',
+    disetujuiOleh: data.disetujuiOleh?.trim() || 'Dodik Mariyadi (Kabag Workshop)',
+    statusApproval: data.statusApproval || 'MENUNGGU_APPROVAL',
+    tglApproval: data.statusApproval === 'DISETUJUI' ? (data.tglApproval || todayDate) : undefined,
     createdAt: now,
     updatedAt: now,
   };
@@ -1107,7 +1118,7 @@ export function registerDailyManpowerLog(
 
   logActivity({
     aksi: 'CREATE',
-    keterangan: `Input Catatan Harian Manpower: ${newRecord.nama} (${newRecord.jabatan}) - ${newRecord.keterangan}`,
+    keterangan: `Input Catatan Harian Manpower: ${newRecord.nama} (${newRecord.jabatan}) - Dibuat: ${newRecord.dibuatOleh} - Status: ${newRecord.statusApproval}`,
   });
 
   return {
@@ -1144,13 +1155,111 @@ export function updateDailyManpowerLog(
 
   logActivity({
     aksi: 'UPDATE',
-    keterangan: `Update Catatan Harian Manpower: ${updatedRecord.nama} (${updatedRecord.jabatan}) - ${updatedRecord.keterangan}`,
+    keterangan: `Update Catatan Harian Manpower: ${updatedRecord.nama} (${updatedRecord.jabatan}) - Status: ${updatedRecord.statusApproval || 'MENUNGGU_APPROVAL'}`,
   });
 
   return {
     success: true,
     message: `Catatan harian [${updatedRecord.nama}] berhasil diperbarui!`,
     record: updatedRecord,
+  };
+}
+
+// Toggle Approval (Setujui / Batalkan Approval) oleh Kabag Workshop
+export function toggleApproveDailyManpowerLog(
+  id: string,
+  approverName: string = 'Dodik Mariyadi (Kabag Workshop)'
+): {
+  success: boolean;
+  message: string;
+  record?: CatatanHarianManpowerRecord;
+} {
+  const list = getAllDailyManpowerLogs();
+  const index = list.findIndex((r) => r.id === id);
+  if (index === -1) {
+    return { success: false, message: 'Data catatan harian manpower tidak ditemukan!' };
+  }
+
+  const now = new Date().toISOString();
+  const todayDate = now.split('T')[0];
+  const current = list[index];
+  const isApproved = current.statusApproval === 'DISETUJUI';
+
+  const updatedRecord: CatatanHarianManpowerRecord = {
+    ...current,
+    statusApproval: isApproved ? 'MENUNGGU_APPROVAL' : 'DISETUJUI',
+    disetujuiOleh: isApproved ? undefined : approverName,
+    tglApproval: isApproved ? undefined : todayDate,
+    updatedAt: now,
+  };
+
+  list[index] = updatedRecord;
+  saveAllDailyManpowerLogs(list);
+  syncItemToFirestore('daily_manpower_logs', id, updatedRecord);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `${isApproved ? 'Batalkan Approval' : 'Approval'} Catatan Harian: ${updatedRecord.nama} (${updatedRecord.tanggal}) oleh ${approverName}`,
+  });
+
+  return {
+    success: true,
+    message: isApproved
+      ? `Approval catatan [${updatedRecord.nama}] berhasil dibatalkan.`
+      : `Catatan harian [${updatedRecord.nama}] berhasil disetujui oleh ${approverName}!`,
+    record: updatedRecord,
+  };
+}
+
+// Batch Approve semua catatan pada tanggal tertentu
+export function batchApproveDailyManpowerLogs(
+  tanggal: string,
+  approverName: string = 'Dodik Mariyadi (Kabag Workshop)'
+): {
+  success: boolean;
+  message: string;
+  count: number;
+} {
+  const list = getAllDailyManpowerLogs();
+  const now = new Date().toISOString();
+  const todayDate = now.split('T')[0];
+
+  let count = 0;
+  const updatedList = list.map((record) => {
+    if (record.tanggal === tanggal && record.statusApproval !== 'DISETUJUI') {
+      count++;
+      const updated: CatatanHarianManpowerRecord = {
+        ...record,
+        statusApproval: 'DISETUJUI',
+        disetujuiOleh: approverName,
+        tglApproval: todayDate,
+        updatedAt: now,
+      };
+      syncItemToFirestore('daily_manpower_logs', updated.id, updated);
+      return updated;
+    }
+    return record;
+  });
+
+  if (count === 0) {
+    return {
+      success: true,
+      message: `Semua catatan harian tanggal ${tanggal} sudah berstatus disetujui.`,
+      count: 0,
+    };
+  }
+
+  saveAllDailyManpowerLogs(updatedList);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Batch Approval ${count} Catatan Harian Manpower (${tanggal}) oleh ${approverName}`,
+  });
+
+  return {
+    success: true,
+    message: `Berhasil menyetujui ${count} catatan harian manpower untuk tanggal ${tanggal}!`,
+    count,
   };
 }
 
@@ -5244,5 +5353,151 @@ export function deleteGreaseDistributionRecord(id: string): { success: boolean; 
     message: `Bon pemakaian grease unit [${target.noUnit}] berhasil dihapus!`,
   };
 }
+
+// ==========================================
+// --- MODUL 8: MASTER PART & MATERIAL KATALOG ---
+// ==========================================
+
+export function getAllMasterParts(): MasterPartItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.MASTER_PARTS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error('Error reading master parts from storage:', e);
+    return [];
+  }
+}
+
+export function saveAllMasterParts(list: MasterPartItem[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.MASTER_PARTS, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent('bkwa-master-parts-changed'));
+  } catch (e) {
+    console.error('Error saving master parts to storage:', e);
+  }
+}
+
+export function addOrUpdateMasterPart(
+  data: Omit<MasterPartItem, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: MasterPartItem } {
+  const currentList = getAllMasterParts();
+  const now = new Date().toISOString();
+
+  if (idToEdit) {
+    const index = currentList.findIndex((p) => p.id === idToEdit);
+    if (index === -1) {
+      return { success: false, message: 'Item Master Part tidak ditemukan untuk diedit!' };
+    }
+    const updated: MasterPartItem = {
+      ...currentList[index],
+      ...data,
+      updatedAt: now,
+    };
+    currentList[index] = updated;
+    saveAllMasterParts(currentList);
+    syncItemToFirestore('master_parts', updated.id, updated);
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Master Part: [${updated.noUnit}] ${updated.namaPart} (PN: ${updated.pn})`,
+      detailUnit: updated.noUnit,
+    });
+    return {
+      success: true,
+      message: `Master Part [${updated.namaPart}] untuk unit ${updated.noUnit} berhasil diperbarui!`,
+      record: updated,
+    };
+  }
+
+  // Generate ID baru
+  const newPart: MasterPartItem = {
+    ...data,
+    id: `MPART-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  currentList.unshift(newPart);
+  saveAllMasterParts(currentList);
+  syncItemToFirestore('master_parts', newPart.id, newPart);
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Tambah Master Part: [${newPart.noUnit}] ${newPart.namaPart} (PN: ${newPart.pn})`,
+    detailUnit: newPart.noUnit,
+  });
+
+  return {
+    success: true,
+    message: `Master Part [${newPart.namaPart}] untuk unit ${newPart.noUnit} berhasil disimpan!`,
+    record: newPart,
+  };
+}
+
+export function batchAddMasterParts(
+  items: Omit<MasterPartItem, 'id' | 'createdAt' | 'updatedAt'>[]
+): { success: boolean; message: string; count: number } {
+  if (!items || items.length === 0) {
+    return { success: false, message: 'Tidak ada data part yang dikirimkan.', count: 0 };
+  }
+
+  const currentList = getAllMasterParts();
+  const now = new Date().toISOString();
+  let addedCount = 0;
+
+  const newRecords: MasterPartItem[] = items.map((item, idx) => {
+    addedCount++;
+    return {
+      ...item,
+      id: `MPART-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+
+  const merged = [...newRecords, ...currentList];
+  saveAllMasterParts(merged);
+
+  // Sync to firestore in background
+  newRecords.forEach((rec) => {
+    syncItemToFirestore('master_parts', rec.id, rec);
+  });
+
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Batch Tambah Master Part: ${addedCount} item part berhasil ditambahkan`,
+  });
+
+  return {
+    success: true,
+    message: `Berhasil menambahkan ${addedCount} item Master Part sekaligus!`,
+    count: addedCount,
+  };
+}
+
+export function deleteMasterPart(id: string): { success: boolean; message: string } {
+  const currentList = getAllMasterParts();
+  const target = currentList.find((p) => p.id === id);
+  if (!target) {
+    return { success: false, message: 'Item Master Part tidak ditemukan!' };
+  }
+
+  const filtered = currentList.filter((p) => p.id !== id);
+  saveAllMasterParts(filtered);
+  deleteItemFromFirestore('master_parts', id, target);
+
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Master Part: [${target.noUnit}] ${target.namaPart} (PN: ${target.pn})`,
+    detailUnit: target.noUnit,
+  });
+
+  return {
+    success: true,
+    message: `Master Part [${target.namaPart}] berhasil dihapus!`,
+  };
+}
+
 
 

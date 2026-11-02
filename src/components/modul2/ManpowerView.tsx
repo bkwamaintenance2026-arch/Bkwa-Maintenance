@@ -47,7 +47,9 @@ import {
   getAllDailyManpowerLogs,
   registerDailyManpowerLog,
   updateDailyManpowerLog,
-  deleteDailyManpowerLog
+  deleteDailyManpowerLog,
+  toggleApproveDailyManpowerLog,
+  batchApproveDailyManpowerLogs
 } from '../../utils/storage';
 import { MechanicWorkLogSubView } from './MechanicWorkLogSubView';
 import { CatatanHarianManpowerSubView } from './CatatanHarianManpowerSubView';
@@ -252,6 +254,28 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
 
   const handleDeleteDailyLog = (id: string) => {
     const res = deleteDailyManpowerLog(id);
+    if (res.success) {
+      setDailyManpowerLogs(getAllDailyManpowerLogs());
+      setFeedback({ type: 'success', message: res.message });
+    } else {
+      setFeedback({ type: 'error', message: res.message });
+    }
+    return res;
+  };
+
+  const handleToggleApproveDailyLog = (id: string) => {
+    const res = toggleApproveDailyManpowerLog(id, 'Dodik Mariyadi (Kabag Workshop)');
+    if (res.success) {
+      setDailyManpowerLogs(getAllDailyManpowerLogs());
+      setFeedback({ type: 'success', message: res.message });
+    } else {
+      setFeedback({ type: 'error', message: res.message });
+    }
+    return res;
+  };
+
+  const handleBatchApproveDailyLogs = (date: string) => {
+    const res = batchApproveDailyManpowerLogs(date, 'Dodik Mariyadi (Kabag Workshop)');
     if (res.success) {
       setDailyManpowerLogs(getAllDailyManpowerLogs());
       setFeedback({ type: 'success', message: res.message });
@@ -570,6 +594,8 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
           currentUser={currentUser}
           onSaveLog={handleSaveDailyLog}
           onDeleteLog={handleDeleteDailyLog}
+          onToggleApproveLog={handleToggleApproveDailyLog}
+          onBatchApproveLogs={handleBatchApproveDailyLogs}
         />
       ) : (
         /* ======================================================================= */

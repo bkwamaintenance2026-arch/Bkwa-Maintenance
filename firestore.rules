@@ -101,6 +101,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Dokumen Master Part & Material Katalog (Modul 8)
+    match /master_parts/{id} {
+      allow read, write: if true;
+    }
+
     // Dokumen Activity Logs & Settings
     match /activity_logs/{logId} {
       allow read, write: if true;

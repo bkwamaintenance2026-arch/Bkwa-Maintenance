@@ -164,6 +164,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           modul5P2H: isFill,
           modul6SparePart: isFill,
           modul7Tyre: isFill,
+          modul8MasterPart: isFill,
         };
 
         const updatedGranular: GranularUserPermissions = {
@@ -174,6 +175,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           modul5: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
           modul6: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
           modul7: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul8: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
         };
 
         return {
@@ -360,6 +362,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     { num: 5, title: 'Modul 5: Divisi Operation', desc: 'Pemeriksaan Harian Form P2H' },
     { num: 6, title: 'Modul 6: Spare Part', desc: 'Inventory Suku Cadang & PR' },
     { num: 7, title: 'Modul 7: Tyre System', desc: 'Manajemen Ban Alat Berat' },
+    { num: 8, title: 'Modul 8: Master Part', desc: 'Katalog Master Part per Unit' },
   ];
 
   return (
@@ -806,10 +809,10 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                               ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
                               : 'bg-stone-950 text-stone-300 border-stone-800 hover:border-stone-700'
                           }`}
-                          title="Buka kontrol spesifik Modul 1 s/d Modul 7 untuk orang ini"
+                          title="Buka kontrol spesifik Modul 1 s/d Modul 8 untuk orang ini"
                         >
                           <Layers className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Kontrol Modul 1 - 7</span>
+                          <span>Kontrol Modul 1 - 8</span>
                           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
                       )}
@@ -862,7 +865,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-stone-800 gap-1.5">
                         <span className="font-mono text-xs font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
                           <Layers className="w-4 h-4 text-amber-400" />
-                          <span>PENGATURAN AKSES MODUL 1 S/D 7 UNTUK {user.fullName.toUpperCase()}:</span>
+                          <span>PENGATURAN AKSES MODUL 1 S/D 8 UNTUK {user.fullName.toUpperCase()}:</span>
                         </span>
                         <span className="text-[11px] text-stone-400">
                           Klik status untuk beralih antara <strong className="text-sky-400">Hanya View</strong> dan <strong className="text-emerald-400">Bisa Mengisi</strong>.

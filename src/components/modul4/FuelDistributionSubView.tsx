@@ -37,7 +37,12 @@ interface FuelDistributionSubViewProps {
   equipmentList: (HeavyEquipment | AssetUnit)[];
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
-  onOpenExportPDF?: () => void;
+  onOpenExportPDF?: (settings?: {
+    groupBy?: 'NONE' | 'UNIT' | 'DATE';
+    unitFilter?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => void;
   onSave: (
     data: Omit<FuelDistributionRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
@@ -55,6 +60,9 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   onDelete,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<'DEFAULT' | 'UNIT' | 'DATE'>('DEFAULT');
+  const [filterUnit, setFilterUnit] = useState<string>('ALL');
+  const [filterDate, setFilterDate] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -366,19 +374,54 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
     setDeleteConfirmId(null);
   };
 
-  const filteredList = fuelDistributions.filter((item) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      item.noBon.toLowerCase().includes(q) ||
-      item.cnAlat.toLowerCase().includes(q) ||
-      item.namaAlat.toLowerCase().includes(q) ||
-      (item.jenisAlat || '').toLowerCase().includes(q) ||
-      item.operatorName.toLowerCase().includes(q) ||
-      (item.lokasi || '').toLowerCase().includes(q)
-    );
-  });
+  // Daftar unit unik untuk filter
+  const availableUnitList = useMemo(() => {
+    const set = new Set<string>();
+    fuelDistributions.forEach((item) => {
+      if (item.cnAlat) set.add(item.cnAlat.trim().toUpperCase());
+    });
+    return Array.from(set).sort();
+  }, [fuelDistributions]);
+
+  const filteredList = useMemo(() => {
+    return fuelDistributions.filter((item) => {
+      const q = searchTerm.toLowerCase();
+      const matchSearch =
+        item.noBon.toLowerCase().includes(q) ||
+        item.cnAlat.toLowerCase().includes(q) ||
+        item.namaAlat.toLowerCase().includes(q) ||
+        (item.jenisAlat || '').toLowerCase().includes(q) ||
+        item.operatorName.toLowerCase().includes(q) ||
+        (item.lokasi || '').toLowerCase().includes(q);
+
+      const matchUnit = filterUnit === 'ALL' || (item.cnAlat || '').trim().toUpperCase() === filterUnit.trim().toUpperCase();
+      const matchDate = !filterDate || item.tanggal === filterDate;
+
+      return matchSearch && matchUnit && matchDate;
+    });
+  }, [fuelDistributions, searchTerm, filterUnit, filterDate]);
+
+  // Pengelompokan baris untuk Sub Total per Unit atau per Hari
+  const groupedList = useMemo(() => {
+    if (sortBy === 'DEFAULT') return null;
+    const map = new Map<string, { key: string; label: string; items: FuelDistributionRecord[]; subtotalLtr: number }>();
+    filteredList.forEach((item) => {
+      const key = sortBy === 'UNIT' ? (item.cnAlat || 'LAINNYA').trim().toUpperCase() : (item.tanggal || '-');
+      const label = sortBy === 'UNIT'
+        ? `${item.cnAlat || 'LAINNYA'}${item.namaAlat ? ` • ${item.namaAlat}` : ''}`
+        : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalLtr: 0 };
+      cur.items.push(item);
+      cur.subtotalLtr += Number(item.qty) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filteredList, sortBy]);
 
   const totalFuelDistributed = fuelDistributions.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+  const totalFilteredQty = useMemo(() => {
+    return filteredList.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+  }, [filteredList]);
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
@@ -466,7 +509,14 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             <button
               id="btn-export-pdf-fuel-distribution"
               type="button"
-              onClick={onOpenExportPDF}
+              onClick={() => {
+                onOpenExportPDF({
+                  groupBy: sortBy === 'UNIT' ? 'UNIT' : sortBy === 'DATE' ? 'DATE' : 'NONE',
+                  unitFilter: filterUnit !== 'ALL' ? filterUnit : undefined,
+                  startDate: filterDate || undefined,
+                  endDate: filterDate || undefined,
+                });
+              }}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-xs font-mono transition active:scale-95"
               title="Export Laporan PDF Distribusi Fuel Truck ke Unit (PT BATU KALI WELANG AMPUH)"
             >
@@ -526,6 +576,108 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
         </div>
       </div>
 
+      {/* FILTER & SORT BY / SUB TOTAL TOOLBAR */}
+      <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 shadow-xl space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Sort By & Sub Total Selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-mono font-bold text-stone-400 uppercase tracking-wider">
+              Sort By &amp; Sub Total:
+            </span>
+            <div className="inline-flex rounded-xl bg-stone-950 p-1 border border-stone-800">
+              <button
+                type="button"
+                onClick={() => setSortBy('DEFAULT')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
+                  sortBy === 'DEFAULT'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                Standar
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy('UNIT')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  sortBy === 'UNIT'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>🚜 Per Unit (+Subtotal)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy('DATE')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  sortBy === 'DATE'
+                    ? 'bg-amber-500 text-stone-950 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>📅 Per Hari (+Subtotal)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Unit & Filter Tanggal */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Filter Unit */}
+            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+              <span className="text-[10px] text-stone-400 font-mono uppercase">Unit:</span>
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                className="bg-transparent text-xs text-stone-200 font-mono focus:outline-none"
+              >
+                <option value="ALL">Semua Unit ({availableUnitList.length})</option>
+                {availableUnitList.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter Tanggal */}
+            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+              <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="bg-transparent text-xs text-stone-200 font-mono focus:outline-none"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  className="text-stone-500 hover:text-stone-200"
+                  title="Hapus filter tanggal"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(sortBy !== 'DEFAULT' || filterUnit !== 'ALL' || filterDate) && (
+          <div className="text-[11px] font-mono text-amber-400 pt-1 border-t border-stone-800/60 flex items-center justify-between flex-wrap gap-2">
+            <span>
+              ✓ Mode Aktif:{' '}
+              <strong>
+                {sortBy === 'UNIT' ? 'Dikelompokkan Per Unit dengan Baris Subtotal' : sortBy === 'DATE' ? 'Dikelompokkan Per Hari dengan Baris Subtotal' : 'Standar'}
+              </strong>
+              {filterUnit !== 'ALL' && ` • Filter Unit: ${filterUnit}`}
+              {filterDate && ` • Filter Tanggal: ${filterDate}`}
+            </span>
+            <span className="text-stone-400">
+              Total Hasil: <strong>{filteredList.length}</strong> bon • <strong>{totalFilteredQty.toLocaleString('id-ID')}</strong> Liter
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Table Data Distribusi Fuel */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
@@ -550,74 +702,183 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60 font-sans">
-              {filteredList.map((item) => (
-                <tr key={item.id} className="hover:bg-stone-800/30 transition">
-                  <td className="py-3 px-3 font-mono font-bold text-orange-400 whitespace-nowrap">
-                    {item.noBon}
-                  </td>
-                  <td className="py-3 px-3 font-mono text-stone-300 whitespace-nowrap">
-                    <div className="flex items-center gap-1.5 font-bold text-stone-200">
-                      <Calendar className="w-3 h-3 text-orange-400" />
-                      <span>{item.tanggal}</span>
-                    </div>
-                    <div className="text-[10px] text-stone-400 font-mono flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3 text-blue-400" />
-                      <span>{item.jam} (24 Jam)</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-3">
-                    <div className="font-bold text-stone-100 font-mono flex items-center gap-1.5 flex-wrap">
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px]">
-                        {item.cnAlat}
-                      </span>
-                      {item.jenisAlat && (
-                        <span className="px-1.5 py-0.5 rounded bg-stone-800 text-stone-400 border border-stone-700 text-[10px] font-sans">
-                          {item.jenisAlat}
+              {groupedList ? (
+                groupedList.map((grp) => (
+                  <React.Fragment key={grp.key}>
+                    {/* Header Group */}
+                    <tr className="bg-blue-950/40 border-y border-blue-500/30">
+                      <td colSpan={9} className="py-2 px-3 font-mono font-bold text-blue-300 text-xs">
+                        ▸ {sortBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} ({grp.items.length} Bon Transaksi)
+                      </td>
+                    </tr>
+                    {grp.items.map((item) => (
+                      <tr key={item.id} className="hover:bg-stone-800/30 transition">
+                        <td className="py-3 px-3 font-mono font-bold text-orange-400 whitespace-nowrap">
+                          {item.noBon}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-stone-300 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5 font-bold text-stone-200">
+                            <Calendar className="w-3 h-3 text-orange-400" />
+                            <span>{item.tanggal}</span>
+                          </div>
+                          <div className="text-[10px] text-stone-400 font-mono flex items-center gap-1 mt-0.5">
+                            <Clock className="w-3 h-3 text-blue-400" />
+                            <span>{item.jam} (24 Jam)</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-stone-100 font-mono flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px]">
+                              {item.cnAlat}
+                            </span>
+                            {item.jenisAlat && (
+                              <span className="px-1.5 py-0.5 rounded bg-stone-800 text-stone-400 border border-stone-700 text-[10px] font-sans">
+                                {item.jenisAlat}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-stone-400 mt-0.5">{item.namaAlat}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-stone-200">{item.operatorName}</div>
+                          <div className="text-[10px] text-blue-400 font-mono">{item.operatorJabatan || 'Semua Jabatan'}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
+                          {(item.hmPengisian ?? item.hm ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">HM</span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                          {(item.flowmeterStart ?? 0).toLocaleString('id-ID')} → {(item.flowmeterStop ?? 0).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-orange-400 text-right text-sm">
+                          {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 border border-stone-700">
+                            {item.lokasi || 'Tambang -Front Pit'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                              title="Edit Data Bon"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(item.id)}
+                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
+                              title="Hapus Data Bon"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Baris Subtotal Group */}
+                    <tr className="bg-amber-500/10 border-b-2 border-amber-500/30 font-mono font-bold text-amber-300">
+                      <td colSpan={6} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider">
+                        SUBTOTAL {sortBy === 'UNIT' ? `UNIT [${grp.key}]` : `TANGGAL [${grp.key}]`} ({grp.items.length} Bon):
+                      </td>
+                      <td className="py-2 px-3 text-right font-black text-amber-400 text-sm">
+                        {grp.subtotalLtr.toLocaleString('id-ID')} Ltr
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </React.Fragment>
+                ))
+              ) : (
+                filteredList.map((item) => (
+                  <tr key={item.id} className="hover:bg-stone-800/30 transition">
+                    <td className="py-3 px-3 font-mono font-bold text-orange-400 whitespace-nowrap">
+                      {item.noBon}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-stone-300 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 font-bold text-stone-200">
+                        <Calendar className="w-3 h-3 text-orange-400" />
+                        <span>{item.tanggal}</span>
+                      </div>
+                      <div className="text-[10px] text-stone-400 font-mono flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3 text-blue-400" />
+                        <span>{item.jam} (24 Jam)</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="font-bold text-stone-100 font-mono flex items-center gap-1.5 flex-wrap">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px]">
+                          {item.cnAlat}
                         </span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-stone-400 mt-0.5">{item.namaAlat}</div>
-                  </td>
-                  <td className="py-3 px-3">
-                    <div className="font-semibold text-stone-200">{item.operatorName}</div>
-                    <div className="text-[10px] text-blue-400 font-mono">{item.operatorJabatan || 'Semua Jabatan'}</div>
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
-                    {(item.hmPengisian ?? item.hm ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">HM</span>
-                  </td>
-                  <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
-                    {(item.flowmeterStart ?? 0).toLocaleString('id-ID')} → {(item.flowmeterStop ?? 0).toLocaleString('id-ID')}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-black text-orange-400 text-right text-sm">
-                    {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 border border-stone-700">
-                      {item.lokasi || 'Tambang -Front Pit'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
-                        title="Edit Data Bon"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteConfirmId(item.id)}
-                        className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
-                        title="Hapus Data Bon"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                        {item.jenisAlat && (
+                          <span className="px-1.5 py-0.5 rounded bg-stone-800 text-stone-400 border border-stone-700 text-[10px] font-sans">
+                            {item.jenisAlat}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-stone-400 mt-0.5">{item.namaAlat}</div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="font-semibold text-stone-200">{item.operatorName}</div>
+                      <div className="text-[10px] text-blue-400 font-mono">{item.operatorJabatan || 'Semua Jabatan'}</div>
+                    </td>
+                    <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
+                      {(item.hmPengisian ?? item.hm ?? 0).toLocaleString('id-ID')} <span className="text-[10px] text-stone-500 font-normal">HM</span>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                      {(item.flowmeterStart ?? 0).toLocaleString('id-ID')} → {(item.flowmeterStop ?? 0).toLocaleString('id-ID')}
+                    </td>
+                    <td className="py-3 px-3 font-mono font-black text-orange-400 text-right text-sm">
+                      {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-stone-800 text-emerald-400 border border-stone-700">
+                        {item.lokasi || 'Tambang -Front Pit'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(item)}
+                          className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                          title="Edit Data Bon"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmId(item.id)}
+                          className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
+                          title="Hapus Data Bon"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+
+              {filteredList.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-stone-500">
+                    Belum ada data transaksi bon pengisian fuel untuk unit alat yang sesuai filter.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                <tr className="bg-stone-950 font-mono font-bold text-stone-100 border-t-2 border-stone-700">
+                  <td colSpan={6} className="py-3 px-3 text-right uppercase text-xs tracking-wider text-amber-400">
+                    GRAND TOTAL DISTRIBUSI ({filteredList.length} Bon Transaksi):
+                  </td>
+                  <td className="py-3 px-3 text-right font-black text-amber-400 text-base">
+                    {totalFilteredQty.toLocaleString('id-ID')} Ltr
+                  </td>
+                  <td colSpan={2}></td>
+                </tr>
+              )}
 
               {filteredList.length === 0 && (
                 <tr>

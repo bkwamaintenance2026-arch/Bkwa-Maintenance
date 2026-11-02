@@ -27,6 +27,7 @@ export interface GranularUserPermissions {
   modul5?: ModulePermissionSet; // Modul 5: Divisi Operation & P2H
   modul6?: ModulePermissionSet; // Modul 6: Spare Part Inventory
   modul7?: ModulePermissionSet; // Modul 7: Tyre Management System
+  modul8?: ModulePermissionSet; // Modul 8: Master Part Katalog
 }
 
 export interface UserModulePermissions {
@@ -37,6 +38,7 @@ export interface UserModulePermissions {
   modul5P2H?: boolean;          // Hak input Modul 5: Input Form P2H
   modul6SparePart?: boolean;    // Hak input Modul 6: Inventory Management (Spare Part)
   modul7Tyre?: boolean;         // Hak input Modul 7: Tyre Management System
+  modul8MasterPart?: boolean;   // Hak input Modul 8: Master Part Katalog
   canExportModul1?: boolean;
   canExportModul2?: boolean;
   canExportModul3?: boolean;
@@ -44,6 +46,7 @@ export interface UserModulePermissions {
   canExportModul5?: boolean;
   canExportModul6?: boolean;
   canExportModul7?: boolean;
+  canExportModul8?: boolean;
 }
 
 export interface UserAccount {
@@ -244,6 +247,10 @@ export interface CatatanHarianManpowerRecord {
   jamStop: string;              // Jam Stop (HH:mm)
   keterangan: KeteranganCatatanManpower | string; // Hadir, Sakit, Ijin, Cuti, Dinas Luar, Tukar jam, Lembur
   catatan: string;              // Catatan
+  dibuatOleh?: string;          // Personil Administrasi yang membuat catatan (Modul 2 Manpower)
+  disetujuiOleh?: string;       // Kabag Workshop (Dodik Mariyadi)
+  statusApproval?: 'MENUNGGU_APPROVAL' | 'DISETUJUI'; // Status approval oleh Kabag Workshop
+  tglApproval?: string;         // YYYY-MM-DD tanggal disetujui
   createdAt: string;
   updatedAt: string;
 }
@@ -1122,5 +1129,53 @@ export interface OutFieldFuelRecord {
   catatan?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+// ==========================================
+// MODUL 8: MASTER PART & MATERIAL KATALOG
+// ==========================================
+export type MasterPartKategori = 'Fast Moving' | 'Slow Moving' | 'Death Stock';
+export type MasterPartJenis = 'Genuine Part' | 'OEM';
+export type MasterPartFungsi = 'Part Service' | 'Consumable' | 'Tool';
+
+export const MASTER_PART_KATEGORI_OPTIONS: MasterPartKategori[] = [
+  'Fast Moving',
+  'Slow Moving',
+  'Death Stock',
+];
+
+export const MASTER_PART_JENIS_OPTIONS: MasterPartJenis[] = [
+  'Genuine Part',
+  'OEM',
+];
+
+export const MASTER_PART_FUNGSI_OPTIONS: MasterPartFungsi[] = [
+  'Part Service',
+  'Consumable',
+  'Tool',
+];
+
+export interface MasterPartItem {
+  id: string;
+  unitId?: string;                   // ID unit di Modul 1
+  noUrut?: number;                   // No - No urut Part
+  jenisUnit: string;                 // Jenis Unit dari Registrasi Asset (Modul 1)
+  noUnit: string;                    // No Unit (CN New dari Registrasi Asset)
+  namaAlat?: string;                 // Nama Alat (Auto dari Modul 1)
+  modelUnit?: string;                // Model / Tipe Unit
+  brandMerk?: string;                // Brand Merk Unit
+  kategoriPart?: MasterPartKategori; // Fast Moving, Slow Moving, Death Stock
+  kategori: MasterPartKategori;      // Kategori Part
+  jenisPart: MasterPartJenis;        // Genuine Part, OEM
+  merkPart?: string;                 // Merek dari part tersebut
+  merk: string;                      // Merk Part
+  fungsi: MasterPartFungsi;          // Part Service, Consumable, Tool
+  namaPart: string;                  // Nama dari part tersebut
+  pn: string;                        // Part Number (PN)
+  qty: number;                       // Jumlah Part
+  satuan?: string;                   // Pcs, Set, Unit, Liter, Box, dll.
+  remark?: string;                   // Remark / Catatan
+  createdAt: string;
+  updatedAt: string;
 }
 

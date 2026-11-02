@@ -979,10 +979,14 @@ export const exportDetailHistoryToPDF = (
   return result;
 };
 
+export type FogReportGroupBy = 'NONE' | 'UNIT' | 'DATE';
+
 export interface ExportFuelOilReportParams {
   startDate?: string;
   endDate?: string;
   reportCategory?: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE';
+  groupBy?: FogReportGroupBy; // 'NONE' | 'UNIT' | 'DATE'
+  unitFilter?: string; // e.g. 'ALL' or specific CN unit
   // Lembar Pengesahan FOG (3 Pihak sesuai instruksi user):
   // 1. Petugas FOG = yang membuat Laporan
   // 2. Petugas Inventory = Diperiksa oleh
@@ -1023,6 +1027,8 @@ export const generateFuelOilTransactionsPDF = ({
   startDate,
   endDate,
   reportCategory = 'ALL',
+  groupBy = 'NONE',
+  unitFilter = 'ALL',
   petugasFog,
   petugasFogJabatan,
   petugasInventory,
@@ -1057,12 +1063,24 @@ export const generateFuelOilTransactionsPDF = ({
     return true;
   };
 
-  // 1. Filter data berdasarkan rentang tanggal
+  // Helper filter unit
+  const matchUnit = (cn?: string) => {
+    if (!unitFilter || unitFilter === 'ALL') return true;
+    return (cn || '').trim().toLowerCase() === unitFilter.trim().toLowerCase();
+  };
+
+  // 1. Filter data berdasarkan rentang tanggal & unit
   const filteredStockInputs = fuelStockInputs.filter((item) => matchDate(item.tanggal));
   const filteredTransfers = fuelTransfers.filter((item) => matchDate(item.tanggal));
-  const filteredDistributions = fuelDistributions.filter((item) => matchDate(item.tanggal));
-  const filteredOutField = outFieldFuelRecords.filter((item) => matchDate(item.tanggal));
-  const filteredOilDist = oilDistributions.filter((item) => matchDate(item.tanggal));
+  const filteredDistributions = fuelDistributions.filter(
+    (item) => matchDate(item.tanggal) && matchUnit(item.cnAlat)
+  );
+  const filteredOutField = outFieldFuelRecords.filter(
+    (item) => matchDate(item.tanggal) && matchUnit(item.cnNew)
+  );
+  const filteredOilDist = oilDistributions.filter(
+    (item) => matchDate(item.tanggal) && matchUnit(item.noUnit)
+  );
 
   // 2. Kalkulasi Metrik Utama
   const totalMasukTangki = filteredStockInputs.reduce(
@@ -1109,6 +1127,15 @@ export const generateFuelOilTransactionsPDF = ({
   };
   const kategoriLabel = categoryLabels[reportCategory] || 'Semua Kategori';
 
+  // Label Pengelompokan & Filter Unit
+  const groupLabel =
+    groupBy === 'UNIT'
+      ? 'Per Unit Alat (Dengan Subtotal)'
+      : groupBy === 'DATE'
+      ? 'Per Hari/Tanggal (Dengan Subtotal)'
+      : 'Standar Kronologis';
+  const unitFilterText = unitFilter && unitFilter !== 'ALL' ? `  |  Filter Unit: ${unitFilter}` : '';
+
   // Warna Dokumen
   const primaryColor: [number, number, number] = [180, 83, 9]; // Amber-700
   const darkTextColor: [number, number, number] = [30, 41, 59]; // Slate-800
@@ -1143,7 +1170,7 @@ export const generateFuelOilTransactionsPDF = ({
   doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
   doc.text(
-    `Periode Data: ${periodeLabel}  |  Kategori: ${kategoriLabel}  |  Waktu Cetak: ${nowStr}  |  Operator: ${exporterName}`,
+    `Periode: ${periodeLabel}  |  Kategori: ${kategoriLabel}  |  Pengelompokan: ${groupLabel}${unitFilterText}  |  Waktu Cetak: ${nowStr}  |  Operator: ${exporterName}`,
     148.5,
     27,
     { align: 'center' }
@@ -1403,9 +1430,121 @@ export const generateFuelOilTransactionsPDF = ({
       curY
     );
 
-    const distRows =
-      filteredDistributions.length > 0
-        ? filteredDistributions.map((r, idx) => [
+    const distRows: any[] = [];
+    if (filteredDistributions.length > 0) {
+      if (groupBy === 'UNIT') {
+        const mapByUnit = new Map<string, FuelDistributionRecord[]>();
+        filteredDistributions.forEach((r) => {
+          const u = r.cnAlat || 'LAINNYA';
+          if (!mapByUnit.has(u)) mapByUnit.set(u, []);
+          mapByUnit.get(u)!.push(r);
+        });
+        const sortedUnits = Array.from(mapByUnit.keys()).sort();
+        let rowNum = 1;
+        sortedUnits.forEach((unitKey) => {
+          const items = mapByUnit.get(unitKey)!;
+          const subtotalQty = items.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+          items.forEach((r) => {
+            distRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noBon || '-',
+              r.cnAlat || '-',
+              r.namaAlat || '-',
+              `${r.operatorName || '-'}${r.operatorJabatan ? ` (${r.operatorJabatan})` : ''}`,
+              (Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID'),
+              (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
+              (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
+              (Number(r.qty) || 0).toLocaleString('id-ID'),
+              r.driverFtName || r.picFogName || '-',
+              r.lokasi || r.remark || '-',
+            ]);
+          });
+          distRows.push([
+            {
+              content: `SUBTOTAL UNIT [ ${unitKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
+              colSpan: 12,
+              styles: {
+                fillColor: [254, 243, 199] as [number, number, number],
+                textColor: [180, 83, 9] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        distRows.push([
+          {
+            content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
+            colSpan: 12,
+            styles: {
+              fillColor: [253, 230, 138] as [number, number, number],
+              textColor: [146, 64, 14] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else if (groupBy === 'DATE') {
+        const mapByDate = new Map<string, FuelDistributionRecord[]>();
+        filteredDistributions.forEach((r) => {
+          const d = r.tanggal || 'TIDAK ADA TANGGAL';
+          if (!mapByDate.has(d)) mapByDate.set(d, []);
+          mapByDate.get(d)!.push(r);
+        });
+        const sortedDates = Array.from(mapByDate.keys()).sort();
+        let rowNum = 1;
+        sortedDates.forEach((dateKey) => {
+          const items = mapByDate.get(dateKey)!;
+          const subtotalQty = items.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+          items.forEach((r) => {
+            distRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noBon || '-',
+              r.cnAlat || '-',
+              r.namaAlat || '-',
+              `${r.operatorName || '-'}${r.operatorJabatan ? ` (${r.operatorJabatan})` : ''}`,
+              (Number(r.hm) || Number(r.hmPengisian) || 0).toLocaleString('id-ID'),
+              (Number(r.flowmeterStart) || 0).toLocaleString('id-ID'),
+              (Number(r.flowmeterStop) || 0).toLocaleString('id-ID'),
+              (Number(r.qty) || 0).toLocaleString('id-ID'),
+              r.driverFtName || r.picFogName || '-',
+              r.lokasi || r.remark || '-',
+            ]);
+          });
+          distRows.push([
+            {
+              content: `SUBTOTAL TANGGAL [ ${dateKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
+              colSpan: 12,
+              styles: {
+                fillColor: [254, 243, 199] as [number, number, number],
+                textColor: [180, 83, 9] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        distRows.push([
+          {
+            content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
+            colSpan: 12,
+            styles: {
+              fillColor: [253, 230, 138] as [number, number, number],
+              textColor: [146, 64, 14] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else {
+        filteredDistributions.forEach((r, idx) => {
+          distRows.push([
             idx + 1,
             `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
             r.noBon || '-',
@@ -1418,16 +1557,31 @@ export const generateFuelOilTransactionsPDF = ({
             (Number(r.qty) || 0).toLocaleString('id-ID'),
             r.driverFtName || r.picFogName || '-',
             r.lokasi || r.remark || '-',
-          ])
-        : [
-            [
-              {
-                content: 'Tidak ada data transaksi distribusi solar fuel truck ke unit pada periode ini.',
-                colSpan: 12,
-                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
-              },
-            ],
-          ];
+          ]);
+        });
+        distRows.push([
+          {
+            content: `TOTAL KESELURUHAN DISTRIBUSI FUEL TRUCK: ${totalDistribusiFT.toLocaleString('id-ID')} Liter (${filteredDistributions.length} Bon Transaksi)`,
+            colSpan: 12,
+            styles: {
+              fillColor: [253, 230, 138] as [number, number, number],
+              textColor: [146, 64, 14] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      }
+    } else {
+      distRows.push([
+        {
+          content: 'Tidak ada data transaksi distribusi solar fuel truck ke unit pada periode ini.',
+          colSpan: 12,
+          styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+        },
+      ]);
+    }
 
     autoTable(doc, {
       startY: curY + 2,
@@ -1500,9 +1654,125 @@ export const generateFuelOilTransactionsPDF = ({
       curY
     );
 
-    const outFieldRows =
-      filteredOutField.length > 0
-        ? filteredOutField.map((r, idx) => [
+    const outFieldRows: any[] = [];
+    if (filteredOutField.length > 0) {
+      if (groupBy === 'UNIT') {
+        const mapByUnit = new Map<string, OutFieldFuelRecord[]>();
+        filteredOutField.forEach((r) => {
+          const u = r.cnNew || 'LAINNYA';
+          if (!mapByUnit.has(u)) mapByUnit.set(u, []);
+          mapByUnit.get(u)!.push(r);
+        });
+        const sortedUnits = Array.from(mapByUnit.keys()).sort();
+        let rowNum = 1;
+        sortedUnits.forEach((unitKey) => {
+          const items = mapByUnit.get(unitKey)!;
+          const subtotalLtr = items.reduce((acc, curr) => acc + (Number(curr.jmlLtr) || 0), 0);
+          const subtotalNominal = items.reduce((acc, curr) => acc + (Number(curr.totalNominal) || 0), 0);
+          items.forEach((r) => {
+            outFieldRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noTransaksi || '-',
+              r.kodeSpbu || '-',
+              r.cnNew || '-',
+              r.namaAlat || '-',
+              r.jenisAlat || '-',
+              (Number(r.jmlLtr) || 0).toLocaleString('id-ID'),
+              `Rp ${(Number(r.hargaSolarPerLiter) || 6800).toLocaleString('id-ID')}`,
+              `Rp ${(Number(r.nominalFuelSetelahPembulatan) || Number(r.nominalPembelianFuel) || 0).toLocaleString('id-ID')}`,
+              `Rp ${(Number(r.totalNominal) || 0).toLocaleString('id-ID')}`,
+              r.job || (r.ritaseTotal ? `${r.ritaseTotal} Rit` : '-'),
+              r.lainLain || '-',
+            ]);
+          });
+          outFieldRows.push([
+            {
+              content: `SUBTOTAL UNIT [ ${unitKey} ]: ${subtotalLtr.toLocaleString('id-ID')} Liter | Total Biaya: Rp ${subtotalNominal.toLocaleString('id-ID')} (${items.length} Bon SPBU)`,
+              colSpan: 13,
+              styles: {
+                fillColor: [255, 228, 230] as [number, number, number],
+                textColor: [190, 18, 60] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        outFieldRows.push([
+          {
+            content: `TOTAL KESELURUHAN PEMBELIAN SPBU LUAR: ${totalOutFieldLiter.toLocaleString('id-ID')} Liter | Nilai Total: Rp ${totalOutFieldNominal.toLocaleString('id-ID')} (${filteredOutField.length} Transaksi)`,
+            colSpan: 13,
+            styles: {
+              fillColor: [254, 205, 211] as [number, number, number],
+              textColor: [159, 18, 57] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else if (groupBy === 'DATE') {
+        const mapByDate = new Map<string, OutFieldFuelRecord[]>();
+        filteredOutField.forEach((r) => {
+          const d = r.tanggal || 'TIDAK ADA TANGGAL';
+          if (!mapByDate.has(d)) mapByDate.set(d, []);
+          mapByDate.get(d)!.push(r);
+        });
+        const sortedDates = Array.from(mapByDate.keys()).sort();
+        let rowNum = 1;
+        sortedDates.forEach((dateKey) => {
+          const items = mapByDate.get(dateKey)!;
+          const subtotalLtr = items.reduce((acc, curr) => acc + (Number(curr.jmlLtr) || 0), 0);
+          const subtotalNominal = items.reduce((acc, curr) => acc + (Number(curr.totalNominal) || 0), 0);
+          items.forEach((r) => {
+            outFieldRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noTransaksi || '-',
+              r.kodeSpbu || '-',
+              r.cnNew || '-',
+              r.namaAlat || '-',
+              r.jenisAlat || '-',
+              (Number(r.jmlLtr) || 0).toLocaleString('id-ID'),
+              `Rp ${(Number(r.hargaSolarPerLiter) || 6800).toLocaleString('id-ID')}`,
+              `Rp ${(Number(r.nominalFuelSetelahPembulatan) || Number(r.nominalPembelianFuel) || 0).toLocaleString('id-ID')}`,
+              `Rp ${(Number(r.totalNominal) || 0).toLocaleString('id-ID')}`,
+              r.job || (r.ritaseTotal ? `${r.ritaseTotal} Rit` : '-'),
+              r.lainLain || '-',
+            ]);
+          });
+          outFieldRows.push([
+            {
+              content: `SUBTOTAL TANGGAL [ ${dateKey} ]: ${subtotalLtr.toLocaleString('id-ID')} Liter | Total Biaya: Rp ${subtotalNominal.toLocaleString('id-ID')} (${items.length} Bon SPBU)`,
+              colSpan: 13,
+              styles: {
+                fillColor: [255, 228, 230] as [number, number, number],
+                textColor: [190, 18, 60] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        outFieldRows.push([
+          {
+            content: `TOTAL KESELURUHAN PEMBELIAN SPBU LUAR: ${totalOutFieldLiter.toLocaleString('id-ID')} Liter | Nilai Total: Rp ${totalOutFieldNominal.toLocaleString('id-ID')} (${filteredOutField.length} Transaksi)`,
+            colSpan: 13,
+            styles: {
+              fillColor: [254, 205, 211] as [number, number, number],
+              textColor: [159, 18, 57] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else {
+        filteredOutField.forEach((r, idx) => {
+          outFieldRows.push([
             idx + 1,
             `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
             r.noTransaksi || '-',
@@ -1516,16 +1786,31 @@ export const generateFuelOilTransactionsPDF = ({
             `Rp ${(Number(r.totalNominal) || 0).toLocaleString('id-ID')}`,
             r.job || (r.ritaseTotal ? `${r.ritaseTotal} Rit` : '-'),
             r.lainLain || '-',
-          ])
-        : [
-            [
-              {
-                content: 'Tidak ada data transaksi pembelian solar di SPBU luar pada periode ini.',
-                colSpan: 13,
-                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
-              },
-            ],
-          ];
+          ]);
+        });
+        outFieldRows.push([
+          {
+            content: `TOTAL KESELURUHAN PEMBELIAN SPBU LUAR: ${totalOutFieldLiter.toLocaleString('id-ID')} Liter | Nilai Total: Rp ${totalOutFieldNominal.toLocaleString('id-ID')} (${filteredOutField.length} Transaksi)`,
+            colSpan: 13,
+            styles: {
+              fillColor: [254, 205, 211] as [number, number, number],
+              textColor: [159, 18, 57] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      }
+    } else {
+      outFieldRows.push([
+        {
+          content: 'Tidak ada data transaksi pembelian solar di SPBU luar pada periode ini.',
+          colSpan: 13,
+          styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+        },
+      ]);
+    }
 
     autoTable(doc, {
       startY: curY + 2,
@@ -1683,9 +1968,119 @@ export const generateFuelOilTransactionsPDF = ({
     doc.setTextColor(5, 150, 105);
     doc.text(`Rincian Bon Pengeluaran Oli ke Unit Alat Berat & Workshop (${filteredOilDist.length} Transaksi)`, 14, curY);
 
-    const oilDetailRows =
-      filteredOilDist.length > 0
-        ? filteredOilDist.map((r, idx) => [
+    const oilDetailRows: any[] = [];
+    if (filteredOilDist.length > 0) {
+      if (groupBy === 'UNIT') {
+        const mapByUnit = new Map<string, OilDistributionRecord[]>();
+        filteredOilDist.forEach((r) => {
+          const u = r.noUnit || 'LAINNYA';
+          if (!mapByUnit.has(u)) mapByUnit.set(u, []);
+          mapByUnit.get(u)!.push(r);
+        });
+        const sortedUnits = Array.from(mapByUnit.keys()).sort();
+        let rowNum = 1;
+        sortedUnits.forEach((unitKey) => {
+          const items = mapByUnit.get(unitKey)!;
+          const subtotalQty = items.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+          items.forEach((r) => {
+            oilDetailRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noBon || '-',
+              r.noUnit || '-',
+              r.namaAlat || r.namaUnit || '-',
+              (Number(r.hmUnit) || 0).toLocaleString('id-ID'),
+              r.jenisOli || '-',
+              (Number(r.qty) || 0).toLocaleString('id-ID'),
+              r.rincianKerusakan || '-',
+              r.picMekanik || '-',
+              r.picGudangMaterial || '-',
+            ]);
+          });
+          oilDetailRows.push([
+            {
+              content: `SUBTOTAL UNIT [ ${unitKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
+              colSpan: 11,
+              styles: {
+                fillColor: [209, 250, 229] as [number, number, number],
+                textColor: [6, 95, 70] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        oilDetailRows.push([
+          {
+            content: `TOTAL KESELURUHAN PENGELUARAN OLI: ${totalSemuaOliLiter.toLocaleString('id-ID')} Liter (${filteredOilDist.length} Bon Transaksi)`,
+            colSpan: 11,
+            styles: {
+              fillColor: [167, 243, 208] as [number, number, number],
+              textColor: [4, 120, 87] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else if (groupBy === 'DATE') {
+        const mapByDate = new Map<string, OilDistributionRecord[]>();
+        filteredOilDist.forEach((r) => {
+          const d = r.tanggal || 'TIDAK ADA TANGGAL';
+          if (!mapByDate.has(d)) mapByDate.set(d, []);
+          mapByDate.get(d)!.push(r);
+        });
+        const sortedDates = Array.from(mapByDate.keys()).sort();
+        let rowNum = 1;
+        sortedDates.forEach((dateKey) => {
+          const items = mapByDate.get(dateKey)!;
+          const subtotalQty = items.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+          items.forEach((r) => {
+            oilDetailRows.push([
+              rowNum++,
+              `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
+              r.noBon || '-',
+              r.noUnit || '-',
+              r.namaAlat || r.namaUnit || '-',
+              (Number(r.hmUnit) || 0).toLocaleString('id-ID'),
+              r.jenisOli || '-',
+              (Number(r.qty) || 0).toLocaleString('id-ID'),
+              r.rincianKerusakan || '-',
+              r.picMekanik || '-',
+              r.picGudangMaterial || '-',
+            ]);
+          });
+          oilDetailRows.push([
+            {
+              content: `SUBTOTAL TANGGAL [ ${dateKey} ]: ${subtotalQty.toLocaleString('id-ID')} Liter (${items.length} Bon Transaksi)`,
+              colSpan: 11,
+              styles: {
+                fillColor: [209, 250, 229] as [number, number, number],
+                textColor: [6, 95, 70] as [number, number, number],
+                fontStyle: 'bold' as const,
+                halign: 'right' as const,
+                fontSize: 7.2,
+              },
+            },
+          ]);
+        });
+        oilDetailRows.push([
+          {
+            content: `TOTAL KESELURUHAN PENGELUARAN OLI: ${totalSemuaOliLiter.toLocaleString('id-ID')} Liter (${filteredOilDist.length} Bon Transaksi)`,
+            colSpan: 11,
+            styles: {
+              fillColor: [167, 243, 208] as [number, number, number],
+              textColor: [4, 120, 87] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      } else {
+        filteredOilDist.forEach((r, idx) => {
+          oilDetailRows.push([
             idx + 1,
             `${r.tanggal || '-'} ${r.jam ? `(${r.jam})` : ''}`,
             r.noBon || '-',
@@ -1697,16 +2092,31 @@ export const generateFuelOilTransactionsPDF = ({
             r.rincianKerusakan || '-',
             r.picMekanik || '-',
             r.picGudangMaterial || '-',
-          ])
-        : [
-            [
-              {
-                content: 'Tidak ada data rincian pengeluaran oli pada periode ini.',
-                colSpan: 11,
-                styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
-              },
-            ],
-          ];
+          ]);
+        });
+        oilDetailRows.push([
+          {
+            content: `TOTAL KESELURUHAN PENGELUARAN OLI: ${totalSemuaOliLiter.toLocaleString('id-ID')} Liter (${filteredOilDist.length} Bon Transaksi)`,
+            colSpan: 11,
+            styles: {
+              fillColor: [167, 243, 208] as [number, number, number],
+              textColor: [4, 120, 87] as [number, number, number],
+              fontStyle: 'bold' as const,
+              halign: 'right' as const,
+              fontSize: 7.5,
+            },
+          },
+        ]);
+      }
+    } else {
+      oilDetailRows.push([
+        {
+          content: 'Tidak ada data rincian pengeluaran oli pada periode ini.',
+          colSpan: 11,
+          styles: { halign: 'center' as const, fontStyle: 'italic' as const, textColor: [148, 163, 184] as [number, number, number] },
+        },
+      ]);
+    }
 
     autoTable(doc, {
       startY: curY + 2,

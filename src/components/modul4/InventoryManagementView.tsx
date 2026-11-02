@@ -189,8 +189,29 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const [exportCategoryTarget, setExportCategoryTarget] = useState<
     'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE'
   >('ALL');
+  const [exportModalGroupBy, setExportModalGroupBy] = useState<'NONE' | 'UNIT' | 'DATE'>('NONE');
+  const [exportModalUnitFilter, setExportModalUnitFilter] = useState<string>('ALL');
+  const [exportModalStartDate, setExportModalStartDate] = useState<string>('');
+  const [exportModalEndDate, setExportModalEndDate] = useState<string>('');
   const [quickCapacityTarget, setQuickCapacityTarget] = useState<'tangki_utama' | 'fuel_truck'>('tangki_utama');
   const [quickCapacityVal, setQuickCapacityVal] = useState<number>(20000);
+
+  const handleOpenExportWithSettings = (
+    cat: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE',
+    settings?: {
+      groupBy?: 'NONE' | 'UNIT' | 'DATE';
+      unitFilter?: string;
+      startDate?: string;
+      endDate?: string;
+    }
+  ) => {
+    setExportCategoryTarget(cat);
+    setExportModalGroupBy(settings?.groupBy || 'NONE');
+    setExportModalUnitFilter(settings?.unitFilter || 'ALL');
+    setExportModalStartDate(settings?.startDate || '');
+    setExportModalEndDate(settings?.endDate || '');
+    setShowExportModal(true);
+  };
 
   // Form states untuk kalibrasi Sisa Periode Sebelumnya & Kapasitas Tangki Manual
   const [editFuelTangki, setEditFuelTangki] = useState<number>(periodBalance.sisaPeriodeLaluFuelTangki || 0);
@@ -502,18 +523,17 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 id="btn-open-export-fuel-oil-pdf"
                 type="button"
                 onClick={() => {
+                  let cat: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE' = 'ALL';
                   if (activeSubModule === 'fuel_stock') {
-                    setExportCategoryTarget('TANGKI_UTAMA');
+                    cat = 'TANGKI_UTAMA';
                   } else if (activeSubModule === 'fuel_transfer' || activeSubModule === 'fuel_dist') {
-                    setExportCategoryTarget('FUEL_TRUCK');
+                    cat = 'FUEL_TRUCK';
                   } else if (activeSubModule === 'out_field_fuel') {
-                    setExportCategoryTarget('SPBU_LUAR');
+                    cat = 'SPBU_LUAR';
                   } else if (activeSubModule === 'oil_dist' || activeSubModule === 'oil_stock') {
-                    setExportCategoryTarget('OLI_PER_TIPE');
-                  } else {
-                    setExportCategoryTarget('ALL');
+                    cat = 'OLI_PER_TIPE';
                   }
-                  setShowExportModal(true);
+                  handleOpenExportWithSettings(cat);
                 }}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
                 title="Download / Cetak Dokumen Laporan Resmi Bahan Bakar & Pelumas (.pdf)"
@@ -905,10 +925,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             manpowerList={manpowerList}
             outFieldFuelRecords={outFieldFuelRecords}
             currentUser={currentUser}
-            onOpenExportPDF={() => {
-              setExportCategoryTarget('SPBU_LUAR');
-              setShowExportModal(true);
-            }}
+            onOpenExportPDF={(settings) => handleOpenExportWithSettings('SPBU_LUAR', settings)}
             onSaveRecord={onSaveOutFieldFuelRecord}
             onDeleteRecord={onDeleteOutFieldFuelRecord}
             standardSolarPrice={standardSolarPrice}
@@ -960,10 +977,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             equipmentList={units}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={() => {
-              setExportCategoryTarget('FUEL_TRUCK');
-              setShowExportModal(true);
-            }}
+            onOpenExportPDF={(settings) => handleOpenExportWithSettings('FUEL_TRUCK', settings)}
             onSave={onSaveFuelDistribution}
             onDelete={onDeleteFuelDistribution}
           />
@@ -1284,6 +1298,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         currentUser={currentUser}
         defaultCategory={exportCategoryTarget}
         manpowerList={manpowerList}
+        initialGroupBy={exportModalGroupBy}
+        initialUnitFilter={exportModalUnitFilter}
+        initialStartDate={exportModalStartDate}
+        initialEndDate={exportModalEndDate}
       />
     </div>
   );

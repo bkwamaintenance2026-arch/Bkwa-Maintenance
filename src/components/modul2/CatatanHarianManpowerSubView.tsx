@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ManpowerData, 
   MANPOWER_JABATAN_OPTIONS, 
@@ -28,7 +28,10 @@ import {
   Filter,
   X,
   FileText,
-  UserCheck
+  UserCheck,
+  ShieldCheck,
+  CheckCheck,
+  Check
 } from 'lucide-react';
 import { canUserEdit, canUserExportModule } from '../../utils/storage';
 
@@ -41,6 +44,8 @@ interface CatatanHarianManpowerSubViewProps {
     idToEdit?: string
   ) => { success: boolean; message: string; record?: CatatanHarianManpowerRecord };
   onDeleteLog: (id: string) => { success: boolean; message: string };
+  onToggleApproveLog?: (id: string) => { success: boolean; message: string };
+  onBatchApproveLogs?: (date: string) => { success: boolean; message: string; count?: number };
 }
 
 export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubViewProps> = ({
@@ -49,6 +54,8 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   currentUser,
   onSaveLog,
   onDeleteLog,
+  onToggleApproveLog,
+  onBatchApproveLogs,
 }) => {
   const canEdit = canUserEdit(currentUser, 2);
   const canExport = canUserExportModule(currentUser, 2);
@@ -58,10 +65,33 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [filterAllDates, setFilterAllDates] = useState<boolean>(false);
 
+  // Filter Personil Modul 2 yang berjabatan Administrasi
+  const adminPersonnelList = useMemo(() => {
+    return manpowerList.filter((m) =>
+      (m.jabatan || '').toLowerCase().includes('admin')
+    );
+  }, [manpowerList]);
+
+  // Nama default personil administrasi (otomatis mendeteksi akun login atau personil administrasi pertama)
+  const defaultAdminName = useMemo(() => {
+    const match = adminPersonnelList.find(
+      (m) =>
+        m.nama.toLowerCase() === (currentUser.namaLengkap || '').toLowerCase() ||
+        m.nama.toLowerCase() === (currentUser.username || '').toLowerCase()
+    );
+    if (match) return match.nama;
+    if (adminPersonnelList.length > 0) return adminPersonnelList[0].nama;
+    return currentUser.namaLengkap || currentUser.username || 'Staf Administrasi';
+  }, [adminPersonnelList, currentUser]);
+
+  const kabagWorkshopName = 'Dodik Mariyadi';
+  const kabagWorkshopLabel = 'Dodik Mariyadi (Kabag Workshop)';
+
   // Search & Filter state di tabel
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterKeterangan, setFilterKeterangan] = useState<string>('ALL');
   const [filterJabatanTable, setFilterJabatanTable] = useState<string>('ALL');
+  const [filterApprovalTable, setFilterApprovalTable] = useState<string>('ALL'); // ALL | DISETUJUI | MENUNGGU_APPROVAL
 
   // Form State
   const [selectedJabatan, setSelectedJabatan] = useState<string>('');
@@ -71,12 +101,27 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const [jamStop, setJamStop] = useState<string>('17:00');
   const [keterangan, setKeterangan] = useState<KeteranganCatatanManpower>('Hadir');
   const [catatan, setCatatan] = useState<string>('');
+  const [dibuatOleh, setDibuatOleh] = useState<string>(defaultAdminName);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Print modal state
+  // Sync default admin name saat manpower list berubah
+  useEffect(() => {
+    if (!dibuatOleh || dibuatOleh === 'Staf Administrasi') {
+      setDibuatOleh(defaultAdminName);
+    }
+  }, [defaultAdminName]);
+
+  // Print modal state - Default: Pembuat = Administrasi, Disetujui = Dodik Mariyadi
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-  const [validatorKiri, setValidatorKiri] = useState<string>(currentUser.namaLengkap || currentUser.username || 'Pengawas Lapangan');
-  const [validatorKanan, setValidatorKanan] = useState<string>('Kepala Tehnik Tambang (KTT)');
+  const [validatorKiri, setValidatorKiri] = useState<string>(defaultAdminName);
+  const [validatorKanan, setValidatorKanan] = useState<string>(kabagWorkshopName);
+
+  // Update validatorKiri jika dibuatOleh berubah
+  useEffect(() => {
+    if (dibuatOleh) {
+      setValidatorKiri(dibuatOleh);
+    }
+  }, [dibuatOleh]);
 
   // Feedback alert
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -140,6 +185,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setJamStop('17:00');
     setKeterangan('Hadir');
     setCatatan('');
+    setDibuatOleh(defaultAdminName);
     setEditingId(null);
   };
 
@@ -217,6 +263,11 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       jamStop: isFullday ? '17:00' : jamStop,
       keterangan,
       catatan: catatan.trim(),
+      dibuatOleh: dibuatOleh.trim() || defaultAdminName,
+      disetujuiOleh: kabagWorkshopLabel,
+      statusApproval: editingId 
+        ? (logs.find((l) => l.id === editingId)?.statusApproval || 'MENUNGGU_APPROVAL') 
+        : 'MENUNGGU_APPROVAL',
     };
 
     const res = onSaveLog(payload, editingId || undefined);
@@ -247,6 +298,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setJamStop(record.jamStop || '17:00');
     setKeterangan((record.keterangan as KeteranganCatatanManpower) || 'Hadir');
     setCatatan(record.catatan || '');
+    setDibuatOleh(record.dibuatOleh || defaultAdminName);
 
     setFeedback({
       type: 'info',
@@ -256,6 +308,54 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     const formEl = document.getElementById('form-catatan-harian-manpower');
     if (formEl) {
       formEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // Approval Handlers (Kabag Workshop)
+  const handleToggleApprove = (record: CatatanHarianManpowerRecord) => {
+    if (!canEdit) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki wewenang untuk mengubah status approval.',
+      });
+      return;
+    }
+
+    if (onToggleApproveLog) {
+      const res = onToggleApproveLog(record.id);
+      setFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message,
+      });
+    }
+  };
+
+  const handleBatchApproveCurrentDate = () => {
+    if (!canEdit) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki wewenang untuk mengubah status approval.',
+      });
+      return;
+    }
+
+    const pendingItems = logs.filter(
+      (l) => l.tanggal === selectedDate && l.statusApproval !== 'DISETUJUI'
+    );
+    if (pendingItems.length === 0) {
+      setFeedback({
+        type: 'info',
+        message: `Semua catatan harian tanggal ${selectedDate} sudah disetujui oleh Kabag Workshop (${kabagWorkshopName}).`,
+      });
+      return;
+    }
+
+    if (onBatchApproveLogs) {
+      const res = onBatchApproveLogs(selectedDate);
+      setFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message,
+      });
     }
   };
 
@@ -303,6 +403,14 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
         return false;
       }
 
+      // Filter Status Approval
+      if (filterApprovalTable !== 'ALL') {
+        const status = log.statusApproval || 'MENUNGGU_APPROVAL';
+        if (status !== filterApprovalTable) {
+          return false;
+        }
+      }
+
       // Search Query
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase();
@@ -311,14 +419,16 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
         const matchCatatan = (log.catatan || '').toLowerCase().includes(q);
         const matchNik = (log.nik || '').toLowerCase().includes(q);
         const matchKet = (log.keterangan || '').toLowerCase().includes(q);
-        if (!matchNama && !matchJabatan && !matchCatatan && !matchNik && !matchKet) {
+        const matchDibuat = (log.dibuatOleh || '').toLowerCase().includes(q);
+        const matchApprove = (log.disetujuiOleh || '').toLowerCase().includes(q);
+        if (!matchNama && !matchJabatan && !matchCatatan && !matchNik && !matchKet && !matchDibuat && !matchApprove) {
           return false;
         }
       }
 
       return true;
     });
-  }, [logs, selectedDate, filterAllDates, filterKeterangan, filterJabatanTable, searchTerm]);
+  }, [logs, selectedDate, filterAllDates, filterKeterangan, filterJabatanTable, filterApprovalTable, searchTerm]);
 
   // Ringkasan KPI Harian pada tanggal yang dipilih
   const dailyStats = useMemo(() => {
@@ -331,8 +441,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     const dinasLuar = listForDate.filter((l) => l.keterangan === 'Dinas Luar').length;
     const tukarJam = listForDate.filter((l) => l.keterangan === 'Tukar jam').length;
     const lembur = listForDate.filter((l) => l.keterangan === 'Lembur').length;
+    const disetujuiCount = listForDate.filter((l) => l.statusApproval === 'DISETUJUI').length;
+    const pendingApprovalCount = listForDate.filter((l) => (l.statusApproval || 'MENUNGGU_APPROVAL') !== 'DISETUJUI').length;
 
-    return { total, hadir, sakit, ijin, cuti, dinasLuar, tukarJam, lembur };
+    return { total, hadir, sakit, ijin, cuti, dinasLuar, tukarJam, lembur, disetujuiCount, pendingApprovalCount };
   }, [logs, selectedDate]);
 
   // Helper Badge Keterangan
@@ -365,7 +477,11 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       'JAM STOP',
       'STATUS FULLDAY',
       'KETERANGAN',
-      'CATATAN'
+      'CATATAN',
+      'DIBUAT OLEH (ADMINISTRASI)',
+      'APPROVAL (KABAG WORKSHOP)',
+      'STATUS APPROVAL',
+      'TANGGAL APPROVAL'
     ];
 
     const rows = filteredLogs.map((item, idx) => [
@@ -379,6 +495,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       `"${item.isFullday ? 'YA (FULLDAY)' : 'TIDAK'}"`,
       `"${item.keterangan || ''}"`,
       `"${(item.catatan || '').replace(/"/g, '""')}"`,
+      `"${(item.dibuatOleh || 'Staf Administrasi').replace(/"/g, '""')}"`,
+      `"${(item.disetujuiOleh || kabagWorkshopLabel).replace(/"/g, '""')}"`,
+      `"${item.statusApproval === 'DISETUJUI' ? 'DISETUJUI' : 'MENUNGGU_APPROVAL'}"`,
+      `"${item.tglApproval || '-'}"`,
     ]);
 
     const csvContent =
@@ -528,7 +648,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       {/* ========================================================================= */}
       {/* 2. KPI SUMMARY BAR KEHADIRAN HARIAN */}
       {/* ========================================================================= */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5">
         <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-stone-400 block mb-1">
             TOTAL
@@ -608,6 +728,29 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             <span className="text-[10px] font-mono text-stone-500">Org</span>
           </div>
         </div>
+
+        {/* Status Approval KPI */}
+        <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 block mb-1 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+            DISETUJUI
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-emerald-300">{dailyStats.disetujuiCount}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+        </div>
+
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-400 block mb-1 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3 text-amber-400" />
+            MENUNGGU
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-amber-300">{dailyStats.pendingApprovalCount}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -629,7 +772,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               </h3>
             </div>
             <p className="text-xs text-stone-400 mt-1">
-              Pilih <strong>Jabatan</strong> untuk memfilter daftar <strong>Nama</strong>, atur jam kerja / Fullday, tentukan status keterangan dan catatan.
+              Dibuat oleh <strong>Administrasi</strong>, disetujui oleh <strong>Kabag Workshop (Dodik Mariyadi)</strong>. Atur jam kerja / Fullday, status kehadiran, dan catatan.
             </p>
           </div>
 
@@ -806,6 +949,57 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
+
+            {/* 7. DIBUAT OLEH (ADMINISTRASI) & 8. APPROVAL (KABAG WORKSHOP) */}
+            <div className="sm:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3.5 bg-stone-950/80 border border-stone-800 rounded-2xl">
+              <div>
+                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-sky-400 mb-1 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-sky-400" />
+                  <span>DIBUAT OLEH: ADMINISTRASI (MODUL 2)</span>
+                </label>
+                <div className="relative">
+                  <select
+                    id="select-catatan-dibuat-oleh"
+                    value={dibuatOleh}
+                    onChange={(e) => setDibuatOleh(e.target.value)}
+                    className="w-full bg-stone-800/90 border border-sky-500/30 rounded-xl px-3 py-2 text-xs text-sky-100 font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  >
+                    {adminPersonnelList.map((admin) => (
+                      <option key={admin.id} value={admin.nama}>
+                        {admin.nama} ({admin.jabatan || 'Administrasi'})
+                      </option>
+                    ))}
+                    {!adminPersonnelList.some((a) => a.nama.toLowerCase() === dibuatOleh.toLowerCase()) && (
+                      <option value={dibuatOleh}>
+                        {dibuatOleh} (Staf Administrasi)
+                      </option>
+                    )}
+                  </select>
+                </div>
+                <span className="text-[10px] text-stone-500 mt-1 block font-mono">
+                  * Otomatis memuat personil berjabatan Administrasi dari Modul 2
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400 mb-1 flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>APPROVAL: KABAG WORKSHOP</span>
+                </label>
+                <div className="flex items-center justify-between bg-stone-800/90 border border-emerald-500/30 rounded-xl px-3 py-2 text-xs">
+                  <span className="font-bold text-emerald-200">
+                    {kabagWorkshopLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    Penanggung Jawab
+                  </span>
+                </div>
+                <span className="text-[10px] text-stone-500 mt-1 block font-mono">
+                  * Otoritas pengesahan akhir laporan harian oleh Kabag Workshop
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Form Actions */}
@@ -895,6 +1089,30 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               ))}
             </select>
 
+            {/* Filter Status Approval */}
+            <select
+              value={filterApprovalTable}
+              onChange={(e) => setFilterApprovalTable(e.target.value)}
+              className="bg-stone-800 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              <option value="ALL">Semua Status Approval</option>
+              <option value="DISETUJUI">Disetujui Kabag Workshop</option>
+              <option value="MENUNGGU_APPROVAL">Menunggu Approval</option>
+            </select>
+
+            {/* Tombol Setujui Semua (Batch Approve per Tanggal) */}
+            {canEdit && dailyStats.pendingApprovalCount > 0 && !filterAllDates && (
+              <button
+                type="button"
+                onClick={handleBatchApproveCurrentDate}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap animate-pulse"
+                title={`Setujui seluruh ${dailyStats.pendingApprovalCount} catatan tanggal ${selectedDate} sebagai Kabag Workshop`}
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                <span>Setujui Semua ({dailyStats.pendingApprovalCount} Menunggu)</span>
+              </button>
+            )}
+
             {/* Tombol Cetak Dokumen */}
             <button
               type="button"
@@ -947,6 +1165,8 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 <th className="py-3 px-3">JAM START — STOP</th>
                 <th className="py-3 px-3">KETERANGAN</th>
                 <th className="py-3 px-3">CATATAN</th>
+                <th className="py-3 px-3">DIBUAT OLEH (ADMIN)</th>
+                <th className="py-3 px-3">APPROVAL KABAG WORKSHOP</th>
                 <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                   AKSI
                 </th>
@@ -956,6 +1176,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               {filteredLogs.length > 0 ? (
                 filteredLogs.map((item, idx) => {
                   const isBeingEdited = editingId === item.id;
+                  const isApproved = item.statusApproval === 'DISETUJUI';
                   return (
                     <tr
                       key={item.id}
@@ -1015,7 +1236,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                       </td>
 
                       {/* CATATAN */}
-                      <td className="py-3 px-3 min-w-[220px]">
+                      <td className="py-3 px-3 min-w-[180px]">
                         {item.catatan ? (
                           <p className="text-xs text-amber-200/90 bg-amber-950/20 border border-amber-900/30 rounded-lg px-2.5 py-1 whitespace-pre-wrap">
                             {item.catatan}
@@ -1023,6 +1244,65 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                         ) : (
                           <span className="text-stone-600 italic text-[11px]">-</span>
                         )}
+                      </td>
+
+                      {/* DIBUAT OLEH (ADMINISTRASI) */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-sky-200 text-xs">
+                            {item.dibuatOleh || 'Staf Administrasi'}
+                          </span>
+                          <span className="text-[10px] bg-sky-950/60 text-sky-300 border border-sky-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
+                            Admin
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* APPROVAL (KABAG WORKSHOP) */}
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="space-y-1">
+                          {isApproved ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>DISETUJUI</span>
+                              </span>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleApprove(item)}
+                                  className="text-[10px] text-stone-400 hover:text-rose-400 underline font-mono"
+                                  title="Batalkan approval Kabag Workshop"
+                                >
+                                  Batal
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">
+                                <AlertCircle className="w-3 h-3 text-amber-400" />
+                                <span>MENUNGGU</span>
+                              </span>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleApprove(item)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                                  title="Setujui catatan harian ini sebagai Kabag Workshop (Dodik Mariyadi)"
+                                >
+                                  <Check className="w-2.5 h-2.5" />
+                                  <span>Setujui</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          <span className="text-[10px] text-stone-500 block font-mono">
+                            {isApproved
+                              ? `${item.disetujuiOleh || kabagWorkshopName} (${item.tglApproval || item.tanggal})`
+                              : `Kabag: ${kabagWorkshopName}`}
+                          </span>
+                        </div>
                       </td>
 
                       {/* AKSI */}
@@ -1064,7 +1344,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-stone-400 text-xs">
+                  <td colSpan={10} className="py-12 text-center text-stone-400 text-xs">
                     <div className="space-y-1">
                       <p className="font-bold text-stone-300">
                         Belum ada catatan harian manpower {filterAllDates ? '' : `untuk tanggal ${selectedDate}`}.
@@ -1108,26 +1388,33 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             <div className="p-4 bg-stone-50 border-b border-stone-200 text-xs grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
               <div>
                 <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                  Pengesahan Kiri (Pengawas / Checker):
+                  Dibuat Oleh (Administrasi):
                 </label>
-                <input
-                  type="text"
+                <select
                   value={validatorKiri}
                   onChange={(e) => setValidatorKiri(e.target.value)}
-                  placeholder="Nama Pengawas Lapangan"
-                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
+                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  {adminPersonnelList.map((a) => (
+                    <option key={a.id} value={a.nama}>
+                      {a.nama} ({a.jabatan || 'Administrasi'})
+                    </option>
+                  ))}
+                  {!adminPersonnelList.some((a) => a.nama.toLowerCase() === validatorKiri.toLowerCase()) && (
+                    <option value={validatorKiri}>{validatorKiri}</option>
+                  )}
+                </select>
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                  Pengesahan Kanan (KTT / Kabag):
+                  Disetujui Oleh (Kabag Workshop):
                 </label>
                 <input
                   type="text"
                   value={validatorKanan}
                   onChange={(e) => setValidatorKanan(e.target.value)}
-                  placeholder="Nama Kepala Tehnik Tambang"
-                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  placeholder="Dodik Mariyadi"
+                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
             </div>
@@ -1168,7 +1455,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               </div>
 
               {/* Ringkasan Kehadiran */}
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 text-center text-[10px] font-mono">
+              <div className="grid grid-cols-3 sm:grid-cols-9 gap-2 text-center text-[10px] font-mono">
                 <div className="p-1.5 bg-stone-50 border border-stone-300 rounded">
                   <span className="text-stone-500 block">Total</span>
                   <strong className="text-stone-900 text-xs">{dailyStats.total}</strong>
@@ -1197,6 +1484,14 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                   <span className="text-amber-800 block">Tukar/Lembur</span>
                   <strong className="text-amber-700 text-xs">{dailyStats.tukarJam + dailyStats.lembur}</strong>
                 </div>
+                <div className="p-1.5 bg-emerald-100 border border-emerald-400 rounded">
+                  <span className="text-emerald-900 block font-bold">Disetujui</span>
+                  <strong className="text-emerald-800 text-xs">{dailyStats.disetujuiCount}</strong>
+                </div>
+                <div className="p-1.5 bg-amber-100 border border-amber-400 rounded">
+                  <span className="text-amber-900 block font-bold">Pending</span>
+                  <strong className="text-amber-800 text-xs">{dailyStats.pendingApprovalCount}</strong>
+                </div>
               </div>
 
               {/* Tabel Cetak */}
@@ -1210,6 +1505,8 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                       <th className="py-2 px-2">Jam Kerja</th>
                       <th className="py-2 px-2">Keterangan</th>
                       <th className="py-2 px-2">Catatan Khusus</th>
+                      <th className="py-2 px-2">Dibuat Oleh</th>
+                      <th className="py-2 px-2">Approval</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-200">
@@ -1223,11 +1520,25 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                         </td>
                         <td className="py-2 px-2 font-bold text-stone-800">{item.keterangan || 'Hadir'}</td>
                         <td className="py-2 px-2 text-stone-700">{item.catatan || '-'}</td>
+                        <td className="py-2 px-2 font-semibold text-sky-900 whitespace-nowrap">
+                          {item.dibuatOleh || 'Administrasi'}
+                        </td>
+                        <td className="py-2 px-2 font-mono whitespace-nowrap">
+                          {item.statusApproval === 'DISETUJUI' ? (
+                            <span className="text-emerald-700 font-bold">
+                              Disetujui ({kabagWorkshopName})
+                            </span>
+                          ) : (
+                            <span className="text-amber-700 font-medium">
+                              Menunggu
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {filteredLogs.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-stone-500 italic">
+                        <td colSpan={8} className="py-6 text-center text-stone-500 italic">
                           Tidak ada catatan manpower untuk tanggal ini.
                         </td>
                       </tr>
@@ -1236,27 +1547,27 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 </table>
               </div>
 
-              {/* Dua Kolom Validasi Tanda Tangan */}
+              {/* Dua Kolom Validasi Tanda Tangan: Dibuat Oleh Administrasi & Disetujui Oleh Kabag Workshop */}
               <div className="pt-8 grid grid-cols-2 gap-12 text-center font-mono text-xs">
                 <div>
-                  <p className="text-stone-600 mb-1">Dibuat &amp; Dilaporkan Oleh:</p>
-                  <p className="font-bold text-stone-900">Petugas / Pengawas Lapangan</p>
+                  <p className="text-stone-600 mb-1">Dibuat Oleh:</p>
+                  <p className="font-bold text-stone-900">Administrasi Workshop</p>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
                   </div>
                   <p className="font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
-                    {validatorKiri || '( ........................................ )'}
+                    {validatorKiri || '( Administrasi )'}
                   </p>
                 </div>
 
                 <div>
-                  <p className="text-stone-600 mb-1">Mengetahui &amp; Menyetujui:</p>
-                  <p className="font-bold text-stone-900">Kepala Tehnik Tambang (KTT)</p>
+                  <p className="text-stone-600 mb-1">Disetujui Oleh:</p>
+                  <p className="font-bold text-stone-900">Kabag Workshop</p>
                   <div className="h-16 flex items-end justify-center">
                     <span className="text-[10px] text-stone-400 italic">( Tanda Tangan &amp; Cap )</span>
                   </div>
                   <p className="font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
-                    {validatorKanan || '( ........................................ )'}
+                    {validatorKanan || kabagWorkshopName}
                   </p>
                 </div>
               </div>
