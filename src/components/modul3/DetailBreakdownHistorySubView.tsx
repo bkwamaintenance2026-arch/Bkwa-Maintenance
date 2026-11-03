@@ -36,9 +36,10 @@ import {
   FileText,
   Users,
   Save,
-  Check
+  Check,
+  MapPin
 } from 'lucide-react';
-import { getAllSparePartTransactions, isDeveloper, getAllManpower } from '../../utils/storage';
+import { getAllSparePartTransactions, isDeveloper, getAllManpower, canUserDeleteModule } from '../../utils/storage';
 import { 
   resolveReportSignatories, 
   getSavedReportSignatories, 
@@ -66,6 +67,14 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   onDeleteBreakdown,
 }) => {
   const isDev = isDeveloper(currentUser);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 3) || currentUser.role === 'ADMIN' || currentUser.accountTier === 'ADMIN';
+
+  // State tampilan: 'CARDS' (Kartu No MO dengan rincian harian) vs 'TABLE' (Tabel ringkas)
+  const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
+
+  // Modal Konfirmasi Hapus Breakdown
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<BreakdownRecord | null>(null);
+
   // Transaksi Spare Part dari Modul 6 (Inventory Management)
   const [sparePartTrxList, setSparePartTrxList] = useState<SparePartTransaction[]>([]);
 
@@ -448,6 +457,18 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
     } catch (e) {
       console.error('Error generating Detail Breakdown PDF preview', e);
       handleExportPDF();
+    }
+  };
+
+  // Handler Pratinjau PDF Khusus 1 No MO Saja
+  const handlePreviewSingleMO = (b: BreakdownRecord) => {
+    try {
+      const result = generateDetailHistoryPDF([b], b.noUnit, currentUser, signatories);
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating single MO PDF preview', e);
     }
   };
 
@@ -988,7 +1009,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
         </div>
       )}
 
-      {/* TABEL DETAIL RIWAYAT BREAKDOWN & PART YANG PERNAH DIGANTI */}
+      {/* DAFTAR RIWAYAT BREAKDOWN & PART YANG PERNAH DIGANTI */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-800">
           <div>
@@ -999,6 +1020,34 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
             <p className="text-xs text-stone-400 mt-0.5">
               Menampilkan {filteredBreakdowns.length} order perbaikan sesuai kriteria pencarian Anda.
             </p>
+          </div>
+
+          {/* Switcher Tampilan: Kartu No MO vs Tabel Ringkas */}
+          <div className="flex items-center gap-1 p-1 bg-stone-950 rounded-xl border border-stone-800 text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setViewMode('CARDS')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'CARDS'
+                  ? 'bg-amber-500 text-stone-950 shadow'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Kartu No MO (Rincian Harian)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('TABLE')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'TABLE'
+                  ? 'bg-amber-500 text-stone-950 shadow'
+                  : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Tabel Ringkas</span>
+            </button>
           </div>
         </div>
 
@@ -1012,7 +1061,267 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               Tidak ditemukan data breakdown dengan kriteria filter saat ini. Silakan ubah filter tanggal atau pilih &quot;Semua Unit&quot;.
             </p>
           </div>
+        ) : viewMode === 'CARDS' ? (
+          /* TAMPILAN KARTU NO MO DENGAN TABEL RINCIAN UPDATE HARIAN */
+          <div className="space-y-6">
+            {filteredBreakdowns.map((b) => {
+              const parts = extractAllPartsFromRecord(b);
+              const isReady = (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() === 'READY';
+              const isLimit = (b.statusUnit || '').toUpperCase().trim() === 'LIMIT OPERASI';
+              const moNumber = b.noMaintenanceOrder || b.noNotifikasi || '-';
+
+              const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+                ? b.riwayatUpdate
+                : [{
+                    id: 'init',
+                    tanggal: b.tanggal || '-',
+                    startJob: b.jamStart || b.startJob || '-',
+                    finishJob: b.jamFinish || b.finishJob || '-',
+                    detailPekerjaan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+                    progress: b.progress || 'On Progress',
+                    statusUnit: b.statusUnit || 'BREAKDOWN',
+                    pic1: b.pic1,
+                    pic2: b.pic2,
+                    pic3: b.pic3,
+                    remark: '-'
+                  }];
+
+              return (
+                <div
+                  key={b.id}
+                  className="bg-stone-950/80 border border-stone-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-4 hover:border-stone-700 transition"
+                >
+                  {/* Header Kartu MO */}
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-stone-800">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedBreakdownForPartReq(b);
+                            setShowPartReqModal(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-mono font-black flex items-center gap-1.5 transition cursor-pointer"
+                          title="Klik untuk melihat kebutuhan part & kirim ke Malang"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          <span>REFF NO. MO: {moNumber}</span>
+                          <ExternalLink className="w-3 h-3 text-amber-400" />
+                        </button>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-900 text-stone-400 border border-stone-800">
+                          Notif: {b.noNotifikasi}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-stone-200">
+                        <Truck className="w-4 h-4 text-amber-400" />
+                        <span className="text-sm font-black font-mono text-stone-100">{b.noUnit}</span>
+                        <span className="text-xs text-stone-400">({b.namaAlat || b.noLama || '-'} • {b.jenis || '-'})</span>
+                      </div>
+                    </div>
+
+                    {/* Status & Action Buttons */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-900 text-stone-300 border border-stone-800 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-stone-400" />
+                        {b.tanggal} {b.jamBreakdown ? `(${b.jamBreakdown})` : ''}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-950/80 text-rose-300 border border-rose-800/50">
+                        {b.component || 'Other'}
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
+                          isReady
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            : isLimit
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                        }`}
+                      >
+                        {isReady ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                        {b.statusUnit || 'BREAKDOWN'} ({b.progress || 'On Progress'})
+                      </span>
+
+                      {/* Tombol Aksi per Kartu */}
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                          type="button"
+                          onClick={() => handlePreviewSingleMO(b)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-[11px] font-mono font-semibold transition cursor-pointer"
+                          title="Pratinjau / Print PDF untuk MO Ini"
+                        >
+                          <Printer className="w-3 h-3 text-amber-400" />
+                          <span>Print MO</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedBreakdownForPartReq(b);
+                            setShowPartReqModal(true);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/40 text-[11px] font-mono font-semibold transition cursor-pointer"
+                          title="Permintaan Part ke Malang"
+                        >
+                          <Package className="w-3 h-3 text-rose-400" />
+                          <span>Part Malang</span>
+                        </button>
+                        {onNavigateToUpdate && !isReady && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToUpdate(b)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 hover:text-stone-950 text-amber-300 border border-amber-500/30 text-[11px] font-mono font-bold transition cursor-pointer"
+                            title="Lanjutkan update di Sub Modul 2"
+                          >
+                            <Wrench className="w-3 h-3" />
+                            <span>Update</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setActiveModalRecord(b)}
+                          className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
+                          title="Buka Modal Komprehensif"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        {canDelete && onDeleteBreakdown && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTarget(b)}
+                            className="p-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition cursor-pointer"
+                            title="Hapus Laporan Breakdown"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Problem Awal Info */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-3 rounded-xl bg-stone-900/60 border border-stone-800/80 text-xs font-mono">
+                    <div>
+                      <span className="text-stone-500 block text-[10px]">PELAPOR &amp; LOKASI:</span>
+                      <span className="text-stone-200 font-semibold">{b.pelapor || '-'} ({b.jabatan || 'Pelapor'})</span>
+                      <div className="text-stone-400 text-[11px] flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 text-amber-500/70" />
+                        {b.lokasi || '-'}
+                      </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <span className="text-stone-500 block text-[10px]">PROBLEM AWAL &amp; KELUHAN:</span>
+                      <p className="text-stone-200 font-sans text-xs mt-0.5">{b.detailProblem || '-'}</p>
+                    </div>
+                  </div>
+
+                  {/* TABEL 1: RINCIAN UPDATE PEKERJAAN HARIAN */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+                        Riwayat Update Pekerjaan Harian ({updates.length} Catatan)
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-stone-800">
+                      <table className="w-full text-left text-[11px] font-mono text-stone-300">
+                        <thead className="bg-stone-950 text-[10px] uppercase text-stone-400 border-b border-stone-800">
+                          <tr>
+                            <th className="p-2 w-8 text-center">No</th>
+                            <th className="p-2 w-24">Tanggal</th>
+                            <th className="p-2 w-28">Jam Kerja</th>
+                            <th className="p-2">Tindakan / Detail Pekerjaan</th>
+                            <th className="p-2 w-24">Progress</th>
+                            <th className="p-2 w-28">Status Unit</th>
+                            <th className="p-2 w-44">PIC Mekanik</th>
+                            <th className="p-2 w-32">Remark</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-800/60">
+                          {updates.map((u: any, uIdx: number) => {
+                            const jamStr = (u.startJob || u.finishJob)
+                              ? `${u.startJob || '-'} s/d ${u.finishJob || 'Proses'}`
+                              : (u.jamPekerjaan || '-');
+                            const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || b.pelapor || '-';
+
+                            return (
+                              <tr key={u.id || uIdx} className="hover:bg-stone-900/40">
+                                <td className="p-2 text-center text-stone-500">{uIdx + 1}</td>
+                                <td className="p-2 text-stone-200 whitespace-nowrap">{u.tanggal || '-'}</td>
+                                <td className="p-2 text-stone-300 whitespace-nowrap">{jamStr}</td>
+                                <td className="p-2 font-sans text-stone-100">{u.detailPekerjaan || '-'}</td>
+                                <td className="p-2 text-amber-400 font-semibold whitespace-nowrap">{u.progress || '-'}</td>
+                                <td className="p-2 whitespace-nowrap">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      (u.statusUnit || '').toUpperCase().trim() === 'READY'
+                                        ? 'bg-emerald-500/20 text-emerald-400'
+                                        : (u.statusUnit || '').toUpperCase().trim() === 'LIMIT OPERASI'
+                                        ? 'bg-amber-500/20 text-amber-400'
+                                        : 'bg-rose-500/20 text-rose-400'
+                                    }`}
+                                  >
+                                    {u.statusUnit || '-'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-stone-300 font-sans">{pics}</td>
+                                <td className="p-2 text-stone-400 text-[10px]">{u.remark || '-'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* TABEL 2: KEBUTUHAN & PENGGUNAAN PART / JASA */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Package className="w-3.5 h-3.5 text-blue-400" />
+                      <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+                        Kebutuhan &amp; Penggunaan Part / Jasa ({parts.length} Item)
+                      </span>
+                    </div>
+                    {parts.length === 0 ? (
+                      <div className="p-2.5 rounded-xl bg-stone-900/40 border border-stone-800 text-[11px] font-mono text-stone-500 italic">
+                        Tidak ada part atau jasa khusus tercatat untuk perbaikan nomor MO ini (Inspeksi teknisi / Penyetelan mekanis).
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-stone-800">
+                        <table className="w-full text-left text-[11px] font-mono text-stone-300">
+                          <thead className="bg-stone-950 text-[10px] uppercase text-stone-400 border-b border-stone-800">
+                            <tr>
+                              <th className="p-2 w-8 text-center">No</th>
+                              <th className="p-2 w-20">Jenis</th>
+                              <th className="p-2">Nama Part / Jasa</th>
+                              <th className="p-2 w-36">Part Number</th>
+                              <th className="p-2 w-20 text-right">Qty</th>
+                              <th className="p-2 w-20">Satuan</th>
+                              <th className="p-2 w-48">Remark</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-800/60">
+                            {parts.map((p, pIdx) => (
+                              <tr key={pIdx} className="hover:bg-stone-900/40">
+                                <td className="p-2 text-center text-stone-500">{pIdx + 1}</td>
+                                <td className="p-2 font-bold text-amber-400">{p.jenis}</td>
+                                <td className="p-2 font-semibold text-stone-100">{p.namaPart}</td>
+                                <td className="p-2 text-stone-400 font-mono">{p.partNumber || '-'}</td>
+                                <td className="p-2 text-right font-bold text-amber-300">{p.qty}</td>
+                                <td className="p-2 text-stone-400">{p.satuan}</td>
+                                <td className="p-2 text-stone-400 text-[10px]">{p.remark || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* TAMPILAN TABEL RINGKAS */
           <div className="overflow-x-auto rounded-xl border border-stone-800">
             <table className="w-full text-left text-xs text-stone-300">
               <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
@@ -1155,6 +1464,14 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
+                            onClick={() => handlePreviewSingleMO(b)}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
+                            title="Pratinjau / Print PDF untuk MO Ini"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-amber-400" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setSelectedBreakdownForPartReq(b);
                               setShowPartReqModal(true);
@@ -1168,12 +1485,22 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           <button
                             type="button"
                             onClick={() => setActiveModalRecord(b)}
-                            className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[10.5px] font-bold border border-stone-700 transition flex items-center gap-1 cursor-pointer"
+                            className="px-2 py-1.5 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[10.5px] font-bold border border-stone-700 transition flex items-center gap-1 cursor-pointer"
                             title="Buka Detail Lengkap Kasus"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Detail</span>
                           </button>
+                          {canDelete && onDeleteBreakdown && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmTarget(b)}
+                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition cursor-pointer"
+                              title="Hapus Laporan Breakdown"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1578,16 +1905,15 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
             {/* Modal Footer */}
             <div className="p-4 sm:p-5 border-t border-stone-800 bg-stone-950/80 flex items-center justify-between gap-3">
               <div>
-                {onDeleteBreakdown && (
+                {canDelete && onDeleteBreakdown && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Hapus laporan breakdown ${activeModalRecord.noNotifikasi} (Unit ${activeModalRecord.noUnit})?`)) {
-                        onDeleteBreakdown(activeModalRecord.id);
-                        setActiveModalRecord(null);
-                      }
+                      const target = activeModalRecord;
+                      setActiveModalRecord(null);
+                      setDeleteConfirmTarget(target);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition cursor-pointer"
                     title="Hapus Laporan Breakdown"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1631,6 +1957,74 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus Breakdown */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-md shadow-2xl p-6">
+            <div className="flex items-center gap-3 pb-4 border-b border-stone-800">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-stone-100">Konfirmasi Hapus Laporan</h3>
+                <p className="text-xs text-stone-400">Tindakan ini permanen dan akan menghapus data dari Firestore.</p>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3.5 rounded-xl bg-stone-950/60 border border-stone-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-400">No Notifikasi:</span>
+                <span className="font-mono font-bold text-amber-400">{deleteConfirmTarget.noNotifikasi}</span>
+              </div>
+              {deleteConfirmTarget.noMaintenanceOrder && (
+                <div className="flex justify-between">
+                  <span className="text-stone-400">No MO:</span>
+                  <span className="font-mono font-bold text-stone-200">{deleteConfirmTarget.noMaintenanceOrder}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-stone-400">Unit:</span>
+                <span className="font-bold text-stone-200">{deleteConfirmTarget.noUnit} ({deleteConfirmTarget.jenis || '-'})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-400">Komponen:</span>
+                <span className="text-stone-300">{deleteConfirmTarget.component || '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-400">Tanggal:</span>
+                <span className="text-stone-300">{deleteConfirmTarget.tanggal}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 hover:bg-stone-700 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteBreakdown && deleteConfirmTarget) {
+                    const res = onDeleteBreakdown(deleteConfirmTarget.id);
+                    if (res && !res.success) {
+                      alert(res.message);
+                    }
+                  }
+                  setDeleteConfirmTarget(null);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-900/30 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Laporan</span>
+              </button>
             </div>
           </div>
         </div>

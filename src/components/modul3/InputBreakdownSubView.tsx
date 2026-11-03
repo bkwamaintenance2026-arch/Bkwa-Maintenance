@@ -31,7 +31,7 @@ import {
   ArrowRight,
   Trash2
 } from 'lucide-react';
-import { isDeveloper } from '../../utils/storage';
+import { isDeveloper, canUserDeleteModule } from '../../utils/storage';
 
 interface InputBreakdownSubViewProps {
   units: AssetUnit[];
@@ -55,6 +55,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   onDeleteBreakdown,
 }) => {
   const isDev = isDeveloper(currentUser);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 3) || currentUser.role === 'ADMIN' || currentUser.accountTier === 'ADMIN';
   // Ambil daftar unik jenis unit dari Modul 1
   const availableJenisList = Array.from(
     new Set(units.map((u) => u.jenis).filter((j) => Boolean(j && j.trim())))
@@ -106,6 +107,9 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   // Modal View Detail Notifikasi
   const [viewingRecord, setViewingRecord] = useState<BreakdownRecord | null>(null);
 
+  // Modal Konfirmasi Hapus Breakdown
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<BreakdownRecord | null>(null);
+
   // Tab filter tampilan tabel di bawah: ACTIVE (sedang breakdown) vs ALL (semua riwayat)
   const [tableFilterTab, setTableFilterTab] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
 
@@ -117,6 +121,15 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   }, [breakdowns]);
 
   const displayedBreakdownRecords = tableFilterTab === 'ACTIVE' ? activeBreakdownRecords : breakdowns;
+
+  // Urutkan data: yang terbaru di bagian atas
+  const sortedBreakdownRecords = useMemo(() => {
+    return [...displayedBreakdownRecords].sort((a, b) => {
+      const dateA = a.updatedAt || a.createdAt || `${a.tanggal} ${a.jamBreakdown || '00:00'}`;
+      const dateB = b.updatedAt || b.createdAt || `${b.tanggal} ${b.jamBreakdown || '00:00'}`;
+      return dateB.localeCompare(dateA);
+    });
+  }, [displayedBreakdownRecords]);
 
   // Cek apakah unit terpilih saat ini sedang aktif breakdown (status belum READY)
   const norm = (s: string = '') => s.toLowerCase().replace(/[\s\-_]/g, '').trim();
@@ -859,7 +872,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
-                {displayedBreakdownRecords.map((b) => (
+                {sortedBreakdownRecords.map((b) => (
                   <tr key={b.id} className="hover:bg-stone-800/40 transition">
                     <td className="px-3 py-3 font-bold text-amber-400 whitespace-nowrap">
                       {b.noMaintenanceOrder || b.noNotifikasi}
@@ -922,17 +935,13 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                           <span>View</span>
                         </button>
 
-                        {/* Tombol HAPUS: Khusus Akun Developer */}
-                        {isDev && onDeleteBreakdown && (
+                        {/* Tombol HAPUS: Untuk Admin / Developer */}
+                        {canDelete && onDeleteBreakdown && (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm(`Hapus laporan kerusakan ${b.noNotifikasi} (Unit ${b.noUnit})?`)) {
-                                onDeleteBreakdown(b.id);
-                              }
-                            }}
-                            className="p-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition"
-                            title="Hapus Laporan Breakdown (Developer Only)"
+                            onClick={() => setDeleteConfirmTarget(b)}
+                            className="p-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition cursor-pointer"
+                            title="Hapus Laporan Kerusakan Ini"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -1082,17 +1091,16 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
             <div className="mt-6 flex items-center justify-between pt-3 border-t border-stone-800">
               <div>
-                {isDev && onDeleteBreakdown && (
+                {canDelete && onDeleteBreakdown && (
                   <button
                     type="button"
                     onClick={() => {
-                      if (confirm(`Hapus laporan kerusakan ${viewingRecord.noNotifikasi} (Unit ${viewingRecord.noUnit})?`)) {
-                        onDeleteBreakdown(viewingRecord.id);
-                        setViewingRecord(null);
-                      }
+                      const target = viewingRecord;
+                      setViewingRecord(null);
+                      setDeleteConfirmTarget(target);
                     }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition"
-                    title="Hapus Laporan Breakdown (Developer Only)"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/40 text-xs font-bold transition cursor-pointer"
+                    title="Hapus Laporan Breakdown"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Hapus Laporan</span>
@@ -1121,6 +1129,74 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS BREAKDOWN */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-md shadow-2xl p-6">
+            <div className="flex items-center gap-3 pb-4 border-b border-stone-800">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-stone-100">Konfirmasi Hapus Laporan</h3>
+                <p className="text-xs text-stone-400">Tindakan ini permanen dan akan menghapus data dari Firestore.</p>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3.5 rounded-xl bg-stone-950/60 border border-stone-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-stone-400">No Notifikasi:</span>
+                <span className="font-mono font-bold text-amber-400">{deleteConfirmTarget.noNotifikasi}</span>
+              </div>
+              {deleteConfirmTarget.noMaintenanceOrder && (
+                <div className="flex justify-between">
+                  <span className="text-stone-400">No MO:</span>
+                  <span className="font-mono font-bold text-stone-200">{deleteConfirmTarget.noMaintenanceOrder}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-stone-400">Unit:</span>
+                <span className="font-bold text-stone-200">{deleteConfirmTarget.noUnit} ({deleteConfirmTarget.jenis || '-'})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-400">Komponen:</span>
+                <span className="text-stone-300">{deleteConfirmTarget.component || '-'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-400">Tanggal:</span>
+                <span className="text-stone-300">{deleteConfirmTarget.tanggal}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2 rounded-xl bg-stone-800 text-stone-300 hover:bg-stone-700 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteBreakdown && deleteConfirmTarget) {
+                    const res = onDeleteBreakdown(deleteConfirmTarget.id);
+                    if (res && !res.success) {
+                      alert(res.message);
+                    }
+                  }
+                  setDeleteConfirmTarget(null);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-900/30 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ya, Hapus Laporan</span>
+              </button>
             </div>
           </div>
         </div>

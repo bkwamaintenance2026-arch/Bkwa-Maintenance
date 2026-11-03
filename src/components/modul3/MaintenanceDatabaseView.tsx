@@ -61,8 +61,14 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
   // 5 Sub Modul: 1 = Input Breakdown, 2 = Update Breakdown, 3 = Dashboard Maintenance, 4 = Detail Breakdown & History Part, 5 = Laporan Harian (Ready & Breakdown)
   const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5>(1);
 
-  // Target record yang dipilih dari Sub Modul 1 / 4 untuk dibuka langsung di Sub Modul 2
-  const [selectedBreakdownForUpdate, setSelectedBreakdownForUpdate] = useState<BreakdownRecord | null>(null);
+  // Target record ID yang dipilih dari Sub Modul 1 / 4 untuk dibuka langsung di Sub Modul 2
+  const [selectedBreakdownIdForUpdate, setSelectedBreakdownIdForUpdate] = useState<string | null>(null);
+
+  // Ambil record breakdown secara dinamis dari `breakdowns` agar selalu UP-TO-DATE
+  const selectedBreakdownForUpdate = React.useMemo(() => {
+    if (!selectedBreakdownIdForUpdate) return null;
+    return breakdowns.find((b) => b.id === selectedBreakdownIdForUpdate) || null;
+  }, [selectedBreakdownIdForUpdate, breakdowns]);
 
   // Hitung unit aktif breakdown (semua unit yang belum READY)
   const activeBreakdownCount = breakdowns.filter(
@@ -70,7 +76,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
   ).length;
 
   const handleNavigateToUpdate = (record: BreakdownRecord) => {
-    setSelectedBreakdownForUpdate(record);
+    setSelectedBreakdownIdForUpdate(record.id);
     setActiveSubModule(2);
   };
 
@@ -217,11 +223,17 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
         <UpdateBreakdownSubView
           breakdowns={breakdowns}
           selectedBreakdownToUpdate={selectedBreakdownForUpdate}
+          selectedBreakdownId={selectedBreakdownIdForUpdate}
           manpowerList={manpowerList}
           currentUser={currentUser}
           onUpdateActivity={onUpdateActivity}
-          onSelectBreakdown={(rec) => setSelectedBreakdownForUpdate(rec)}
-          onDeleteBreakdown={onDeleteBreakdown}
+          onSelectBreakdown={(rec) => setSelectedBreakdownIdForUpdate(rec ? rec.id : null)}
+          onDeleteBreakdown={(id) => {
+            if (selectedBreakdownIdForUpdate === id) {
+              setSelectedBreakdownIdForUpdate(null);
+            }
+            return onDeleteBreakdown(id);
+          }}
         />
       )}
 

@@ -154,11 +154,75 @@ export function getDeterministicDocId(collectionName: string, item: any): string
   return String(item.id || Date.now());
 }
 
+// Tombstone Tracker: Mencegah data yang telah dihapus di-restore kembali oleh Firestore Listener
+const DELETED_TOMBSTONE_KEY = 'bkwa_deleted_tombstones_v1';
+
+export function recordTombstone(collectionName: string, ids: string[]): void {
+  try {
+    const raw = localStorage.getItem(DELETED_TOMBSTONE_KEY);
+    const map: Record<string, string[]> = raw ? JSON.parse(raw) : {};
+    const existing = new Set(map[collectionName] || []);
+    ids.forEach((id) => {
+      if (id) existing.add(String(id).trim());
+    });
+    map[collectionName] = Array.from(existing);
+    localStorage.setItem(DELETED_TOMBSTONE_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Error saving tombstone:', e);
+  }
+}
+
+export function removeTombstone(collectionName: string, id: string): void {
+  try {
+    const raw = localStorage.getItem(DELETED_TOMBSTONE_KEY);
+    if (!raw) return;
+    const map: Record<string, string[]> = JSON.parse(raw);
+    if (!map[collectionName]) return;
+    const cleanId = String(id).trim();
+    map[collectionName] = map[collectionName].filter((x) => x !== cleanId);
+    localStorage.setItem(DELETED_TOMBSTONE_KEY, JSON.stringify(map));
+  } catch (e) {
+    console.warn('Error removing tombstone:', e);
+  }
+}
+
+export function isTombstoned(collectionName: string, item: any): boolean {
+  if (!item) return false;
+  try {
+    const raw = localStorage.getItem(DELETED_TOMBSTONE_KEY);
+    if (!raw) return false;
+    const map: Record<string, string[]> = JSON.parse(raw);
+    const list = map[collectionName];
+    if (!list || list.length === 0) return false;
+    const set = new Set(list);
+
+    if (item.id && set.has(String(item.id).trim())) return true;
+    if (item._firestoreDocId && set.has(String(item._firestoreDocId).trim())) return true;
+
+    if (collectionName === 'breakdowns') {
+      if (item.noNotifikasi && (set.has(String(item.noNotifikasi).trim()) || set.has(`bd_${item.noNotifikasi}`.trim()))) return true;
+      if (item.noMaintenanceOrder && (set.has(String(item.noMaintenanceOrder).trim()) || set.has(`bd_${item.noMaintenanceOrder}`.trim()))) return true;
+    }
+    const detId = getDeterministicDocId(collectionName, item);
+    if (detId && set.has(detId.trim())) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Push 1 item ke koleksi Firestore secara realtime (dengan ID deterministik)
 export async function syncItemToFirestore(collectionName: string, rawId: string, data: any): Promise<void> {
   if (!data) return;
   try {
+    // Jika item ini sebelumnya pernah di-tombstone, hapus tanda tombstone karena user menyimpan baru
+    removeTombstone(collectionName, rawId);
+    if (data.id) removeTombstone(collectionName, data.id);
+
     const docId = getDeterministicDocId(collectionName, data);
+    removeTombstone(collectionName, docId);
+
     const docRef = doc(db, collectionName, docId);
     const cleanData = sanitizeForFirestore({
       ...data,
@@ -173,12 +237,52 @@ export async function syncItemToFirestore(collectionName: string, rawId: string,
   }
 }
 
-// Hapus 1 item dari Firestore
+// Hapus 1 item dari Firestore secara permanen dan cegah kemunculan kembali
 export async function deleteItemFromFirestore(collectionName: string, rawId: string, itemData?: any): Promise<void> {
   try {
-    const docId = itemData ? getDeterministicDocId(collectionName, itemData) : String(rawId);
-    const docRef = doc(db, collectionName, docId);
-    await deleteDoc(docRef);
+    const candidateDocIds = new Set<string>();
+    if (rawId) {
+      candidateDocIds.add(String(rawId).trim());
+    }
+    if (itemData) {
+      if (itemData.id) candidateDocIds.add(String(itemData.id).trim());
+      if (itemData._firestoreDocId) candidateDocIds.add(String(itemData._firestoreDocId).trim());
+      const detId = getDeterministicDocId(collectionName, itemData);
+      if (detId) candidateDocIds.add(detId.trim());
+
+      if (collectionName === 'breakdowns') {
+        const notif = (itemData.noNotifikasi || '').toString().trim();
+        const mo = (itemData.noMaintenanceOrder || '').toString().trim();
+        if (notif) {
+          candidateDocIds.add(notif);
+          candidateDocIds.add(`bd_${notif}`);
+          candidateDocIds.add(`bd_${notif.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+        }
+        if (mo) {
+          candidateDocIds.add(mo);
+          candidateDocIds.add(`bd_${mo}`);
+          candidateDocIds.add(`bd_${mo.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+        }
+      }
+    } else {
+      if (collectionName === 'breakdowns') {
+        candidateDocIds.add(`bd_${rawId}`);
+        candidateDocIds.add(`bd_${rawId.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+      }
+    }
+
+    // Catat ke daftar tombstone lokal
+    recordTombstone(collectionName, Array.from(candidateDocIds));
+
+    // Hapus dari Firestore untuk seluruh kemungkinan docId
+    for (const docId of candidateDocIds) {
+      try {
+        const docRef = doc(db, collectionName, docId);
+        await deleteDoc(docRef);
+      } catch (e) {
+        console.warn(`deleteDoc notice [${collectionName}/${docId}]:`, e);
+      }
+    }
     updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID') });
   } catch (err) {
     console.error(`Gagal hapus di Firestore [${collectionName}/${rawId}]:`, err);
@@ -545,9 +649,11 @@ export async function downloadAllFirestoreDataToLocal(): Promise<{
         const localRaw = localStorage.getItem(localStorageKey);
         const localData = localRaw ? JSON.parse(localRaw) : [];
         const combined = [...(Array.isArray(localData) ? localData : []), ...docsData];
-        const deduped = deduplicateEntityList(entityType, combined);
+        const deduped = deduplicateEntityList(entityType, combined).filter(
+          (item) => !isTombstoned(collectionName, item)
+        );
         localStorage.setItem(localStorageKey, JSON.stringify(deduped));
-        totalCount += docsData.length;
+        totalCount += deduped.length;
       }
     } catch (e) {
       console.warn(`Gagal menarik koleksi ${collectionName}:`, e);
@@ -701,9 +807,11 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
             const localRaw = localStorage.getItem(localStorageKey);
             const localData = localRaw ? JSON.parse(localRaw) : [];
             
-            // Gabungkan data Firestore ke data lokal dengan deduplikasi cerdas
+            // Gabungkan data Firestore ke data lokal dengan deduplikasi cerdas & buang item yang sudah dihapus
             const combined = [...(Array.isArray(localData) ? localData : []), ...docsData];
-            const deduped = deduplicateEntityList(entityType, combined);
+            const deduped = deduplicateEntityList(entityType, combined).filter(
+              (item) => !isTombstoned(collectionName, item)
+            );
 
             localStorage.setItem(localStorageKey, JSON.stringify(deduped));
             

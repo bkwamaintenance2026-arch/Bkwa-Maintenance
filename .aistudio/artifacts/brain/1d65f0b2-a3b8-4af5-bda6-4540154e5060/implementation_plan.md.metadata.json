@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana Implementasi Integrasi Kebutuhan Part Modul 3 ke Modul 6 Inventory Management: Sub-Modul Baru Monitoring Supply & Outstanding Part (Unit & Non-Unit), sinkronisasi No MO/Referensi, checklist pemenuhan barang dari Malang, dan Form Surat Permintaan Barang (SPB) Non-Unit.",
-  "updatedAt": "2026-10-20T04:09:48.368854473Z",
+  "summary": "Rencana implementasi perbaikan sinkronisasi Sub Modul 1 & 2 di Modul 3, perbaikan permanen fitur hapus laporan breakdown dengan Firestore Tombstone, desain laporan history kerusakan berbasis Kartu No MO dan riwayat update harian (Print & Preview), serta integrasi otomatis kebutuhan part update breakdown ke Modul 6 Monitoring Supply & Outstanding Part.",
+  "updatedAt": "2026-11-03T01:39:00.078992467Z",
   "requestFeedback": true,
   "userFacing": true
 }

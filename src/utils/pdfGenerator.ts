@@ -768,112 +768,270 @@ export const generateDetailHistoryPDF = (
   const darkTextColor: [number, number, number] = [30, 41, 59];
   const grayTextColor: [number, number, number] = [100, 116, 139];
 
-  // KOP SURAT
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...grayTextColor);
-  doc.text('DIVISI MAINTENANCE & ALAT BERAT • QUARRY PURWOSARI', 14, 12);
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & ALAT BERAT • QUARRY PURWOSARI', 14, 12);
 
-  doc.setFontSize(9);
-  doc.setTextColor(190, 18, 60);
-  doc.text('LAPORAN DETAIL KE: HEAD OFFICE', 283, 12, { align: 'right' });
+    doc.setFontSize(9);
+    doc.setTextColor(190, 18, 60);
+    doc.text('LAPORAN DETAIL KE: HEAD OFFICE', 283, 12, { align: 'right' });
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...primaryColor);
-  doc.text('PT BATU KALI WELANG AMPUH', 148.5, 18, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH', 148.5, 18, { align: 'center' });
 
-  doc.setFontSize(11);
-  doc.setTextColor(...darkTextColor);
-  doc.text('LAPORAN DETAIL RIWAYAT KERUSAKAN & PERBAIKAN ALAT BERAT', 148.5, 23.5, { align: 'center' });
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text('LAPORAN DETAIL RIWAYAT KERUSAKAN & PERBAIKAN ALAT BERAT', 148.5, 23.5, { align: 'center' });
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...grayTextColor);
-  doc.text(
-    `Unit Filter: ${selectedUnit || 'Semua Unit'}   |   Total Kasus: ${breakdowns.length}   |   Waktu Cetak: ${nowStr}   |   Oleh: ${exporterName}`,
-    148.5,
-    28,
-    { align: 'center' }
-  );
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Unit Filter: ${selectedUnit || 'Semua Unit'}   |   Total Kasus MO: ${breakdowns.length}   |   Waktu Cetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
 
-  doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.6);
-  doc.line(14, 30.5, 283, 30.5);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
 
-  const rows = breakdowns.map((b, idx) => {
-    const pics = [b.pic1, b.pic2, b.pic3].filter(Boolean).join(', ') || b.pelapor || '-';
-    const jamKerja = b.jamStart ? `${b.jamStart} - ${b.jamFinish || 'Proses'}` : '-';
-    return [
-      idx + 1,
-      b.noMaintenanceOrder || b.noNotifikasi || '-',
-      b.noUnit || '-',
-      b.namaAlat || b.noLama || '-',
-      b.tanggal || '-',
-      jamKerja,
-      b.component || '-',
-      b.detailProblem || '-',
-      b.detailKerusakan || '-',
-      pics,
-      b.statusUnit || 'BREAKDOWN',
-      b.progress || 'On Progress',
-    ];
-  });
+  renderHeader();
 
-  autoTable(doc, {
-    startY: 33,
-    head: [
-      [
-        'No',
-        'No MO / Notif',
-        'No Unit',
-        'Nama Alat',
-        'Tgl BD',
-        'Jam Kerja',
-        'Komponen',
-        'Problem Awal',
-        'Tindakan Perbaikan',
-        'PIC Mekanik',
-        'Status Unit',
-        'Progress',
-      ],
-    ],
-    body: rows.length > 0 ? rows : [['-', '-', '-', '-', '-', '-', '-', 'Tidak ada data.', '-', '-', '-', '-']],
-    theme: 'grid',
-    headStyles: {
-      fillColor: [30, 41, 59],
-      textColor: [255, 255, 255],
-      fontSize: 7.5,
-      fontStyle: 'bold',
-      halign: 'center',
-      cellPadding: 2,
-    },
-    styles: {
-      fontSize: 7,
-      cellPadding: 1.8,
-      textColor: [30, 41, 59],
-      lineColor: [226, 232, 240],
-      lineWidth: 0.2,
-    },
-    columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 26, fontStyle: 'bold' },
-      2: { cellWidth: 18, fontStyle: 'bold', textColor: [180, 83, 9] },
-      3: { cellWidth: 26 },
-      4: { cellWidth: 18 },
-      5: { cellWidth: 20 },
-      6: { cellWidth: 22, fontStyle: 'bold' },
-      7: { cellWidth: 35 },
-      8: { cellWidth: 42 },
-      9: { cellWidth: 25 },
-      10: { cellWidth: 16 },
-      11: { cellWidth: 16 },
-    },
-    margin: { left: 14, right: 14 },
-  });
+  let currentY = 34;
+
+  if (breakdowns.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('Tidak ada data riwayat kerusakan untuk kriteria filter yang dipilih.', 148.5, 45, { align: 'center' });
+    currentY = 55;
+  } else {
+    breakdowns.forEach((b) => {
+      const moNum = b.noMaintenanceOrder || b.noNotifikasi || '-';
+      const notifNum = b.noNotifikasi || '-';
+
+      // Cek apakah sisa halaman cukup untuk Kartu baru (minimal 50mm)
+      if (currentY > 155) {
+        doc.addPage();
+        renderHeader();
+        currentY = 34;
+      }
+
+      // KARTU HEADER BOX
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(14, currentY, 269, 15, 2, 2, 'FD');
+
+      // Teks Kartu Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...primaryColor);
+      doc.text(`[REFF NO. MO: ${moNum}]`, 18, currentY + 5.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...darkTextColor);
+      doc.text(`Notifikasi: ${notifNum}`, 75, currentY + 5.5);
+      doc.text(`Unit: `, 115, currentY + 5.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${b.noUnit || '-'} (${b.namaAlat || b.noLama || '-'})`, 123, currentY + 5.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Tgl Breakdown: ${b.tanggal || '-'} ${b.jamBreakdown ? `pk ${b.jamBreakdown}` : ''}`, 190, currentY + 5.5);
+
+      // Baris kedua header box: Komponen, Status, Problem
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Komponen: `, 18, currentY + 11.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${b.component || '-'}`, 36, currentY + 11.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Status Terkini: `, 75, currentY + 11.5);
+      const isReady = (b.statusUnit || '').toUpperCase().trim() === 'READY';
+      doc.setTextColor(isReady ? 22 : 190, isReady ? 101 : 18, isReady ? 52 : 60);
+      doc.text(`${b.statusUnit || 'BREAKDOWN'} (${b.progress || 'On Progress'})`, 96, currentY + 11.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...grayTextColor);
+      const probText = `Problem Awal: ${(b.detailProblem || '-').substring(0, 80)}`;
+      doc.text(probText, 160, currentY + 11.5);
+
+      currentY += 17;
+
+      // 1. TABEL RINCIAN UPDATE PEKERJAAN HARIAN
+      const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+        ? b.riwayatUpdate
+        : [{
+            id: 'init',
+            tanggal: b.tanggal || '-',
+            startJob: b.jamStart || b.startJob || '-',
+            finishJob: b.jamFinish || (b as any).finishJob || '-',
+            detailPekerjaan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+            progress: b.progress || 'On Progress',
+            statusUnit: b.statusUnit || 'BREAKDOWN',
+            pic1: b.pic1,
+            pic2: b.pic2,
+            pic3: b.pic3,
+            remark: '-'
+          }];
+
+      const updateRows = updates.map((u: any, uIdx: number) => {
+        const jamKerja = (u.startJob || u.finishJob)
+          ? `${u.startJob || '-'} s/d ${u.finishJob || 'Proses'}`
+          : (u.jamPekerjaan || '-');
+        const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || b.pelapor || '-';
+        return [
+          uIdx + 1,
+          u.tanggal || '-',
+          jamKerja,
+          u.detailPekerjaan || '-',
+          u.progress || '-',
+          u.statusUnit || '-',
+          pics,
+          u.remark || '-',
+        ];
+      });
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [
+          [
+            'No',
+            'Tgl Update',
+            'Jam Kerja',
+            'Detail Pekerjaan / Tindakan Perbaikan',
+            'Progress',
+            'Status Unit',
+            'PIC Mekanik',
+            'Remark',
+          ],
+        ],
+        body: updateRows,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontSize: 7,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 1.5,
+        },
+        styles: {
+          fontSize: 6.8,
+          cellPadding: 1.5,
+          textColor: [30, 41, 59],
+          lineColor: [226, 232, 240],
+          lineWidth: 0.15,
+        },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 24 },
+          3: { cellWidth: 95 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 24, fontStyle: 'bold' },
+          6: { cellWidth: 42 },
+          7: { cellWidth: 34 },
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      // @ts-ignore
+      currentY = doc.lastAutoTable.finalY + 3;
+
+      // 2. TABEL PART & JASA UNTUK MO INI
+      const allParts: BreakdownPartJasaItem[] = [];
+      const seenKey = new Set<string>();
+      const addParts = (items?: BreakdownPartJasaItem[]) => {
+        if (!items || !Array.isArray(items)) return;
+        items.forEach(p => {
+          const key = `${p.jenis}-${p.partNumber || ''}-${p.namaPart || ''}`;
+          if (!seenKey.has(key)) {
+            seenKey.add(key);
+            allParts.push(p);
+          }
+        });
+      };
+      addParts(b.partsJasa);
+      b.riwayatUpdate?.forEach(u => addParts(u.partsJasa));
+
+      if (allParts.length > 0) {
+        if (currentY > 175) {
+          doc.addPage();
+          renderHeader();
+          currentY = 34;
+        }
+
+        const partRows = allParts.map((p, pIdx) => [
+          pIdx + 1,
+          p.jenis || 'Part',
+          p.namaPart || '-',
+          p.partNumber || '-',
+          p.qty ?? 1,
+          p.satuan || 'Pcs',
+          p.remark || '-',
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [
+            [
+              'No',
+              'Jenis',
+              'Nama Part / Jasa Digunakan',
+              'Part Number (PN)',
+              'Qty',
+              'Satuan',
+              'Remark / Keterangan',
+            ],
+          ],
+          body: partRows,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [180, 83, 9],
+            textColor: [255, 255, 255],
+            fontSize: 6.8,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 1.5,
+          },
+          styles: {
+            fontSize: 6.5,
+            cellPadding: 1.4,
+            textColor: [30, 41, 59],
+            lineColor: [226, 232, 240],
+            lineWidth: 0.15,
+          },
+          columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 18, fontStyle: 'bold' },
+            2: { cellWidth: 80 },
+            3: { cellWidth: 45, fontStyle: 'bold' },
+            4: { cellWidth: 15, halign: 'right', fontStyle: 'bold' },
+            5: { cellWidth: 20 },
+            6: { cellWidth: 83 },
+          },
+          margin: { left: 14, right: 14 },
+        });
+
+        // @ts-ignore
+        currentY = doc.lastAutoTable.finalY + 6;
+      } else {
+        currentY += 4;
+      }
+    });
+  }
 
   // @ts-ignore
-  let sigY = doc.lastAutoTable.finalY + 6;
+  let sigY = currentY + 4;
   if (sigY > 165) {
     doc.addPage();
     sigY = 20;

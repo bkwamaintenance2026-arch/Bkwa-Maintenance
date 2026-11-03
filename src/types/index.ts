@@ -386,6 +386,7 @@ export interface BreakdownPartJasaItem {
   partNumber: string;
   qty: number | string;
   satuan: PartSatuanOption | string;
+  remark?: string;
 }
 
 export interface BreakdownUpdateEntry {

@@ -1,194 +1,126 @@
-# Integrasi Kebutuhan Part Modul 3 ke Modul 6: Monitoring Supply & Outstanding Part
+# Rencana Implementasi: Sinkronisasi Modul 3, Fix Hapus Laporan, Laporan History Berbasis Kartu No MO, dan Integrasi Part ke Modul 6
 
-Integrasi otomatis daftar kebutuhan suku cadang dari Modul 3 (Update Breakdown) ke Modul 6 (Inventory Management) berbasis No MO / No Notifikasi yang sama, dilengkapi Sub-Modul baru untuk monitoring supply barang dari Malang, checklist pemenuhan langsung per baris, serta Form & Summary Surat Permintaan Barang (SPB) Khusus Non Unit.
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> Ringkasan keputusan hasil klarifikasi kebutuhan yang telah dikonfirmasi dan disepakati:
-
-- **Struktur Menu & Lokasi Sub-Modul**: Ditambahkan Sub-Modul ke-3 pada Modul 6: **"3. Monitoring Supply & Outstanding Part"** (berdampingan dengan Sub-Modul 1: Input Spare Part dan Sub-Modul 2: Transaksi & Order Part).
-- **Alur Checklist Pemenuhan Supply Malang**: Checklist status langsung pada baris tabel outstanding (klik centang/status untuk update pemenuhan: *Belum Supply*, *Sebagian / Parsial*, atau *Terpenuhi / Selesai*, disertai catatan tanggal tiba & no surat jalan/DO Malang).
-- **Kategori Form SPB Non Unit**: Form khusus Surat Permintaan Barang Non Unit dengan pilihan kategori: **Tools & Alat Kerja**, **Konsumabel Workshop**, dan **Fasilitas Umum**, yang terpisah dari unit breakdown namun tersentralisasi di summary Modul 6.
-- **Konsistensi No Referensi**: Seluruh kebutuhan part unit secara otomatis menggunakan No Maintenance Order (No MO) / No Notifikasi yang identik dari Modul 3, mencegah duplikasi entri atau inkonsistensi nomor dokumen.
+## Ringkasan Eksekutif
+Berdasarkan kebutuhan operasional dan konfirmasi alur kerja:
+1. **Perbaikan Sinkronisasi Sub Modul 1 (Input) & Sub Modul 2 (Update) di Modul 3**: Memastikan data selalu *real-time* dan *up-to-date* tanpa tersangkut pada *state* lama.
+2. **Perbaikan Fitur Hapus Laporan Breakdown**: Menghapus tuntas dari `localStorage` dan Firestore dengan multi-ID deletion & sistem *tombstone* agar laporan yang dihapus tidak pernah muncul kembali (*resurrect*).
+3. **Laporan History Kerusakan Berbasis Kartu No MO (Print & Preview)**: Ketika filter unit dipilih, sistem menampilkan Kartu No Reff MO dengan tabel rincian update harian (tanggal, jam, progress, teknisi, tindakan perbaikan) dan tabel part yang digunakan, baik pada UI pratinjau maupun ekspor dokumen PDF resmi.
+4. **Integrasi Otomatis Kebutuhan Part ke Modul 6 (Monitoring Supply & Outstanding Part)**: Saat update breakdown disimpan dan teknisi memasukkan kebutuhan part, part tersebut otomatis langsung tercatat ke daftar Monitoring Supply Modul 6 dengan No MO yang sama untuk kontrol kiriman dari Malang.
 
 ---
 
-## 1. Overview & Core Concept
+## 1. Analisis Akar Masalah (Root Causes) & Solusi
 
-- **What It Does**: 
-  1. Menarik seluruh data kebutuhan suku cadang (`partsJasa`) dari setiap unit yang sedang mengalami breakdown di Modul 3 ke dalam dashboard monitoring Modul 6 secara *real-time*.
-  2. Menyediakan rekapitulasi status supply barang yang dikirim dari kantor/gudang logistik Malang ke workshop site: membedakan part yang *Sudah Terpenuhi*, *Dalam Pengiriman/Parsial*, dan *Outstanding (Belum Terpenuhi)*.
-  3. Memungkinkan tim logistik dan workshop melakukan checklist penerimaan supply langsung pada tabel tanpa harus berpindah modul atau membuka form berulang-ulang.
-  4. Menyediakan Form Permintaan Barang Khusus Non-Unit (keperluan operasional bengkel seperti grease pump, kunci pas, kawat las, APD, majun, lampu kerja bengkel) dan menggabungkan ringkasannya ke dalam tab monitoring terpadu.
+### A. Masalah Sinkronisasi Sub Modul 1 (Input) & Sub Modul 2 (Update)
+- **Akar Masalah**:
+  1. `MaintenanceDatabaseView` menyimpan objek referensi `selectedBreakdownForUpdate` secara statis, sehingga saat data di-update atau ditambah dari Sub Modul 1, objek di Sub Modul 2 tetap merujuk ke memori lama (*stale object*).
+  2. `UpdateBreakdownSubView` memiliki `useEffect` yang mengunci form ke `selectedBreakdownToUpdate` lama dan menolak beralih ke record yang baru dibuat atau diubah.
+  3. Saat pendaftaran breakdown untuk unit yang sudah breakdown aktif diperbarui di `registerBreakdown`, sistem belum memanggil `syncItemToFirestore`.
+- **Solusi**:
+  - Ganti penyimpanan objek statis dengan `selectedBreakdownIdForUpdate: string | null`. Ambil data record *fresh* langsung dari state `breakdowns`.
+  - Bersihkan siklus `useEffect` di `UpdateBreakdownSubView` agar form selalu memuat data terbaru dari `breakdowns.find(b => b.id === selectedId)`.
+  - Panggil `syncItemToFirestore('breakdowns', updatedRecord.id, updatedRecord)` saat update aktif disimpan.
+  - Urutkan (*sort*) tabel di kedua sub modul secara seragam (terbaru/terkini di atas).
 
-- **Target Audience / Persona**:
-  - **Petugas Inventory & Logistik Site**: Memantau kedatangan barang dari Malang dan mencatat item yang sudah diterima.
-  - **Mekanik / Supervisor / Kabag Workshop**: Mengetahui kepastian ketersediaan suku cadang untuk unit breakdown dan membuat SPB Non-Unit untuk peralatan kerja bengkel.
-  - **Administrasi Workshop**: Memastikan No MO sinkron antara pelaporan breakdown di Modul 3 dan pengadaan di Modul 6.
+### B. Masalah Kegagalan Hapus Laporan Breakdown
+- **Akar Masalah**:
+  1. `deleteBreakdown` di `src/utils/storage.ts` memanggil `deleteItemFromFirestore('breakdowns', id)` tanpa mengirimkan data item `target`. Akibatnya Firestore mencari ID mentah (misal `bd-173...`), padahal dokumen Firestore disimpan dengan ID deterministik (misal `bd_260001`). Dokumen di Cloud Firestore tidak terhapus.
+  2. Saat Firestore *real-time listener* atau fungsi *pull* berjalan, dokumen yang masih ada di Firestore ditarik kembali dan di-merge ke `localStorage`, membuat laporan yang sudah dihapus "hidup kembali".
+  3. `canUserDeleteModule` hanya mengizinkan tier DEVELOPER dan menolak role/tier ADMIN.
+  4. Di `InputBreakdownSubView`, tombol hapus dibatasi `isDev` murni dan menggunakan `confirm()` browser sederhana.
+- **Solusi**:
+  - Terapkan sistem **Tombstone** (`bkwa_deleted_tombstones_v1`) pada `firestoreSync.ts`. Dokumen yang sudah dihapus akan diblokir dari proses merge snapshot Firestore.
+  - Hapus semua variasi ID di Firestore: `target.id`, `_firestoreDocId`, `bd_${noNotifikasi}`, `bd_${noMaintenanceOrder}`, dan ID deterministik.
+  - Perbarui `canUserDeleteModule` agar role `ADMIN` dan tier `ADMIN` dapat menghapus data breakdown.
+  - Sediakan modal konfirmasi hapus interaktif dengan detail No MO dan Unit baik di Sub Modul 1 maupun Sub Modul 2.
 
-- **Key Value**:
-  - Mengeliminasi *double-entry* (tidak perlu mengetik ulang daftar part breakdown di Modul 6).
-  - Visibilitas penuh terhadap *backlog* / *lead time* suku cadang dari Malang sehingga target unit *ready* dapat diprediksi secara akurat.
+### C. Laporan History Kerusakan Berbasis Kartu No MO
+- **Konsep Tampilan**:
+  - Sesuai konfirmasi: **Format Kartu No MO dengan tabel rincian update harian di dalamnya**.
+  - **Header Kartu**: No Reff MO, Unit (CN & Nama Alat), Tanggal Breakdown, Problem Awal, Komponen, Status Terkini, dan Total Jam Downtime.
+  - **Tabel 1 (Riwayat Pekerjaan Harian)**: Kolom No, Tanggal Update, Jam Kerja (Start - Finish & Durasi), Detail Pekerjaan / Tindakan Perbaikan, Progress, Status Unit, PIC Mekanik (1, 2, 3), dan Catatan/Remark.
+  - **Tabel 2 (Part & Jasa Digunakan)**: Kolom No, Jenis, Nama Part, Part Number (PN), Qty, Satuan.
+- **Cetak & Preview**:
+  - Modal Pratinjau Interaktif di Sub Modul 4 dengan tombol *Print* dan *Export PDF*.
+  - Generator PDF (`generateDetailHistoryPDF`) di `src/utils/pdfGenerator.ts` disusun ulang dalam bentuk kartu per No MO dengan sub-tabel update harian dan tabel part, lengkap dengan lembar pengesahan resmi 3 pihak.
 
----
-
-## 2. User Experience & Visual Design
-
-### Key User Flows
-
-1. **Alur Kebutuhan Part Unit (Otomatis dari Modul 3)**:
-   - Mekanik/Admin menginput kebutuhan part di Modul 3 saat mengupdate breakdown unit (misal: Komatsu PC200, MO: `260012`).
-   - Sistem secara otomatis mencatatkan kebutuhan part tersebut ke Modul 6 Sub-Modul 3 di tab **"Part Breakdown Unit"**.
-   - Ketika kiriman dari Malang tiba di workshop, petugas logistik membuka Sub-Modul 3, mencari No MO `260012`, dan menekan tombol checklist atau dropdown status pada baris part untuk mengubah status menjadi **"Terpenuhi"** atau **"Parsial"** (memasukkan Qty Diterima dan No DO/Resi Malang jika ada).
-   - Progres pemenuhan per unit langsung terkalkulasi (contoh: `3 dari 4 item terpenuhi - 75%`).
-
-2. **Alur Surat Permintaan Barang (SPB) Non Unit**:
-   - Di Sub-Modul 3 Modul 6, pengguna menekan tombol **"+ Buat SPB Non-Unit"**.
-   - Terbuka modal form khusus dengan opsi kategori:
-     - *Tools & Alat Kerja* (misal: Impact Wrench, Torque Wrench, Jack Stand, Multimeter).
-     - *Konsumabel Workshop* (misal: WD-40, Majun/Kain Lap, Kawat Las, Oksigen Las, Sabun Cuci Komponen).
-     - *Fasilitas Umum* (misal: Lampu Penerangan Bay Workshop, Terpal, Selang Angin Kompresor, APD).
-   - Setelah disimpan, sistem menerbitkan nomor unik (contoh: `SPB-NU-260001`), dan otomatis muncul di sub-tab **"Permintaan Non-Unit"** dengan status monitoring supply dari Malang.
-
-3. **Alur Summary & Filter Monitoring**:
-   - Tab navigasi segmented: **[Semua Part Outstanding]** · **[Per Unit Breakdown (No MO)]** · **[Non-Unit Workshop]**.
-   - Quick Filter: Status (*Belum Disupply*, *Parsial*, *Terpenuhi*), Periode Tanggal, dan Pencarian No MO/Nama Part.
-   - Ekspor ringkasan ke format Excel/Printable PDF untuk laporan mingguan ke Manajemen Malang.
-
-### Visual Identity & Theme
-
-- **Aesthetic Direction**: Utilitarian industrial dashboard selaras dengan tema gelap BKWA Workshop (`bg-stone-900`, `bg-stone-950/80`, aksen `amber-500` dan `amber-400`).
-- **Color Discipline (Status Pemenuhan)**:
-  - *Belum Supply / Outstanding*: Text merah bata (`text-rose-400 bg-rose-500/10 border-rose-500/20`), indikator bahwa unit menunggu part dari Malang.
-  - *Parsial / Sebagian*: Text kuning amber (`text-amber-400 bg-amber-500/10 border-amber-500/20`), sebagian item telah diterima.
-  - *Terpenuhi / Selesai*: Text hijau emerald (`text-emerald-400 bg-emerald-500/10 border-emerald-500/20`), suku cadang lengkap siap pasang.
-- **Tabular Data Presentation**:
-  - Seluruh angka kuantitas, tanggal, dan nomor referensi menggunakan `font-mono tabular-nums`.
-  - Baris tabel compact dengan tinggi proporsional, hover highlight halus, dan aksi inline satu sentuhan (*1-click fulfillment toggle*).
+### D. Integrasi Otomatis Kebutuhan Part ke Modul 6 (Monitoring Supply)
+- **Alur Kerja**:
+  - Di `UpdateBreakdownSubView`, saat mekanik menginput part pada tabel Part & Jasa dan klik "Simpan Update Breakdown":
+    1. Part otomatis disimpan ke `partsJasa` dan riwayat update record breakdown.
+    2. Sistem secara otomatis menjalankan `syncBreakdownPartsToSupplyTrackings` ke `PartSupplyItemTracking` Modul 6.
+    3. Di Modul 6 Sub Modul **Monitoring Supply & Outstanding Part**, item part langsung muncul dengan No MO yang sama, No Unit, Nama Part, PN, Qty Diminta, Status default `PENDING` (Belum Terpenuhi).
+    4. Tim gudang/workshop dapat memantau kedatangan barang dari Malang dan melakukan checklist pemenuhan (1-klik checklist atau input No Surat Jalan Malang).
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 2. Rincian Perubahan File & Arsitektur
 
-- **Sinkronisasi Data Otomatis vs Tombol Import Manual**:
-  - *Keputusan*: Otomatis sinkron via pembacaan terpadu dari `BreakdownRecord` Modul 3 dan data supply tracking di `localStorage` / Firebase.
-  - *Alasan*: Pengguna tidak perlu menekan tombol import berulang kali; setiap perubahan part di Modul 3 langsung terlihat di Modul 6.
-  
-- **Skema Penyimpanan Data Pemenuhan Supply**:
-  - *Keputusan*: Membuat struktur data `PartSupplyTracking` yang mengaitkan `breakdownId`, `noMaintenanceOrder`, `itemPartIndex / partKey`, `statusSupply`, `qtySupplied`, `tanggalSupply`, `catatanMalang`, dan `noSuratJalanMalang`.
-  - *Alasan*: Tidak merusak struktur `BreakdownRecord` yang sudah berjalan stabil di Modul 3, sekaligus memungkinkan Modul 6 menyimpan detail riwayat penerimaan barang dari Malang secara spesifik.
+### 1. `src/services/firestoreSync.ts`
+- Tambahkan pelacak `recordTombstone`, `removeTombstone`, dan `isTombstoned`.
+- Perbarui `deleteItemFromFirestore` untuk menghapus seluruh kandidat docId (`rawId`, `bd_...`, `_firestoreDocId`, No MO) dan mencatat tombstone.
+- Perbarui `pullCollection` dan `attachListener` untuk memfilter dokumen yang telah di-tombstone sehingga tidak pernah me-restore item yang telah dihapus.
+- Hapus tanda tombstone di `syncItemToFirestore` saat item baru sengaja disimpan.
 
-- **Pemisahan vs Penyatuan Tabel Unit dan Non-Unit**:
-  - *Keputusan*: Disatukan dalam satu Sub-Modul 3 dengan filter tab (*All*, *Unit Breakdown*, *Non-Unit Workshop*).
-  - *Alasan*: Memudahkan petugas logistik memeriksa seluruh kiriman paket/koli yang tiba dari Malang dalam satu pintu pengawasan, tanpa harus membuka menu yang terpisah-pisah.
+### 2. `src/utils/storage.ts`
+- Perbarui `canUserDeleteModule(user, 3)` untuk mengizinkan role/tier `ADMIN`.
+- Perbarui `registerBreakdown`:
+  - Panggil `syncItemToFirestore` saat unit existing breakdown diperbarui.
+  - Panggil `syncBreakdownPartsToSupplyTrackings` otomatis setelah breakdown berhasil disimpan/diupdate.
+- Perbarui `updateBreakdownActivity`:
+  - Panggil `syncBreakdownPartsToSupplyTrackings` otomatis saat update aktivitas selesai disimpan.
+- Perbarui `deleteBreakdown`:
+  - Bersihkan seluruh variasi record lokal dengan ID atau No MO yang sama.
+  - Kirimkan objek `target` lengkap ke `deleteItemFromFirestore`.
+- Sempurnakan `syncBreakdownPartsToSupplyTrackings`:
+  - Pindai part baik dari `b.partsJasa` maupun dari seluruh item di `b.riwayatUpdate?.flatMap(u => u.partsJasa || [])`.
+
+### 3. `src/components/modul3/MaintenanceDatabaseView.tsx`
+- Ganti `selectedBreakdownForUpdate: BreakdownRecord | null` dengan `selectedBreakdownIdForUpdate: string | null`.
+- Hitung `selectedBreakdownForUpdate` secara dinamis dari `breakdowns.find(b => b.id === selectedBreakdownIdForUpdate)`.
+- Sinkronkan navigasi antar Sub Modul 1, 2, dan 4.
+
+### 4. `src/components/modul3/InputBreakdownSubView.tsx`
+- Urutkan tabel riwayat breakdown berdasarkan tanggal/jam/update terbaru di bagian atas.
+- Sediakan tombol Hapus untuk user yang berhak (`canUserDeleteModule(currentUser, 3)` atau developer).
+- Ganti browser `confirm()` dengan modal konfirmasi hapus profesional yang aman.
+
+### 5. `src/components/modul3/UpdateBreakdownSubView.tsx`
+- Perbaiki `useEffect` pemuatan record agar mengambil data segar (*fresh*) dari state `breakdowns`.
+- Urutkan daftar unit breakdown yang aktif secara kronologis terbaru.
+- Setelah penyimpanan update breakdown berhasil, pastikan pesan konfirmasi menginfokan bahwa kebutuhan part telah otomatis diteruskan ke Modul 6.
+
+### 6. `src/components/modul3/DetailBreakdownHistorySubView.tsx`
+- Perbarui tampilan antarmuka riwayat kerusakan menjadi **Format Kartu No MO**:
+  - Kotak ringkasan No MO dengan status dan problem awal.
+  - Tabel rincian pekerjaan update harian di dalam masing-masing kartu No MO.
+  - Tabel part & jasa yang digunakan pada No MO tersebut.
+- Sediakan tombol Cetak Cepat dan Pratinjau PDF.
+
+### 7. `src/utils/pdfGenerator.ts` (`generateDetailHistoryPDF`)
+- Format ulang struktur dokumen PDF laporan riwayat kerusakan:
+  - Header kop surat resmi PT BATU KALI WELANG AMPUH.
+  - Pengelompokan berbasis Kartu No MO per halaman/blok.
+  - Sub-tabel riwayat update harian untuk setiap No MO.
+  - Sub-tabel part & material yang digunakan.
+  - Lembar pengesahan 3 pihak resmi (Dibuat Oleh, Diperiksa Oleh, Disetujui Kabag Workshop).
 
 ---
 
-## 4. Technical Architecture & Data Strategy
-
-### Component Architecture & Data Flow
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ MODUL 3: BREAKDOWN MANAGEMENT                                         │
-│ • UpdateBreakdownSubView (Input partsJasa[])                           │
-│ • DetailBreakdownHistorySubView                                        │
-│ • PartRequirementModal (No MO / No Notifikasi Reff)                   │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ SHARED STORAGE & STATE LAYER (storage.ts / types.ts)                   │
-│ • BreakdownRecord[] (Sumber kebutuhan part unit)                      │
-│ • PartSupplyTracking[] (Pencatatan supply kedatangan dari Malang)      │
-│ • NonUnitPurchaseRequest[] (SPB Non Unit: Tools, Konsumabel, Fasilitas)│
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ MODUL 6: INVENTORY MANAGEMENT                                          │
-│ ├── Sub-Modul 1: Input Spare Part (Master & Stok Gudang Site)          │
-│ ├── Sub-Modul 2: Transaksi & Order Part Unit                           │
-│ └── Sub-Modul 3 (BARU): Monitoring Supply & Outstanding Part          │
-│     ├── Stat Cards (Total Outstanding, Parsial, Terpenuhi, Non-Unit)   │
-│     ├── Filter Bar (Cari No MO / Part, Kategori, Status Supply)        │
-│     ├── Interactive Table with Inline Checklist / Quick Supply Modal   │
-│     ├── Modal Form SPB Non Unit (Tools, Konsumabel, Fasilitas)         │
-│     └── Export / Print Rekapitulasi Suku Cadang Kiriman Malang        │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-### Data Model Extension (`src/types/index.ts`)
-
-```typescript
-// Status Pemenuhan Barang dari Malang
-export type SupplyFulfillmentStatus = 'PENDING' | 'PARSIAL' | 'TERPENUHI';
-
-// Pencatatan Supply Barang Per Item Part (Unit Breakdown)
-export interface PartSupplyItemTracking {
-  id: string;
-  sourceType: 'UNIT_BREAKDOWN' | 'NON_UNIT';
-  refNumber: string;               // No MO (cth: 260001) atau No SPB Non-Unit
-  breakdownId?: string;
-  noUnit?: string;
-  namaAlat?: string;
-  partNumber: string;
-  namaPart: string;
-  qtyDiminta: number;
-  qtyDiterima: number;
-  satuan: string;
-  status: SupplyFulfillmentStatus;
-  tanggalSupply?: string;          // YYYY-MM-DD kedatangan dari Malang
-  noSuratJalanMalang?: string;     // No DO / Surat Jalan / Resi
-  catatan?: string;
-  updatedBy?: string;
-  updatedAt: string;
-}
-
-// Form Permintaan Barang Khusus Non-Unit
-export type NonUnitCategory = 'TOOLS_ALAT_KERJA' | 'KONSUMABEL_WORKSHOP' | 'FASILITAS_UMUM';
-
-export interface NonUnitPurchaseRequest {
-  id: string;
-  noPermintaan: string;            // SPB-NU-260001
-  tanggal: string;
-  kategori: NonUnitCategory;
-  pemohon: string;
-  jabatanPemohon: string;
-  urgensi: 'NORMAL' | 'URGENT' | 'EMERGENCY';
-  alasanPermintaan: string;
-  items: Array<{
-    no: number;
-    namaBarang: string;
-    spesifikasi?: string;
-    qtyDiminta: number;
-    satuan: string;
-    keterangan?: string;
-  }>;
-  statusSupply: SupplyFulfillmentStatus;
-  statusPengajuan: 'DIAJUKAN' | 'DISETUJUI' | 'SELESAI';
-  disetujuiOleh?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-```
-
-### Key Components to Add & Update
-
-1. **`src/types/index.ts`**: Menambahkan interface `PartSupplyItemTracking`, `NonUnitPurchaseRequest`, dan enum status pemenuhan.
-2. **`src/utils/storage.ts`**:
-   - Menambahkan fungsi `getPartSupplyTrackings()`, `updatePartSupplyStatus()`, `batchUpdatePartSupply()`.
-   - Menambahkan fungsi `getNonUnitPurchaseRequests()`, `saveNonUnitPurchaseRequest()`, `updateNonUnitSupplyStatus()`.
-   - Mengintegrasikan agregasi otomatis: membaca `breakdowns` aktif dari Modul 3, mengekstrak `partsJasa`, lalu mencocokkan dengan data tracking pemenuhan.
-3. **`src/components/modul6/MonitoringSupplySubView.tsx`** (Komponen Baru):
-   - Tabel interaktif daftar suku cadang outstanding per No MO dan Non-Unit.
-   - Tombol checklist langsung (Centang = Langsung tandai Terpenuhi / Form Cepat Penerimaan Malang).
-   - Segmented filter (*Semua*, *Kebutuhan Unit Breakdown*, *Kebutuhan Non-Unit*).
-   - Ringkasan KPI: Total item dibutuhkan, Total item disupply, Persentase pemenuhan.
-4. **`src/components/modul6/NonUnitRequestModal.tsx`** (Komponen Baru):
-   - Form modal pembuatan Surat Permintaan Barang Non-Unit dengan kategori Tools & Alat Kerja, Konsumabel Workshop, dan Fasilitas Umum.
-   - Pilihan personil penandatangan / pemohon dari Manpower Modul 2.
-5. **`src/components/modul6/InventoryManagementView.tsx`**:
-   - Menambahkan tab navigasi ke-3: **"3. Monitoring Supply & Outstanding Part"**.
-   - Menghubungkan state dan refresh handler antara Modul 3 dan Modul 6.
+## 3. Rencana Verifikasi & Testing
+1. **Verifikasi Sinkronisasi Sub Modul 1 & 2**:
+   - Input laporan breakdown baru di Sub Modul 1 -> Buka Sub Modul 2 -> Pastikan langsung muncul di dropdown dan tabel unit existing breakdown.
+   - Lakukan update pekerjaan di Sub Modul 2 -> Buka Sub Modul 1 -> Pastikan status dan data terbaru langsung ter-update di tabel Sub Modul 1.
+2. **Verifikasi Hapus Laporan**:
+   - Hapus laporan breakdown -> Pastikan langsung hilang dari Sub Modul 1 dan Sub Modul 2.
+   - Refresh halaman dan periksa status Firestore -> Pastikan data tidak muncul kembali (*zero resurrection*).
+3. **Verifikasi Laporan History Kerusakan (Kartu No MO)**:
+   - Pilih filter unit tertentu (misal EX-01 atau DT-01).
+   - Pastikan muncul kartu-kartu No MO dengan tabel rincian update harian di bawahnya.
+   - Buka Pratinjau PDF dan verifikasi tata letak kartu No MO, update harian, daftar part, dan tanda tangan 3 pihak.
+4. **Verifikasi Integrasi Part ke Modul 6**:
+   - Masukkan part pada form Update Breakdown di Modul 3 dan simpan.
+   - Buka Modul 6 -> Sub Modul Monitoring Supply & Outstanding Part -> Pastikan part langsung tercantum dengan No MO yang sesuai.
+   - Uji toggle checklist pemenuhan supply.
+5. **Lint & Build**:
+   - Jalankan `lint_applet` dan `compile_applet` untuk menjamin tidak ada kesalahan sintaks atau TypeScript.

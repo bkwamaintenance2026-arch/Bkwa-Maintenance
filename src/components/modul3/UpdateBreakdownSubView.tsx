@@ -36,6 +36,7 @@ import { PartRequirementModal } from './PartRequirementModal';
 interface UpdateBreakdownSubViewProps {
   breakdowns: BreakdownRecord[];
   selectedBreakdownToUpdate: BreakdownRecord | null;
+  selectedBreakdownId?: string | null;
   manpowerList: ManpowerData[];
   currentUser: UserAccount;
   onUpdateActivity: (
@@ -61,6 +62,7 @@ interface UpdateBreakdownSubViewProps {
 export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
   breakdowns,
   selectedBreakdownToUpdate,
+  selectedBreakdownId,
   manpowerList,
   currentUser,
   onUpdateActivity,
@@ -77,11 +79,15 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
   // Opsi toggle tampilkan arsip unit yang sudah READY
   const [showAllHistory, setShowAllHistory] = useState<boolean>(false);
 
-  // Filter unit yang masih active breakdown (status selain READY)
+  // Filter unit yang masih active breakdown (status selain READY), diurutkan terbaru
   const activeExistingBreakdowns = useMemo(() => {
-    return breakdowns.filter(
-      (b) => (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
-    );
+    return breakdowns
+      .filter((b) => (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY')
+      .sort((a, b) => {
+        const dateA = a.updatedAt || a.createdAt || a.tanggal || '';
+        const dateB = b.updatedAt || b.createdAt || b.tanggal || '';
+        return dateB.localeCompare(dateA);
+      });
   }, [breakdowns]);
 
   // Daftar opsi unit untuk dropdown selector
@@ -199,11 +205,22 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
     setPartsJasaList(b.partsJasa || []);
   };
 
-  // Sync state ketika selectedBreakdownToUpdate berubah atau unit berstatus READY
+  // Sync state ketika selectedBreakdownId berubah atau breakdowns ter-update
   useEffect(() => {
+    // 1. Jika ada selectedBreakdownId dari luar (navigasi Sub Modul 1 / 4)
+    if (selectedBreakdownId) {
+      const match = breakdowns.find((b) => b.id === selectedBreakdownId);
+      if (match) {
+        setSelectedId(match.id);
+        loadBreakdownToForm(match);
+        return;
+      }
+    }
+
     if (selectedBreakdownToUpdate) {
-      setSelectedId(selectedBreakdownToUpdate.id);
-      loadBreakdownToForm(selectedBreakdownToUpdate);
+      const match = breakdowns.find((b) => b.id === selectedBreakdownToUpdate.id) || selectedBreakdownToUpdate;
+      setSelectedId(match.id);
+      loadBreakdownToForm(match);
       return;
     }
 
@@ -215,6 +232,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
         if (activeExistingBreakdowns.length > 0) {
           const nextTarget = activeExistingBreakdowns[0];
           setSelectedId(nextTarget.id);
+          onSelectBreakdown(nextTarget);
           loadBreakdownToForm(nextTarget);
         } else {
           setSelectedId('');
@@ -226,12 +244,14 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
       // Default ke breakdown existing pertama yang masih berstatus belum READY
       const firstActive = activeExistingBreakdowns[0];
       setSelectedId(firstActive.id);
+      onSelectBreakdown(firstActive);
       loadBreakdownToForm(firstActive);
     } else {
       setSelectedId('');
       resetForm();
+      onSelectBreakdown(null);
     }
-  }, [selectedBreakdownToUpdate, breakdowns, showAllHistory, activeExistingBreakdowns]);
+  }, [selectedBreakdownId, selectedBreakdownToUpdate, breakdowns, showAllHistory, activeExistingBreakdowns]);
 
   const currentActiveRecord = breakdowns.find((b) => b.id === selectedId);
 
