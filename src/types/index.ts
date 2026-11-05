@@ -214,7 +214,7 @@ export interface ManpowerData {
 export type KeteranganCatatanManpower =
   | 'Hadir'
   | 'Sakit'
-  | 'Ijin'
+  | 'Alpha / Tanpa Keterangan'
   | 'Cuti'
   | 'Dinas Luar'
   | 'Tukar jam'
@@ -228,7 +228,7 @@ export const KETERANGAN_CATATAN_MANPOWER_OPTIONS: {
 }[] = [
   { value: 'Hadir', label: 'Hadir', badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', colorClass: 'text-emerald-400' },
   { value: 'Sakit', label: 'Sakit', badgeClass: 'bg-rose-500/15 text-rose-400 border-rose-500/30', colorClass: 'text-rose-400' },
-  { value: 'Ijin', label: 'Ijin', badgeClass: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30', colorClass: 'text-cyan-400' },
+  { value: 'Alpha / Tanpa Keterangan', label: 'Alpha / Tanpa Keterangan', badgeClass: 'bg-red-500/20 text-red-400 border-red-500/40', colorClass: 'text-red-400' },
   { value: 'Cuti', label: 'Cuti', badgeClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30', colorClass: 'text-purple-400' },
   { value: 'Dinas Luar', label: 'Dinas Luar', badgeClass: 'bg-blue-500/15 text-blue-400 border-blue-500/30', colorClass: 'text-blue-400' },
   { value: 'Tukar jam', label: 'Tukar jam', badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30', colorClass: 'text-amber-400' },
@@ -367,6 +367,14 @@ export const BREAKDOWN_STATUS_UNIT_OPTIONS: BreakdownStatusUnitOption[] = [
   'LIMIT OPERASI',
 ];
 
+export type BreakdownTypeOption = 'SCHEDULE' | 'UNSCHEDULE' | 'ACCIDENT';
+
+export const BREAKDOWN_TYPE_OPTIONS: BreakdownTypeOption[] = [
+  'SCHEDULE',
+  'UNSCHEDULE',
+  'ACCIDENT'
+];
+
 export type PartSatuanOption = 'Pcs' | 'Set' | 'Ltr' | 'Drum' | 'Pail' | 'Mtr' | 'Pack';
 
 export const PART_SATUAN_OPTIONS: PartSatuanOption[] = [
@@ -391,10 +399,14 @@ export interface BreakdownPartJasaItem {
 
 export interface BreakdownUpdateEntry {
   id: string;
-  startJob: string; // Tanggal mulai pekerjaan perbaikan
+  startJob: string; // Tanggal mulai pekerjaan perbaikan (YYYY-MM-DD)
+  tanggal?: string; // Tanggal pekerjaan (alias kompatibel)
   jamStart?: string; // Jam mulai pekerjaan (format 24 jam HH:mm, cth: 08:00, 14:30)
   jamFinish?: string; // Jam selesai pekerjaan (format 24 jam HH:mm, cth: 17:00, 22:15)
+  finishJob?: string; // Jam/tanggal selesai (alias kompatibel)
+  jamPekerjaan?: string; // Rentang jam kerja (alias teks)
   detailKerusakan: string; // Detail kerusakan perbaikan
+  detailPekerjaan?: string; // Detail tindakan / perbaikan (alias kompatibel)
   progress: BreakdownProgressOption | string;
   statusUnit: BreakdownStatusUnitOption | string;
   pic1?: string;
@@ -424,6 +436,7 @@ export interface BreakdownRecord {
   pelapor: string;      // PELAPOR (dari DATA Manpower di Modul 2)
   jabatan: string;      // Jabatan (muncul otomatis saat pelapor dipilih)
   component: BreakdownComponentOption | string; // Pilihan component yang rusak
+  breakdownType?: BreakdownTypeOption | string; // SCHEDULE | UNSCHEDULE | ACCIDENT
   detailProblem: string; // Detail Problem awal (Text bebas, read-only saat update)
   
   // Sub Modul 2 Fields (Update Breakdown terkini)

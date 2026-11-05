@@ -1643,6 +1643,124 @@ export function updateBreakdownActivity(
   };
 }
 
+/**
+ * Update spesifik baris entri riwayat pekerjaan harian pada suatu BreakdownRecord
+ * Digunakan untuk fitur Inline Editing di Kartu No MO
+ */
+export function updateBreakdownHistoryEntry(
+  breakdownId: string,
+  entryIndex: number,
+  updatedEntry: Partial<BreakdownUpdateEntry>
+): {
+  success: boolean;
+  message: string;
+  record?: BreakdownRecord;
+} {
+  const records = getAllBreakdowns();
+  const index = records.findIndex((r) => r.id === breakdownId);
+  if (index === -1) {
+    return { success: false, message: 'Data Breakdown tidak ditemukan!' };
+  }
+
+  const record = records[index];
+  const history = [...(record.riwayatUpdate || [])];
+  if (entryIndex < 0 || entryIndex >= history.length) {
+    return { success: false, message: 'Baris riwayat update tidak valid!' };
+  }
+
+  history[entryIndex] = {
+    ...history[entryIndex],
+    ...updatedEntry,
+  };
+
+  // Jika yang diedit adalah riwayat paling akhir, sinkronkan juga atribut utama record
+  const isLatest = entryIndex === 0 || entryIndex === history.length - 1;
+  const now = new Date().toISOString();
+
+  const updatedRecord: BreakdownRecord = {
+    ...record,
+    riwayatUpdate: history,
+    updatedAt: now,
+    ...(isLatest ? {
+      statusUnit: (updatedEntry.statusUnit as any) || record.statusUnit,
+      progress: (updatedEntry.progress as any) || record.progress,
+      pic1: updatedEntry.pic1 !== undefined ? updatedEntry.pic1 : record.pic1,
+      pic2: updatedEntry.pic2 !== undefined ? updatedEntry.pic2 : record.pic2,
+      pic3: updatedEntry.pic3 !== undefined ? updatedEntry.pic3 : record.pic3,
+      detailKerusakan: updatedEntry.detailKerusakan || record.detailKerusakan,
+      remark: updatedEntry.remark !== undefined ? updatedEntry.remark : record.remark,
+    } : {}),
+  };
+
+  records[index] = updatedRecord;
+  saveBreakdownList(records);
+  syncItemToFirestore('breakdowns', updatedRecord.id, updatedRecord);
+  syncBreakdownPartsToSupplyTrackings(records);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Edit riwayat pekerjaan MO [${updatedRecord.noMaintenanceOrder || updatedRecord.noNotifikasi}] Unit ${updatedRecord.noUnit} (Baris #${entryIndex + 1})`,
+    detailUnit: updatedRecord.noUnit,
+  });
+
+  return {
+    success: true,
+    message: 'Baris riwayat pekerjaan berhasil diperbarui!',
+    record: updatedRecord,
+  };
+}
+
+/**
+ * Hapus 1 baris entri riwayat pekerjaan harian pada BreakdownRecord
+ */
+export function deleteBreakdownHistoryEntry(
+  breakdownId: string,
+  entryIndex: number
+): {
+  success: boolean;
+  message: string;
+  record?: BreakdownRecord;
+} {
+  const records = getAllBreakdowns();
+  const index = records.findIndex((r) => r.id === breakdownId);
+  if (index === -1) {
+    return { success: false, message: 'Data Breakdown tidak ditemukan!' };
+  }
+
+  const record = records[index];
+  const history = [...(record.riwayatUpdate || [])];
+  if (history.length <= 1) {
+    return { success: false, message: 'Tidak dapat menghapus satu-satunya catatan riwayat!' };
+  }
+
+  history.splice(entryIndex, 1);
+  const latest = history[0] || history[history.length - 1];
+  const now = new Date().toISOString();
+
+  const updatedRecord: BreakdownRecord = {
+    ...record,
+    riwayatUpdate: history,
+    updatedAt: now,
+    statusUnit: (latest.statusUnit as any) || record.statusUnit,
+    progress: (latest.progress as any) || record.progress,
+    pic1: latest.pic1,
+    pic2: latest.pic2,
+    pic3: latest.pic3,
+    detailKerusakan: latest.detailKerusakan || latest.detailPekerjaan,
+  };
+
+  records[index] = updatedRecord;
+  saveBreakdownList(records);
+  syncItemToFirestore('breakdowns', updatedRecord.id, updatedRecord);
+  syncBreakdownPartsToSupplyTrackings(records);
+
+  return {
+    success: true,
+    message: 'Baris riwayat pekerjaan berhasil dihapus!',
+    record: updatedRecord,
+  };
+}
+
 export function deleteBreakdown(id: string): { success: boolean; message: string } {
   const records = getAllBreakdowns();
   const cleanId = String(id).trim();

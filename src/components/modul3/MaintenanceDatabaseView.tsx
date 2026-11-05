@@ -14,7 +14,8 @@ import { UpdateBreakdownSubView } from './UpdateBreakdownSubView';
 import { DashboardMaintenanceSubView } from './DashboardMaintenanceSubView';
 import { DetailBreakdownHistorySubView } from './DetailBreakdownHistorySubView';
 import { LaporanHarianReadyBreakdownSubView } from './LaporanHarianReadyBreakdownSubView';
-import { Wrench, Edit3, BarChart3, Layers, ArrowLeft, History, ClipboardCheck } from 'lucide-react';
+import { ActiveBreakdownMonitoringSubView } from './ActiveBreakdownMonitoringSubView';
+import { Wrench, Edit3, BarChart3, Layers, ArrowLeft, History, ClipboardCheck, Clock } from 'lucide-react';
 
 interface MaintenanceDatabaseViewProps {
   units: AssetUnit[];
@@ -58,8 +59,8 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
   onBackToMainMenu,
   onNavigateToP2H,
 }) => {
-  // 5 Sub Modul: 1 = Input Breakdown, 2 = Update Breakdown, 3 = Dashboard Maintenance, 4 = Detail Breakdown & History Part, 5 = Laporan Harian (Ready & Breakdown)
-  const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5>(1);
+  // 6 Sub Modul: 1 = Input Breakdown, 2 = Update Breakdown, 3 = Dashboard Maintenance, 4 = Detail Breakdown & History Part, 5 = Laporan Harian (Ready & Breakdown), 6 = Monitoring Breakdown & Downtime
+  const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
 
   // Target record ID yang dipilih dari Sub Modul 1 / 4 untuk dibuka langsung di Sub Modul 2
   const [selectedBreakdownIdForUpdate, setSelectedBreakdownIdForUpdate] = useState<string | null>(null);
@@ -203,6 +204,24 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
             <ClipboardCheck className="w-3.5 h-3.5 text-teal-300" />
             <span>Sub Modul 5: Laporan Harian Ready &amp; Breakdown</span>
           </button>
+
+          {/* Sub Modul 6: Monitoring Breakdown & Realtime Downtime */}
+          <button
+            id="tab-submodul-6"
+            type="button"
+            onClick={() => setActiveSubModule(6)}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition relative ${
+              activeSubModule === 6
+                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20'
+                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-rose-400" />
+            <span>Sub Modul 6: Monitoring Breakdown &amp; Downtime</span>
+            {activeBreakdownCount > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping ml-1" />
+            )}
+          </button>
         </div>
       </div>
 
@@ -267,6 +286,18 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
           currentUser={currentUser}
           onNavigateToUpdate={handleNavigateToUpdate}
           onNavigateToP2H={onNavigateToP2H}
+        />
+      )}
+
+      {activeSubModule === 6 && (
+        <ActiveBreakdownMonitoringSubView
+          units={units}
+          breakdowns={breakdowns}
+          currentUser={currentUser}
+          onNavigateToUpdate={handleNavigateToUpdate}
+          onNavigateToDetail={(rec) => {
+            setActiveSubModule(4);
+          }}
         />
       )}
     </div>

@@ -37,16 +37,30 @@ import {
   Users,
   Save,
   Check,
-  MapPin
+  MapPin,
+  Pencil,
+  AlertCircle
 } from 'lucide-react';
-import { getAllSparePartTransactions, isDeveloper, getAllManpower, canUserDeleteModule } from '../../utils/storage';
+import { 
+  getAllSparePartTransactions, 
+  isDeveloper, 
+  getAllManpower, 
+  canUserDeleteModule,
+  updateBreakdownHistoryEntry,
+  deleteBreakdownHistoryEntry
+} from '../../utils/storage';
 import { 
   resolveReportSignatories, 
   getSavedReportSignatories, 
   saveReportSignatories 
 } from '../../utils/reportSignatories';
 import { PartRequirementModal } from './PartRequirementModal';
-import { exportDetailHistoryToPDF, generateDetailHistoryPDF } from '../../utils/pdfGenerator';
+import { 
+  exportDetailHistoryToPDF, 
+  generateDetailHistoryPDF,
+  generateUnitHistorySummaryPDF,
+  exportUnitHistorySummaryToPDF
+} from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
 interface DetailBreakdownHistorySubViewProps {
@@ -81,6 +95,34 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   // Modal Kebutuhan Spare Part (Popup & Export PDF ke Malang)
   const [selectedBreakdownForPartReq, setSelectedBreakdownForPartReq] = useState<BreakdownRecord | null>(null);
   const [showPartReqModal, setShowPartReqModal] = useState<boolean>(false);
+
+  // Inline Editing Riwayat Update Pekerjaan Harian
+  const [editingRowKey, setEditingRowKey] = useState<string | null>(null);
+  const [inlineEditForm, setInlineEditForm] = useState<{
+    tanggal: string;
+    startJob: string;
+    finishJob: string;
+    detailPekerjaan: string;
+    progress: string;
+    statusUnit: 'READY' | 'BREAKDOWN' | 'LIMIT OPERASI';
+    pic1: string;
+    pic2: string;
+    pic3: string;
+    remark: string;
+  }>({
+    tanggal: '',
+    startJob: '',
+    finishJob: '',
+    detailPekerjaan: '',
+    progress: 'On Progress',
+    statusUnit: 'BREAKDOWN',
+    pic1: '',
+    pic2: '',
+    pic3: '',
+    remark: '',
+  });
+  const [inlineSaveLoading, setInlineSaveLoading] = useState<boolean>(false);
+  const [actionFeedback, setActionFeedback] = useState<string>('');
 
   useEffect(() => {
     try {
@@ -469,6 +511,91 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
       setShowPdfPreview(true);
     } catch (e) {
       console.error('Error generating single MO PDF preview', e);
+    }
+  };
+
+  // Handler Pratinjau Dokumen Rangkuman Riwayat Unit Terpadu (Seluruh MO Unit Terpilih)
+  const handlePreviewUnitHistory = (targetUnitNo: string) => {
+    if (!targetUnitNo) {
+      alert('Silakan pilih nomor unit terlebih dahulu.');
+      return;
+    }
+    try {
+      const result = generateUnitHistorySummaryPDF(breakdowns, targetUnitNo, currentUser, signatories);
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating Unit History PDF preview', e);
+      exportUnitHistorySummaryToPDF(breakdowns, targetUnitNo, currentUser, signatories);
+    }
+  };
+
+  // Handler Inline Edit Riwayat Harian
+  const handleStartInlineEdit = (b: BreakdownRecord, u: any, uIdx: number) => {
+    setEditingRowKey(`${b.id}_${uIdx}`);
+    setInlineEditForm({
+      tanggal: u.tanggal || b.tanggal || new Date().toISOString().split('T')[0],
+      startJob: u.startJob || '',
+      finishJob: u.finishJob || '',
+      detailPekerjaan: u.detailPekerjaan || u.detailKerusakan || '',
+      progress: u.progress || 'On Progress',
+      statusUnit: (u.statusUnit || 'BREAKDOWN') as 'READY' | 'BREAKDOWN' | 'LIMIT OPERASI',
+      pic1: u.pic1 || '',
+      pic2: u.pic2 || '',
+      pic3: u.pic3 || '',
+      remark: u.remark || '',
+    });
+  };
+
+  const handleCancelInlineEdit = () => {
+    setEditingRowKey(null);
+  };
+
+  const handleSaveInlineEdit = async (b: BreakdownRecord, uIdx: number) => {
+    setInlineSaveLoading(true);
+    try {
+      const res = await updateBreakdownHistoryEntry(b.id, uIdx, {
+        tanggal: inlineEditForm.tanggal,
+        startJob: inlineEditForm.startJob,
+        finishJob: inlineEditForm.finishJob,
+        detailPekerjaan: inlineEditForm.detailPekerjaan,
+        progress: inlineEditForm.progress,
+        statusUnit: inlineEditForm.statusUnit,
+        pic1: inlineEditForm.pic1,
+        pic2: inlineEditForm.pic2,
+        pic3: inlineEditForm.pic3,
+        remark: inlineEditForm.remark,
+      });
+      if (res.success) {
+        setEditingRowKey(null);
+        setActionFeedback('Riwayat perbaikan berhasil diperbarui!');
+        setTimeout(() => setActionFeedback(''), 3500);
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('bkwa_breakdown_updated', { detail: { id: b.id } }));
+      } else {
+        alert(`Gagal menyimpan perubahan: ${res.message}`);
+      }
+    } catch (err: any) {
+      console.error('Error saving inline update:', err);
+      alert('Terjadi kesalahan saat menyimpan perubahan riwayat.');
+    } finally {
+      setInlineSaveLoading(false);
+    }
+  };
+
+  const handleDeleteHistoryRow = async (b: BreakdownRecord, uIdx: number) => {
+    if (!confirm(`Hapus baris riwayat perbaikan nomor ${uIdx + 1} untuk MO ${b.noMaintenanceOrder || b.noNotifikasi}?`)) {
+      return;
+    }
+    const res = await deleteBreakdownHistoryEntry(b.id, uIdx);
+    if (res.success) {
+      setActionFeedback('Baris riwayat berhasil dihapus.');
+      setTimeout(() => setActionFeedback(''), 3500);
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new CustomEvent('bkwa_breakdown_updated', { detail: { id: b.id } }));
+    } else {
+      alert(res.message);
     }
   };
 
@@ -987,24 +1114,37 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               </div>
             </div>
 
-            {/* Top Spare Part untuk Unit Terpilih */}
-            {stats.topParts.length > 0 && (
-              <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800">
-                <span className="text-[10px] font-mono text-stone-400 block mb-1">
-                  TOP PART PALING SERING DIGANTI:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {stats.topParts.slice(0, 3).map((p, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-900 text-stone-200 border border-stone-800"
-                    >
-                      <strong className="text-amber-400">{p.nama}</strong>: {p.count} {p.satuan}
-                    </span>
-                  ))}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              {/* Top Spare Part untuk Unit Terpilih */}
+              {stats.topParts.length > 0 && (
+                <div className="bg-stone-950/70 p-3 rounded-xl border border-stone-800">
+                  <span className="text-[10px] font-mono text-stone-400 block mb-1">
+                    TOP PART PALING SERING DIGANTI:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {stats.topParts.slice(0, 3).map((p, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded text-[11px] font-mono bg-stone-900 text-stone-200 border border-stone-800"
+                      >
+                        <strong className="text-amber-400">{p.nama}</strong>: {p.count} {p.satuan}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+
+              {/* Tombol Print Unit Rangkuman Lengkap Semua MO */}
+              <button
+                type="button"
+                onClick={() => handlePreviewUnitHistory(selectedUnit)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono font-bold text-xs shadow-lg shadow-blue-600/20 active:scale-95 transition cursor-pointer shrink-0"
+                title={`Pratinjau & Cetak Dokumen Rangkuman Lengkap Seluruh Riwayat MO Unit ${selectedUnit}`}
+              >
+                <Printer className="w-4 h-4 text-white" />
+                <span>Print Riwayat Unit ({selectedUnit})</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1066,8 +1206,6 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           <div className="space-y-6">
             {filteredBreakdowns.map((b) => {
               const parts = extractAllPartsFromRecord(b);
-              const isReady = (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() === 'READY';
-              const isLimit = (b.statusUnit || '').toUpperCase().trim() === 'LIMIT OPERASI';
               const moNumber = b.noMaintenanceOrder || b.noNotifikasi || '-';
 
               const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
@@ -1083,8 +1221,21 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                     pic1: b.pic1,
                     pic2: b.pic2,
                     pic3: b.pic3,
-                    remark: '-'
+                    remark: b.remark || '-'
                   }];
+
+              const latestUpdate = updates[updates.length - 1];
+              const displayDate = latestUpdate?.tanggal || b.tanggal || '-';
+              const displayJam = (latestUpdate?.startJob || latestUpdate?.finishJob)
+                ? `${latestUpdate?.startJob || '-'} s/d ${latestUpdate?.finishJob || 'Proses'}`
+                : (b.jamBreakdown ? `Pkl ${b.jamBreakdown}` : '-');
+              const displayTindakan = latestUpdate?.detailPekerjaan || latestUpdate?.detailKerusakan || b.detailKerusakan || b.detailProblem || '-';
+              const displayPics = [latestUpdate?.pic1, latestUpdate?.pic2, latestUpdate?.pic3].filter(Boolean).join(', ') || '-';
+              const displayRemark = latestUpdate?.remark || b.remark || '-';
+              const displayStatus = latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN';
+              const displayProgress = latestUpdate?.progress || b.progress || 'On Progress';
+              const isReady = (displayStatus || '').toUpperCase().trim() === 'READY';
+              const isLimit = (displayStatus || '').toUpperCase().trim() === 'LIMIT OPERASI';
 
               return (
                 <div
@@ -1122,12 +1273,27 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
                     {/* Status & Action Buttons */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-900 text-stone-300 border border-stone-800 flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-stone-400" />
-                        {b.tanggal} {b.jamBreakdown ? `(${b.jamBreakdown})` : ''}
+                      {/* Tanggal & Jam Kerja Terkini (Sinkron Hasil Update Harian) */}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-900 text-stone-200 border border-stone-800 flex items-center gap-1" title="Tanggal dan Jam Pengerjaan Terkini (Sinkron Update)">
+                        <Calendar className="w-3 h-3 text-amber-400" />
+                        <span className="text-amber-300 font-bold">{displayDate}</span>
+                        <span className="text-stone-400">({displayJam})</span>
                       </span>
+
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-950/80 text-rose-300 border border-rose-800/50">
                         {b.component || 'Other'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          (b.breakdownType || 'UNSCHEDULE') === 'SCHEDULE'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                            : (b.breakdownType || 'UNSCHEDULE') === 'ACCIDENT'
+                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        }`}
+                        title="Breakdown Type (Klasifikasi Kerusakan)"
+                      >
+                        {b.breakdownType || 'UNSCHEDULE'}
                       </span>
                       <span
                         className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
@@ -1139,20 +1305,34 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         }`}
                       >
                         {isReady ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                        {b.statusUnit || 'BREAKDOWN'} ({b.progress || 'On Progress'})
+                        {displayStatus} ({displayProgress})
                       </span>
 
                       {/* Tombol Aksi per Kartu */}
-                      <div className="flex items-center gap-1.5 ml-auto">
+                      <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+                        {/* 1. Print MO Spesifik */}
                         <button
                           type="button"
                           onClick={() => handlePreviewSingleMO(b)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-[11px] font-mono font-semibold transition cursor-pointer"
-                          title="Pratinjau / Print PDF untuk MO Ini"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
+                          title="Pratinjau / Print PDF Khusus Dokumen MO Ini"
                         >
                           <Printer className="w-3 h-3 text-amber-400" />
                           <span>Print MO</span>
                         </button>
+
+                        {/* 2. Print Unit (Rangkuman Seluruh Kejadian MO Unit Ini) */}
+                        <button
+                          type="button"
+                          onClick={() => handlePreviewUnitHistory(b.noUnit)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500 hover:text-stone-950 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
+                          title={`Pratinjau / Print Riwayat Terpadu Seluruh MO Unit ${b.noUnit}`}
+                        >
+                          <Truck className="w-3 h-3 text-blue-400" />
+                          <span>Print Unit</span>
+                        </button>
+
+                        {/* 3. Permintaan Part ke Malang */}
                         <button
                           type="button"
                           onClick={() => {
@@ -1165,6 +1345,8 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           <Package className="w-3 h-3 text-rose-400" />
                           <span>Part Malang</span>
                         </button>
+
+                        {/* 4. Update Pekerjaan di Sub Modul 2 */}
                         {onNavigateToUpdate && !isReady && (
                           <button
                             type="button"
@@ -1176,6 +1358,8 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                             <span>Update</span>
                           </button>
                         )}
+
+                        {/* 5. Detail Modal */}
                         <button
                           type="button"
                           onClick={() => setActiveModalRecord(b)}
@@ -1184,6 +1368,8 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* 6. Hapus Record */}
                         {canDelete && onDeleteBreakdown && (
                           <button
                             type="button"
@@ -1198,28 +1384,55 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                     </div>
                   </div>
 
-                  {/* Problem Awal Info */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-3 rounded-xl bg-stone-900/60 border border-stone-800/80 text-xs font-mono">
+                  {/* Problem Awal Info & PIC Mekanik Terkini (Sinkron dengan Hasil Update Harian) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 p-3.5 rounded-xl bg-stone-900/70 border border-stone-800/80 text-xs font-mono">
                     <div>
-                      <span className="text-stone-500 block text-[10px]">PELAPOR &amp; LOKASI:</span>
-                      <span className="text-stone-200 font-semibold">{b.pelapor || '-'} ({b.jabatan || 'Pelapor'})</span>
-                      <div className="text-stone-400 text-[11px] flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3 h-3 text-amber-500/70" />
-                        {b.lokasi || '-'}
+                      <span className="text-stone-500 block text-[10px] uppercase font-bold tracking-wider">
+                        PIC Mekanik Terkini (Update):
+                      </span>
+                      <span className="text-amber-300 font-semibold text-xs block mt-0.5">
+                        {displayPics}
+                      </span>
+                      <div className="text-stone-400 text-[11px] flex items-center gap-1 mt-1.5">
+                        <MapPin className="w-3 h-3 text-amber-500/70 shrink-0" />
+                        <span>{b.lokasi || '-'}</span>
+                      </div>
+                      <div className="text-[10px] text-stone-500 mt-1">
+                        Pelapor Awal: <span className="text-stone-400">{b.pelapor || '-'}</span>
                       </div>
                     </div>
-                    <div className="md:col-span-2">
-                      <span className="text-stone-500 block text-[10px]">PROBLEM AWAL &amp; KELUHAN:</span>
-                      <p className="text-stone-200 font-sans text-xs mt-0.5">{b.detailProblem || '-'}</p>
+                    <div className="md:col-span-2 space-y-1">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-stone-500 text-[10px] uppercase font-bold tracking-wider">
+                          Tindakan / Detail Perbaikan Terkini:
+                        </span>
+                        {displayRemark !== '-' && (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                            Remark: {displayRemark}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-stone-100 font-sans text-xs leading-relaxed">
+                        {displayTindakan}
+                      </p>
+                      <div className="text-[10px] text-stone-500 pt-1.5 flex items-center gap-1.5 border-t border-stone-800/60">
+                        <span className="text-stone-400 font-mono">Problem Awal (Saat Lapor):</span>
+                        <span className="text-stone-300 italic font-sans">{b.detailProblem || '-'}</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* TABEL 1: RINCIAN UPDATE PEKERJAAN HARIAN */}
+                  {/* TABEL 1: RINCIAN UPDATE PEKERJAAN HARIAN (DENGAN FITUR INLINE EDITING) */}
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Clock className="w-3.5 h-3.5 text-amber-400" />
-                      <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
-                        Riwayat Update Pekerjaan Harian ({updates.length} Catatan)
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+                          Riwayat Update Pekerjaan Harian ({updates.length} Catatan)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono text-stone-500">
+                        Klik tombol pensil untuk edit langsung (inline) tanggal, jam, atau perbaikan
                       </span>
                     </div>
                     <div className="overflow-x-auto rounded-xl border border-stone-800">
@@ -1228,27 +1441,153 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           <tr>
                             <th className="p-2 w-8 text-center">No</th>
                             <th className="p-2 w-24">Tanggal</th>
-                            <th className="p-2 w-28">Jam Kerja</th>
-                            <th className="p-2">Tindakan / Detail Pekerjaan</th>
+                            <th className="p-2 w-20">Jam Mulai</th>
+                            <th className="p-2 w-20">Jam Selesai</th>
+                            <th className="p-2 min-w-[200px]">Tindakan / Detail Pekerjaan</th>
                             <th className="p-2 w-24">Progress</th>
                             <th className="p-2 w-28">Status Unit</th>
-                            <th className="p-2 w-44">PIC Mekanik</th>
-                            <th className="p-2 w-32">Remark</th>
+                            <th className="p-2 w-36">PIC Mekanik</th>
+                            <th className="p-2 w-28">Remark</th>
+                            <th className="p-2 w-24 text-center">Aksi</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-800/60">
                           {updates.map((u: any, uIdx: number) => {
-                            const jamStr = (u.startJob || u.finishJob)
-                              ? `${u.startJob || '-'} s/d ${u.finishJob || 'Proses'}`
-                              : (u.jamPekerjaan || '-');
-                            const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || b.pelapor || '-';
+                            const isEditing = editingRowKey === `${b.id}_${uIdx}`;
+                            const jamMulai = u.jamStart || (u.startJob && u.startJob.includes(':') ? u.startJob : (u.startJob && u.startJob.length === 5 ? u.startJob : (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[0].trim() : '-')));
+                            const jamSelesai = u.jamFinish || u.finishJob || (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[1].trim() : '-');
+                            // Kolom PIC mekanik murni mengambil dari mekanik update (jangan ambil PIC Pelapor)
+                            const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
+
+                            if (isEditing) {
+                              return (
+                                <tr key={u.id || uIdx} className="bg-amber-500/10 border-2 border-amber-500/60">
+                                  <td className="p-2 text-center text-amber-400 font-bold">{uIdx + 1}</td>
+                                  <td className="p-2">
+                                    <input
+                                      type="date"
+                                      value={inlineEditForm.tanggal}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, tanggal: e.target.value }))}
+                                      className="w-full bg-stone-900 border border-amber-500/60 rounded px-1.5 py-1 text-stone-100 font-mono text-[11px] focus:outline-none focus:border-amber-400"
+                                      title="Ubah Tanggal Update"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <input
+                                      type="time"
+                                      value={inlineEditForm.startJob}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, startJob: e.target.value }))}
+                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-1 text-stone-100 font-mono text-[11px] focus:border-amber-400"
+                                      title="Jam Mulai Pekerjaan"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <input
+                                      type="time"
+                                      value={inlineEditForm.finishJob}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, finishJob: e.target.value }))}
+                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-1 text-stone-100 font-mono text-[11px] focus:border-amber-400"
+                                      title="Jam Selesai Pekerjaan"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <textarea
+                                      rows={2}
+                                      value={inlineEditForm.detailPekerjaan}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, detailPekerjaan: e.target.value }))}
+                                      placeholder="Tindakan / Detail Perbaikan..."
+                                      className="w-full bg-stone-900 border border-amber-500/60 rounded px-2 py-1 text-stone-100 font-sans text-xs focus:outline-none focus:border-amber-400 resize-y"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <select
+                                      value={inlineEditForm.progress}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, progress: e.target.value }))}
+                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1 py-1 text-amber-300 font-mono text-[10.5px] font-bold focus:border-amber-400"
+                                    >
+                                      <option value="25%">25%</option>
+                                      <option value="50%">50%</option>
+                                      <option value="75%">75%</option>
+                                      <option value="100%">100%</option>
+                                      <option value="On Progress">On Progress</option>
+                                      <option value="Pending Part">Pending Part</option>
+                                      <option value="Finish">Finish</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-2">
+                                    <select
+                                      value={inlineEditForm.statusUnit}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, statusUnit: e.target.value as any }))}
+                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1 py-1 text-stone-100 font-mono text-[10.5px] font-bold focus:border-amber-400"
+                                    >
+                                      <option value="BREAKDOWN">BREAKDOWN</option>
+                                      <option value="LIMIT OPERASI">LIMIT OPERASI</option>
+                                      <option value="READY">READY</option>
+                                    </select>
+                                  </td>
+                                  <td className="p-2">
+                                    <div className="space-y-1">
+                                      <input
+                                        type="text"
+                                        list="pic-datalist"
+                                        value={inlineEditForm.pic1}
+                                        onChange={(e) => setInlineEditForm(prev => ({ ...prev, pic1: e.target.value }))}
+                                        placeholder="PIC Mekanik 1"
+                                        className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-0.5 text-stone-200 text-[10px] focus:border-amber-400"
+                                      />
+                                      <input
+                                        type="text"
+                                        list="pic-datalist"
+                                        value={inlineEditForm.pic2}
+                                        onChange={(e) => setInlineEditForm(prev => ({ ...prev, pic2: e.target.value }))}
+                                        placeholder="PIC Mekanik 2 (Opsional)"
+                                        className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-0.5 text-stone-200 text-[10px] focus:border-amber-400"
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="p-2">
+                                    <input
+                                      type="text"
+                                      value={inlineEditForm.remark}
+                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, remark: e.target.value }))}
+                                      placeholder="Remark..."
+                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-1 text-stone-300 font-sans text-[10.5px] focus:border-amber-400"
+                                    />
+                                  </td>
+                                  <td className="p-2 text-center whitespace-nowrap">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        type="button"
+                                        disabled={inlineSaveLoading}
+                                        onClick={() => handleSaveInlineEdit(b, uIdx)}
+                                        className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[10px] font-mono flex items-center gap-1 shadow cursor-pointer disabled:opacity-50 active:scale-95 transition"
+                                        title="Simpan Perubahan Baris Ini"
+                                      >
+                                        <Check className="w-3 h-3" />
+                                        <span>Simpan</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={inlineSaveLoading}
+                                        onClick={handleCancelInlineEdit}
+                                        className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[10px] transition cursor-pointer"
+                                        title="Batal Edit"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
 
                             return (
-                              <tr key={u.id || uIdx} className="hover:bg-stone-900/40">
+                              <tr key={u.id || uIdx} className="hover:bg-stone-900/40 transition">
                                 <td className="p-2 text-center text-stone-500">{uIdx + 1}</td>
                                 <td className="p-2 text-stone-200 whitespace-nowrap">{u.tanggal || '-'}</td>
-                                <td className="p-2 text-stone-300 whitespace-nowrap">{jamStr}</td>
-                                <td className="p-2 font-sans text-stone-100">{u.detailPekerjaan || '-'}</td>
+                                <td className="p-2 text-stone-300 whitespace-nowrap font-mono">{jamMulai}</td>
+                                <td className="p-2 text-stone-300 whitespace-nowrap font-mono">{jamSelesai}</td>
+                                <td className="p-2 font-sans text-stone-100">{u.detailPekerjaan || u.detailKerusakan || '-'}</td>
                                 <td className="p-2 text-amber-400 font-semibold whitespace-nowrap">{u.progress || '-'}</td>
                                 <td className="p-2 whitespace-nowrap">
                                   <span
@@ -1263,8 +1602,30 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                                     {u.statusUnit || '-'}
                                   </span>
                                 </td>
-                                <td className="p-2 text-stone-300 font-sans">{pics}</td>
+                                <td className="p-2 text-amber-300 font-medium whitespace-nowrap font-sans">{pics}</td>
                                 <td className="p-2 text-stone-400 text-[10px]">{u.remark || '-'}</td>
+                                <td className="p-2 text-center whitespace-nowrap">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartInlineEdit(b, u, uIdx)}
+                                      className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 hover:text-stone-950 text-amber-300 border border-amber-500/30 transition cursor-pointer"
+                                      title="Edit Baris Riwayat Ini (Inline Edit)"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </button>
+                                    {canDelete && updates.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteHistoryRow(b, uIdx)}
+                                        className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition cursor-pointer"
+                                        title="Hapus Baris Riwayat Ini"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1380,19 +1741,42 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         <div className="text-[9px] text-stone-500 font-sans">{b.jenis || '-'}</div>
                       </td>
 
-                      {/* 3. Tanggal & Lokasi */}
+                      {/* 3. Tanggal & Lokasi (Sinkron Update Terakhir) */}
                       <td className="px-3.5 py-3 whitespace-nowrap">
-                        <div className="text-stone-200">{b.tanggal || '-'}</div>
-                        <div className="text-[10px] text-stone-400 truncate max-w-[120px]" title={b.lokasi}>
-                          {b.lokasi || '-'}
-                        </div>
+                        {(() => {
+                          const latestUp = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+                            ? b.riwayatUpdate[b.riwayatUpdate.length - 1]
+                            : null;
+                          const displayDate = latestUp?.tanggal || b.tanggal || '-';
+                          return (
+                            <>
+                              <div className="text-stone-200 font-semibold">{displayDate}</div>
+                              <div className="text-[10px] text-stone-400 truncate max-w-[120px]" title={b.lokasi}>
+                                {b.lokasi || '-'}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </td>
 
                       {/* 4. Komponen & Problem Awal */}
                       <td className="px-3.5 py-3 max-w-[220px]">
-                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50 mb-1">
-                          {b.component || 'Other'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50">
+                            {b.component || 'Other'}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono inline-block ${
+                              (b.breakdownType || 'UNSCHEDULE') === 'SCHEDULE'
+                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                : (b.breakdownType || 'UNSCHEDULE') === 'ACCIDENT'
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}
+                          >
+                            {b.breakdownType || 'UNSCHEDULE'}
+                          </span>
+                        </div>
                         <div className="text-stone-300 font-sans line-clamp-2 text-[11px]" title={b.detailProblem}>
                           {b.detailProblem || '-'}
                         </div>
@@ -1449,19 +1833,30 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         )}
                       </td>
 
-                      {/* 7. PIC Teknisi */}
+                      {/* 7. PIC Mekanik (Sinkron Hasil Update Harian - Tanpa Pelapor) */}
                       <td className="px-3.5 py-3 whitespace-nowrap font-sans">
-                        <div className="text-stone-200 font-medium">
-                          {[b.pic1, b.pic2, b.pic3].filter(Boolean).join(', ') || b.pelapor || '-'}
-                        </div>
-                        <div className="text-[10px] text-stone-400">
-                          {b.jabatan || 'Teknisi'}
-                        </div>
+                        {(() => {
+                          const latestUp = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+                            ? b.riwayatUpdate[b.riwayatUpdate.length - 1]
+                            : null;
+                          const pics = [latestUp?.pic1 || b.pic1, latestUp?.pic2 || b.pic2, latestUp?.pic3 || b.pic3].filter(Boolean).join(', ') || '-';
+                          return (
+                            <>
+                              <div className="text-amber-300 font-medium">
+                                {pics}
+                              </div>
+                              <div className="text-[10px] text-stone-500">
+                                Pelapor: {b.pelapor || '-'}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </td>
 
                       {/* 8. Tombol Detail & Kebutuhan Part */}
                       <td className="px-3.5 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
+                          {/* Print Dokumen MO */}
                           <button
                             type="button"
                             onClick={() => handlePreviewSingleMO(b)}
@@ -1470,6 +1865,18 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           >
                             <Printer className="w-3.5 h-3.5 text-amber-400" />
                           </button>
+
+                          {/* Print Dokumen Riwayat Unit Lengkap */}
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewUnitHistory(b.noUnit)}
+                            className="px-2 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900 text-blue-300 border border-blue-800/40 text-[10.5px] font-bold font-mono transition flex items-center gap-1 cursor-pointer"
+                            title={`Pratinjau / Print Riwayat Semua MO Unit ${b.noUnit}`}
+                          >
+                            <Truck className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Unit</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1480,8 +1887,9 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                             title="Lihat Kebutuhan Part & Export PDF ke Malang"
                           >
                             <Package className="w-3.5 h-3.5 text-rose-400" />
-                            <span>Part (PDF)</span>
+                            <span>Part</span>
                           </button>
+
                           <button
                             type="button"
                             onClick={() => setActiveModalRecord(b)}
@@ -1491,6 +1899,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                             <Eye className="w-3.5 h-3.5" />
                             <span>Detail</span>
                           </button>
+
                           {canDelete && onDeleteBreakdown && (
                             <button
                               type="button"
@@ -2052,6 +2461,23 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
         filename={previewFilename}
         onDownload={handleExportPDF}
       />
+
+      {/* Datalist Opsi PIC Mekanik dari Modul 2 Manpower */}
+      <datalist id="pic-datalist">
+        {manpowerData.map((m, idx) => (
+          <option key={idx} value={m.nama}>
+            {m.nama} ({m.jabatan || 'Teknisi'})
+          </option>
+        ))}
+      </datalist>
+
+      {/* Toast Notifikasi Aksi Berhasil */}
+      {actionFeedback && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-500 text-stone-950 font-mono font-black text-xs shadow-2xl shadow-emerald-500/40 animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-stone-950" />
+          <span>{actionFeedback}</span>
+        </div>
+      )}
     </div>
   );
 };

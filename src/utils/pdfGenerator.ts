@@ -830,6 +830,35 @@ export const generateDetailHistoryPDF = (
       doc.setLineWidth(0.3);
       doc.roundedRect(14, currentY, 269, 15, 2, 2, 'FD');
 
+      // Update data mutakhir dari riwayatUpdate terakhir
+      const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+        ? b.riwayatUpdate
+        : [{
+            id: 'init',
+            tanggal: b.tanggal || '-',
+            startJob: b.jamStart || b.startJob || '-',
+            finishJob: b.jamFinish || (b as any).finishJob || '-',
+            jamPekerjaan: b.jamBreakdown || '-',
+            detailPekerjaan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+            detailKerusakan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+            progress: b.progress || 'On Progress',
+            statusUnit: b.statusUnit || 'BREAKDOWN',
+            pic1: b.pic1,
+            pic2: b.pic2,
+            pic3: b.pic3,
+            remark: b.remark || '-'
+          }];
+
+      const latestUpdate = updates[updates.length - 1];
+      const displayDate = latestUpdate?.tanggal || b.tanggal || '-';
+      const displayJam = (latestUpdate?.startJob || latestUpdate?.finishJob)
+        ? `${latestUpdate.startJob || '-'} s/d ${latestUpdate.finishJob || 'Proses'}`
+        : (latestUpdate?.jamPekerjaan || (b.jamBreakdown ? `Jam ${b.jamBreakdown}` : '-'));
+      const displayStatus = latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN';
+      const displayProgress = latestUpdate?.progress || b.progress || 'On Progress';
+      const displayPics = [latestUpdate?.pic1, latestUpdate?.pic2, latestUpdate?.pic3].filter(Boolean).join(', ') || '-';
+      const displayPekerjaan = latestUpdate?.detailPekerjaan || latestUpdate?.detailKerusakan || b.detailKerusakan || b.detailProblem || '-';
+
       // Teks Kartu Header
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
@@ -839,60 +868,50 @@ export const generateDetailHistoryPDF = (
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(...darkTextColor);
-      doc.text(`Notifikasi: ${notifNum}`, 75, currentY + 5.5);
-      doc.text(`Unit: `, 115, currentY + 5.5);
+      doc.text(`Notifikasi: ${notifNum}`, 72, currentY + 5.5);
+      doc.text(`Unit: `, 112, currentY + 5.5);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${b.noUnit || '-'} (${b.namaAlat || b.noLama || '-'})`, 123, currentY + 5.5);
+      doc.text(`${b.noUnit || '-'} (${b.namaAlat || b.noLama || '-'})`, 120, currentY + 5.5);
 
       doc.setFont('helvetica', 'normal');
-      doc.text(`Tgl Breakdown: ${b.tanggal || '-'} ${b.jamBreakdown ? `pk ${b.jamBreakdown}` : ''}`, 190, currentY + 5.5);
+      doc.text(`Tgl Update: ${displayDate} (${displayJam})`, 190, currentY + 5.5);
 
-      // Baris kedua header box: Komponen, Status, Problem
+      // Baris kedua header box: Komponen, Status, PIC, Pekerjaan
       doc.setFont('helvetica', 'bold');
       doc.text(`Komponen: `, 18, currentY + 11.5);
       doc.setFont('helvetica', 'normal');
-      doc.text(`${b.component || '-'}`, 36, currentY + 11.5);
+      doc.text(`${b.component || '-'} [${b.breakdownType || 'UNSCHEDULE'}]`, 36, currentY + 11.5);
 
       doc.setFont('helvetica', 'bold');
-      doc.text(`Status Terkini: `, 75, currentY + 11.5);
-      const isReady = (b.statusUnit || '').toUpperCase().trim() === 'READY';
+      doc.text(`Status: `, 82, currentY + 11.5);
+      const isReady = (displayStatus || '').toUpperCase().trim() === 'READY';
       doc.setTextColor(isReady ? 22 : 190, isReady ? 101 : 18, isReady ? 52 : 60);
-      doc.text(`${b.statusUnit || 'BREAKDOWN'} (${b.progress || 'On Progress'})`, 96, currentY + 11.5);
+      doc.text(`${displayStatus} (${displayProgress})`, 94, currentY + 11.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkTextColor);
+      doc.text(`PIC Mekanik: `, 145, currentY + 11.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(displayPics.substring(0, 24), 164, currentY + 11.5);
 
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...grayTextColor);
-      const probText = `Problem Awal: ${(b.detailProblem || '-').substring(0, 80)}`;
-      doc.text(probText, 160, currentY + 11.5);
+      const probText = `Tindakan: ${displayPekerjaan.substring(0, 36)}`;
+      doc.text(probText, 206, currentY + 11.5);
 
       currentY += 17;
 
-      // 1. TABEL RINCIAN UPDATE PEKERJAAN HARIAN
-      const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
-        ? b.riwayatUpdate
-        : [{
-            id: 'init',
-            tanggal: b.tanggal || '-',
-            startJob: b.jamStart || b.startJob || '-',
-            finishJob: b.jamFinish || (b as any).finishJob || '-',
-            detailPekerjaan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
-            progress: b.progress || 'On Progress',
-            statusUnit: b.statusUnit || 'BREAKDOWN',
-            pic1: b.pic1,
-            pic2: b.pic2,
-            pic3: b.pic3,
-            remark: '-'
-          }];
-
+      // 1. TABEL RINCIAN UPDATE PEKERJAAN HARIAN (TANGGAL, JAM MULAI, JAM SELESAI TERPISAH)
       const updateRows = updates.map((u: any, uIdx: number) => {
-        const jamKerja = (u.startJob || u.finishJob)
-          ? `${u.startJob || '-'} s/d ${u.finishJob || 'Proses'}`
-          : (u.jamPekerjaan || '-');
-        const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || b.pelapor || '-';
+        const jamMulai = u.jamStart || (u.startJob && u.startJob.includes(':') ? u.startJob : (u.startJob && u.startJob.length === 5 ? u.startJob : (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[0].trim() : '-')));
+        const jamSelesai = u.jamFinish || u.finishJob || (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[1].trim() : '-');
+        const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
         return [
           uIdx + 1,
           u.tanggal || '-',
-          jamKerja,
-          u.detailPekerjaan || '-',
+          jamMulai,
+          jamSelesai,
+          u.detailPekerjaan || u.detailKerusakan || '-',
           u.progress || '-',
           u.statusUnit || '-',
           pics,
@@ -906,7 +925,8 @@ export const generateDetailHistoryPDF = (
           [
             'No',
             'Tgl Update',
-            'Jam Kerja',
+            'Jam Mulai',
+            'Jam Selesai',
             'Detail Pekerjaan / Tindakan Perbaikan',
             'Progress',
             'Status Unit',
@@ -934,12 +954,13 @@ export const generateDetailHistoryPDF = (
         columnStyles: {
           0: { cellWidth: 8, halign: 'center' },
           1: { cellWidth: 20 },
-          2: { cellWidth: 24 },
-          3: { cellWidth: 95 },
-          4: { cellWidth: 22 },
-          5: { cellWidth: 24, fontStyle: 'bold' },
-          6: { cellWidth: 42 },
-          7: { cellWidth: 34 },
+          2: { cellWidth: 16, halign: 'center' },
+          3: { cellWidth: 16, halign: 'center' },
+          4: { cellWidth: 87 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 24, fontStyle: 'bold' },
+          7: { cellWidth: 40 },
+          8: { cellWidth: 36 },
         },
         margin: { left: 14, right: 14 },
       });
@@ -1133,6 +1154,446 @@ export const exportDetailHistoryToPDF = (
   signatories?: DailyReportSignatoryOptions
 ): GeneratedPDFResult => {
   const result = generateDetailHistoryPDF(breakdowns, selectedUnit, currentUser, signatories);
+  result.download();
+  return result;
+};
+
+/**
+ * Utility untuk men-generate Dokumen Rangkuman Riwayat Unit Terpadu (Print Unit)
+ * Memuat seluruh nomor Maintenance Order (MO) dan rincian update pekerjaan harian unit tersebut.
+ */
+export const generateUnitHistorySummaryPDF = (
+  unitBreakdowns: BreakdownRecord[],
+  selectedUnit: string,
+  currentUser: UserAccount,
+  signatories?: DailyReportSignatoryOptions
+): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const nowStr = new Date().toLocaleString('id-ID');
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Maintenance';
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  // Hitung total part
+  let totalPartsCount = 0;
+  unitBreakdowns.forEach(b => {
+    (b.partsJasa || []).forEach(p => { totalPartsCount += Number(p.qty) || 1; });
+    (b.riwayatUpdate || []).forEach(u => {
+      (u.partsJasa || []).forEach(p => { totalPartsCount += Number(p.qty) || 1; });
+    });
+  });
+
+  const firstUnit = unitBreakdowns[0];
+  const unitLabel = selectedUnit || firstUnit?.noUnit || 'Semua Unit';
+  const alatLabel = firstUnit?.namaAlat || firstUnit?.noLama || '-';
+  const jenisLabel = firstUnit?.jenis || '-';
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & ALAT BERAT • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(9);
+    doc.setTextColor(190, 18, 60);
+    doc.text('DOKUMEN HISTORIS RESMI ARMADA', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text(`BUKU RIWAYAT PERAWATAN & PERBAIKAN UNIT: ${unitLabel.toUpperCase()}`, 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Nama Alat: ${alatLabel}   |   Jenis: ${jenisLabel}   |   Total Kasus MO: ${unitBreakdowns.length}   |   Waktu Cetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  let currentY = 34;
+
+  if (unitBreakdowns.length === 0) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text(`Tidak ada riwayat perbaikan yang tercatat untuk unit ${unitLabel}.`, 148.5, 45, { align: 'center' });
+    currentY = 55;
+  } else {
+    // Ringkasan Unit Banner
+    doc.setFillColor(241, 245, 249);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(14, currentY, 269, 10, 2, 2, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...primaryColor);
+    doc.text(`RINGKASAN ARMADA:`, 18, currentY + 6.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...darkTextColor);
+    doc.text(`No. Unit: `, 52, currentY + 6.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${unitLabel} (${alatLabel})`, 67, currentY + 6.5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Jenis Alat: ${jenisLabel}`, 130, currentY + 6.5);
+    doc.text(`Total Kejadian Breakdown: ${unitBreakdowns.length} Kali`, 180, currentY + 6.5);
+    doc.text(`Total Part Terganti: ${totalPartsCount} Item`, 235, currentY + 6.5);
+
+    currentY += 14;
+
+    unitBreakdowns.forEach((b) => {
+      const moNum = b.noMaintenanceOrder || b.noNotifikasi || '-';
+      const notifNum = b.noNotifikasi || '-';
+
+      if (currentY > 155) {
+        doc.addPage();
+        renderHeader();
+        currentY = 34;
+      }
+
+      // KARTU MO BANNER
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(14, currentY, 269, 15, 2, 2, 'FD');
+
+      const updates = (b.riwayatUpdate && b.riwayatUpdate.length > 0)
+        ? b.riwayatUpdate
+        : [{
+            id: 'init',
+            tanggal: b.tanggal || '-',
+            startJob: b.jamStart || b.startJob || '-',
+            finishJob: b.jamFinish || (b as any).finishJob || '-',
+            jamPekerjaan: b.jamBreakdown || '-',
+            detailPekerjaan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+            detailKerusakan: b.detailKerusakan || b.detailProblem || 'Laporan breakdown awal',
+            progress: b.progress || 'On Progress',
+            statusUnit: b.statusUnit || 'BREAKDOWN',
+            pic1: b.pic1,
+            pic2: b.pic2,
+            pic3: b.pic3,
+            remark: b.remark || '-'
+          }];
+
+      const latestUpdate = updates[updates.length - 1];
+      const displayDate = latestUpdate?.tanggal || b.tanggal || '-';
+      const displayJam = (latestUpdate?.startJob || latestUpdate?.finishJob)
+        ? `${latestUpdate.startJob || '-'} s/d ${latestUpdate.finishJob || 'Proses'}`
+        : (latestUpdate?.jamPekerjaan || (b.jamBreakdown ? `Jam ${b.jamBreakdown}` : '-'));
+      const displayStatus = latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN';
+      const displayProgress = latestUpdate?.progress || b.progress || 'On Progress';
+      const displayPics = [latestUpdate?.pic1, latestUpdate?.pic2, latestUpdate?.pic3].filter(Boolean).join(', ') || '-';
+      const displayPekerjaan = latestUpdate?.detailPekerjaan || latestUpdate?.detailKerusakan || b.detailKerusakan || b.detailProblem || '-';
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...primaryColor);
+      doc.text(`[REFF NO. MO: ${moNum}]`, 18, currentY + 5.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...darkTextColor);
+      doc.text(`Notifikasi: ${notifNum}`, 72, currentY + 5.5);
+      doc.text(`Tgl Mulai BD: ${b.tanggal || '-'} (Jam ${b.jamBreakdown || '-'})`, 112, currentY + 5.5);
+      doc.text(`Update Terakhir: ${displayDate} (${displayJam})`, 190, currentY + 5.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Komponen: `, 18, currentY + 11.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${b.component || '-'} [${b.breakdownType || 'UNSCHEDULE'}]`, 36, currentY + 11.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Status: `, 82, currentY + 11.5);
+      const isReady = (displayStatus || '').toUpperCase().trim() === 'READY';
+      doc.setTextColor(isReady ? 22 : 190, isReady ? 101 : 18, isReady ? 52 : 60);
+      doc.text(`${displayStatus} (${displayProgress})`, 94, currentY + 11.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkTextColor);
+      doc.text(`PIC Mekanik: `, 145, currentY + 11.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(displayPics.substring(0, 24), 164, currentY + 11.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...grayTextColor);
+      const probText = `Pekerjaan: ${displayPekerjaan.substring(0, 36)}`;
+      doc.text(probText, 206, currentY + 11.5);
+
+      currentY += 17;
+
+      const updateRows = updates.map((u: any, uIdx: number) => {
+        const jamMulai = u.jamStart || (u.startJob && u.startJob.includes(':') ? u.startJob : (u.startJob && u.startJob.length === 5 ? u.startJob : (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[0].trim() : '-')));
+        const jamSelesai = u.jamFinish || u.finishJob || (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[1].trim() : '-');
+        const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
+        return [
+          uIdx + 1,
+          u.tanggal || '-',
+          jamMulai,
+          jamSelesai,
+          u.detailPekerjaan || u.detailKerusakan || '-',
+          u.progress || '-',
+          u.statusUnit || '-',
+          pics,
+          u.remark || '-',
+        ];
+      });
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [
+          [
+            'No',
+            'Tgl Update',
+            'Jam Mulai',
+            'Jam Selesai',
+            'Detail Pekerjaan / Tindakan Perbaikan',
+            'Progress',
+            'Status Unit',
+            'PIC Mekanik',
+            'Remark',
+          ],
+        ],
+        body: updateRows,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          fontSize: 7,
+          fontStyle: 'bold',
+          halign: 'center',
+          cellPadding: 1.5,
+        },
+        styles: {
+          fontSize: 6.8,
+          cellPadding: 1.5,
+          textColor: [30, 41, 59],
+          lineColor: [226, 232, 240],
+          lineWidth: 0.15,
+        },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 16, halign: 'center' },
+          3: { cellWidth: 16, halign: 'center' },
+          4: { cellWidth: 87 },
+          5: { cellWidth: 22 },
+          6: { cellWidth: 24, fontStyle: 'bold' },
+          7: { cellWidth: 40 },
+          8: { cellWidth: 36 },
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      // @ts-ignore
+      currentY = doc.lastAutoTable.finalY + 3;
+
+      // Sub-tabel part
+      const allParts: BreakdownPartJasaItem[] = [];
+      const seenKey = new Set<string>();
+      const addParts = (items?: BreakdownPartJasaItem[]) => {
+        if (!items || !Array.isArray(items)) return;
+        items.forEach(p => {
+          const key = `${p.jenis}-${p.partNumber || ''}-${p.namaPart || ''}`;
+          if (!seenKey.has(key)) {
+            seenKey.add(key);
+            allParts.push(p);
+          }
+        });
+      };
+      addParts(b.partsJasa);
+      b.riwayatUpdate?.forEach(u => addParts(u.partsJasa));
+
+      if (allParts.length > 0) {
+        if (currentY > 175) {
+          doc.addPage();
+          renderHeader();
+          currentY = 34;
+        }
+
+        const partRows = allParts.map((p, pIdx) => [
+          pIdx + 1,
+          p.jenis || 'Part',
+          p.namaPart || '-',
+          p.partNumber || '-',
+          p.qty ?? 1,
+          p.satuan || 'Pcs',
+          p.remark || '-',
+        ]);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [
+            [
+              'No',
+              'Jenis',
+              'Nama Part / Jasa Digunakan',
+              'Part Number (PN)',
+              'Qty',
+              'Satuan',
+              'Remark / Keterangan',
+            ],
+          ],
+          body: partRows,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [180, 83, 9],
+            textColor: [255, 255, 255],
+            fontSize: 6.8,
+            fontStyle: 'bold',
+            halign: 'center',
+            cellPadding: 1.5,
+          },
+          styles: {
+            fontSize: 6.5,
+            cellPadding: 1.4,
+            textColor: [30, 41, 59],
+            lineColor: [226, 232, 240],
+            lineWidth: 0.15,
+          },
+          columnStyles: {
+            0: { cellWidth: 8, halign: 'center' },
+            1: { cellWidth: 18, fontStyle: 'bold' },
+            2: { cellWidth: 80 },
+            3: { cellWidth: 45, fontStyle: 'bold' },
+            4: { cellWidth: 15, halign: 'right', fontStyle: 'bold' },
+            5: { cellWidth: 20 },
+            6: { cellWidth: 83 },
+          },
+          margin: { left: 14, right: 14 },
+        });
+
+        // @ts-ignore
+        currentY = doc.lastAutoTable.finalY + 6;
+      } else {
+        currentY += 4;
+      }
+    });
+  }
+
+  // @ts-ignore
+  let sigY = currentY + 4;
+  if (sigY > 165) {
+    doc.addPage();
+    sigY = 20;
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+
+  const namaPembuat = signatories?.pembuatName || exporterName;
+  const jabatanPembuat = signatories?.pembuatJabatan || 'Administrasi';
+  const namaDiperiksa = signatories?.diperiksaName || 'Staff Administrasi';
+  const jabatanDiperiksa = signatories?.diperiksaJabatan || 'Administrasi';
+  const namaDisetujui = signatories?.disetujuiName || signatories?.diketahuiName || 'Dodik Mariyadi';
+  const jabatanDisetujui = signatories?.disetujuiJabatan || signatories?.diketahuiJabatan || 'Kabag Workshop';
+
+  // Kolom 1 (x=55): Di Buat Oleh (Administrasi)
+  doc.text('Di Buat Oleh,', 55, sigY, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanPembuat, 55, sigY + 4, { align: 'center' });
+  doc.line(25, sigY + 18, 85, sigY + 18);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${namaPembuat} )`, 55, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Administrasi Workshop', 55, sigY + 26, { align: 'center' });
+
+  // Kolom 2 (x=148.5): Diperiksa Oleh (Administrasi)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...darkTextColor);
+  doc.text('Diperiksa Oleh,', 148.5, sigY, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanDiperiksa, 148.5, sigY + 4, { align: 'center' });
+  doc.line(118.5, sigY + 18, 178.5, sigY + 18);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${namaDiperiksa} )`, 148.5, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Administrasi Workshop', 148.5, sigY + 26, { align: 'center' });
+
+  // Kolom 3 (x=242): Disetujui Oleh (Kabag Workshop)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...darkTextColor);
+  doc.text('Disetujui Oleh,', 242, sigY, { align: 'center' });
+  doc.setFontSize(7.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(jabatanDisetujui, 242, sigY + 4, { align: 'center' });
+  doc.line(212, sigY + 18, 272, sigY + 18);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...darkTextColor);
+  doc.text(`( ${namaDisetujui} )`, 242, sigY + 22, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kabag Workshop PT BKWA', 242, sigY + 26, { align: 'center' });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH • Riwayat Perawatan Unit ${unitLabel} • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      203,
+      { align: 'center' }
+    );
+  }
+
+  const cleanUnit = (unitLabel || 'Semua_Unit').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Riwayat_Terpadu_Unit_${cleanUnit}_PT_BKWA_${new Date().toISOString().split('T')[0]}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+/**
+ * Utility untuk langsung mengekspor Dokumen Rangkuman Riwayat Unit Terpadu ke PDF
+ */
+export const exportUnitHistorySummaryToPDF = (
+  unitBreakdowns: BreakdownRecord[],
+  selectedUnit: string,
+  currentUser: UserAccount,
+  signatories?: DailyReportSignatoryOptions
+): GeneratedPDFResult => {
+  const result = generateUnitHistorySummaryPDF(unitBreakdowns, selectedUnit, currentUser, signatories);
   result.download();
   return result;
 };

@@ -98,7 +98,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const [selectedNama, setSelectedNama] = useState<string>('');
   const [isFullday, setIsFullday] = useState<boolean>(true);
   const [jamStart, setJamStart] = useState<string>('07:00');
-  const [jamStop, setJamStop] = useState<string>('17:00');
+  const [jamStop, setJamStop] = useState<string>('16:00');
   const [keterangan, setKeterangan] = useState<KeteranganCatatanManpower>('Hadir');
   const [catatan, setCatatan] = useState<string>('');
   const [dibuatOleh, setDibuatOleh] = useState<string>(defaultAdminName);
@@ -182,7 +182,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setSelectedNama('');
     setIsFullday(true);
     setJamStart('07:00');
-    setJamStop('17:00');
+    setJamStop('16:00');
     setKeterangan('Hadir');
     setCatatan('');
     setDibuatOleh(defaultAdminName);
@@ -194,7 +194,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setIsFullday(enabled);
     if (enabled) {
       setJamStart('07:00');
-      setJamStop('17:00');
+      setJamStop('16:00');
     }
   };
 
@@ -877,10 +877,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                       ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-md shadow-amber-500/20'
                       : 'bg-stone-800 text-stone-400 hover:text-white border-stone-700'
                   }`}
-                  title="Klik untuk mengaktifkan / menonaktifkan jam Fullday kerja (07:00 - 17:00)"
+                  title="Klik untuk mengaktifkan / menonaktifkan jam Fullday kerja (07:00 - 16:00)"
                 >
                   <Sun className={`w-3.5 h-3.5 ${isFullday ? 'text-stone-950 fill-stone-950' : 'text-stone-400'}`} />
-                  <span>Fitur Fullday: {isFullday ? 'AKTIF (07:00 - 17:00)' : 'NONAKTIF (Kustom Jam)'}</span>
+                  <span>Fitur Fullday: {isFullday ? 'AKTIF (07:00 - 16:00)' : 'NONAKTIF (Kustom Jam)'}</span>
                 </button>
               </div>
 
