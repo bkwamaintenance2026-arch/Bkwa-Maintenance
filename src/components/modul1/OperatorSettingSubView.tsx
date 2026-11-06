@@ -25,9 +25,9 @@ import {
 import { canAccessRegistrationForm } from '../../utils/storage';
 
 interface OperatorSettingSubViewProps {
-  units: AssetUnit[];
-  manpowerList: ManpowerData[];
-  currentUser: UserAccount;
+  units?: AssetUnit[];
+  manpowerList?: ManpowerData[];
+  currentUser?: UserAccount | null;
   onUpdateOperatorSetting: (
     unitId: string,
     setting: {
@@ -66,12 +66,15 @@ interface RowState {
 }
 
 export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
-  units,
-  manpowerList,
-  currentUser,
+  units = [],
+  manpowerList = [],
+  currentUser = null,
   onUpdateOperatorSetting,
 }) => {
-  const canEdit = canAccessRegistrationForm(currentUser) || currentUser.role === 'ADMIN' || currentUser.accountTier === 'ADMIN';
+  // Safe edit permission check (no crash if currentUser is null or undefined)
+  const canEdit = currentUser
+    ? Boolean(canAccessRegistrationForm(currentUser) || currentUser?.role === 'ADMIN' || currentUser?.accountTier === 'ADMIN' || currentUser?.role === 'DEVELOPER')
+    : true;
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -85,7 +88,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   // In-memory edit state per unit id
   const [rowStates, setRowStates] = useState<Record<string, RowState>>(() => {
     const initial: Record<string, RowState> = {};
-    units.forEach((u) => {
+    (units || []).forEach((u) => {
+      if (!u || !u.id) return;
       initial[u.id] = {
         operatorName: u.operatorName || '',
         operatorManpowerId: u.operatorManpowerId || '',
@@ -104,7 +108,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   React.useEffect(() => {
     setRowStates((prev) => {
       const next = { ...prev };
-      units.forEach((u) => {
+      (units || []).forEach((u) => {
+        if (!u || !u.id) return;
         if (!next[u.id] || !next[u.id].isDirty) {
           next[u.id] = {
             operatorName: u.operatorName || '',
@@ -127,7 +132,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     const opDrivers: ManpowerData[] = [];
     const others: ManpowerData[] = [];
 
-    manpowerList.forEach((m) => {
+    (manpowerList || []).forEach((m) => {
+      if (!m) return;
       const j = (m.jabatan || '').toUpperCase();
       if (j.includes('OPERATOR') || j.includes('SOPIR') || j.includes('DRIVER')) {
         opDrivers.push(m);
@@ -136,7 +142,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       }
     });
 
-    const sortFn = (a: ManpowerData, b: ManpowerData) => a.nama.localeCompare(b.nama);
+    const sortFn = (a: ManpowerData, b: ManpowerData) => (a.nama || '').localeCompare(b.nama || '');
     return {
       operatorAndDrivers: opDrivers.sort(sortFn),
       otherManpower: others.sort(sortFn),
@@ -146,8 +152,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   // Daftar jenis unit unik
   const uniqueJenisList = useMemo(() => {
     const s = new Set<string>();
-    units.forEach((u) => {
-      if (u.jenis) s.add(u.jenis.trim());
+    (units || []).forEach((u) => {
+      if (u && u.jenis) s.add(u.jenis.trim());
     });
     return Array.from(s).sort();
   }, [units]);

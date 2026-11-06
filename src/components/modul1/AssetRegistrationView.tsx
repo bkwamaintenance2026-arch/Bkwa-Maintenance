@@ -32,7 +32,7 @@ import { OperatorSettingSubView } from './OperatorSettingSubView';
 interface AssetRegistrationViewProps {
   units: AssetUnit[];
   manpowerList?: ManpowerData[];
-  currentUser: UserAccount;
+  currentUser: UserAccount | null;
   onSaveUnit: (data: Omit<AssetUnit, 'id' | 'tanggalRegistrasi' | 'terakhirDiperbarui'>, existingId?: string | null) => {
     success: boolean;
     message: string;
@@ -425,6 +425,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
         <OperatorSettingSubView
           units={units}
           manpowerList={manpowerList}
+          currentUser={currentUser}
           onUpdateOperatorSetting={onUpdateOperatorSetting || updateUnitOperatorSetting}
         />
       ) : (
