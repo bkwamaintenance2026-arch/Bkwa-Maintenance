@@ -110,4 +110,22 @@ Rencana ini merinci penambahan fitur **Breakdown Type** (SCHEDULE, UNSCHEDULE, A
    - `remark?: string`
 3. `CatatanHarianManpower`:
    - Fullday default: `07:00` - `16:00`.
-   - Opsi `Alpha / Tanpa Keterangan` menggantikan opsi `Ijin`.
+   - Opsi `Alpha / Tanpa Keterangan` dan `Ijin`.
+
+---
+
+## 5. Modul 1: Sub Menu Setting Operator & Barcode Fuel
+
+### Spesifikasi Fitur:
+1. **Navigasi Tab Sub Menu**:
+   - `Sub Menu 1: Registrasi Asset & Inventaris`: Form registrasi 12 field spesifikasi unit dan tabel daftar unit.
+   - `Sub Menu 2: Setting Operator & Barcode Fuel`: Pengaturan penugasan operator, barcode BBM, deskripsi pekerjaan, dan catatan khusus armada.
+2. **Sinkronisasi Data**:
+   - Pilihan nama operator/sopir bersumber langsung secara dinamis dari **Modul 2 (Data Manpower)** dengan pemisahan prioritas jabatan Operator/Sopir di atas.
+   - Kolom `Job` fleksibel (ketik bebas + datalist rekomendasi tugas hauling/loading/stripping).
+   - Kolom `Status Barcode Fuel`: `TERPASANG`, `AKTIF`, `RUSAK`, `BELUM ADA`, `HILANG`.
+   - Kolom `Remark`: Catatan kondisi atau penugasan khusus.
+   - Penyimpanan interaktif per baris (*inline save*) dan massal (*bulk save*).
+   - Ekspor lembar kerja CSV dan Pratinjau Cetak Lembar Operator.
+   - Sinkronisasi instan ke `localStorage` dan Firestore `units`.
+

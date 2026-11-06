@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AssetUnit, OperationalStatus, UserAccount } from '../../types';
+import { 
+  AssetUnit, 
+  OperationalStatus, 
+  UserAccount,
+  ManpowerData,
+  BarcodeFuelStatus 
+} from '../../types';
 import { 
   Save, 
   Trash2, 
@@ -15,12 +21,17 @@ import {
   ArrowDown,
   FileSpreadsheet,
   ArrowLeft,
-  ShieldCheck
+  ShieldCheck,
+  Truck,
+  UserCheck,
+  QrCode
 } from 'lucide-react';
-import { canAccessRegistrationForm, canUserExportModule } from '../../utils/storage';
+import { canAccessRegistrationForm, canUserExportModule, updateUnitOperatorSetting } from '../../utils/storage';
+import { OperatorSettingSubView } from './OperatorSettingSubView';
 
 interface AssetRegistrationViewProps {
   units: AssetUnit[];
+  manpowerList?: ManpowerData[];
   currentUser: UserAccount;
   onSaveUnit: (data: Omit<AssetUnit, 'id' | 'tanggalRegistrasi' | 'terakhirDiperbarui'>, existingId?: string | null) => {
     success: boolean;
@@ -28,6 +39,17 @@ interface AssetRegistrationViewProps {
     unit?: AssetUnit;
   };
   onDeleteUnit: (id: string) => { success: boolean; message: string };
+  onUpdateOperatorSetting?: (
+    unitId: string,
+    setting: {
+      operatorName?: string;
+      operatorManpowerId?: string;
+      operatorJabatan?: string;
+      operatorJob?: string;
+      barcodeFuelStatus?: BarcodeFuelStatus | string;
+      operatorRemark?: string;
+    }
+  ) => { success: boolean; message: string; unit?: AssetUnit };
   onBackToMainMenu?: () => void;
 }
 
@@ -49,11 +71,16 @@ const EMPTY_FORM = {
 
 export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   units,
+  manpowerList = [],
   currentUser,
   onSaveUnit,
   onDeleteUnit,
+  onUpdateOperatorSetting,
   onBackToMainMenu,
 }) => {
+  // Sub Menu Tab State (Sub Menu 1: Registrasi Asset, Sub Menu 2: Setting Operator)
+  const [activeSubMenu, setActiveSubMenu] = useState<'REGISTRASI' | 'SETTING_OPERATOR'>('REGISTRASI');
+
   // Cek otorisasi hak akses user untuk Modul 1:
   // Form Registrasi hanya untuk Developer.
   // Export Daftar Aset Unit untuk Akun Khusus & Developer.
@@ -353,40 +380,89 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
         </div>
       )}
 
-      {/* Feedback Banner */}
-      {feedback && (
-        <div
-          className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
-            feedback.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-              : feedback.type === 'error'
-              ? 'bg-rose-950/60 border-rose-800 text-rose-300'
-              : 'bg-amber-950/60 border-amber-800 text-amber-300'
+      {/* Sub Menu Navigation Tabs (Sub Menu 1: Registrasi Asset vs Sub Menu 2: Setting Operator) */}
+      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-stone-900/90 border border-stone-800 rounded-2xl shadow-lg">
+        <button
+          id="tab-sub-registrasi-asset"
+          type="button"
+          onClick={() => setActiveSubMenu('REGISTRASI')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold transition shadow-sm ${
+            activeSubMenu === 'REGISTRASI'
+              ? 'bg-amber-500 text-stone-950 shadow-amber-500/20'
+              : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
           }`}
         >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
-            )}
-            <span>{feedback.message}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFeedback(null)}
-            className="p-1 hover:bg-stone-800/50 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+          <Truck className="w-4 h-4" />
+          <span>Sub Menu 1: Registrasi Asset & Inventaris</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            activeSubMenu === 'REGISTRASI' ? 'bg-stone-950/20 text-stone-950' : 'bg-stone-800 text-stone-400'
+          }`}>
+            {units.length} Unit
+          </span>
+        </button>
 
-      {/* FORM REGISTRASI ASSET */}
-      <section 
-        id="form-registrasi-asset"
-        className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl relative"
-      >
+        <button
+          id="tab-sub-setting-operator"
+          type="button"
+          onClick={() => setActiveSubMenu('SETTING_OPERATOR')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold transition shadow-sm ${
+            activeSubMenu === 'SETTING_OPERATOR'
+              ? 'bg-amber-500 text-stone-950 shadow-amber-500/20'
+              : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Sub Menu 2: Setting Operator & Barcode Fuel</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            activeSubMenu === 'SETTING_OPERATOR' ? 'bg-stone-950/20 text-stone-950' : 'bg-stone-800 text-stone-400'
+          }`}>
+            {units.filter((u) => u.operatorName).length}/{units.length} Unit
+          </span>
+        </button>
+      </div>
+
+      {activeSubMenu === 'SETTING_OPERATOR' ? (
+        <OperatorSettingSubView
+          units={units}
+          manpowerList={manpowerList}
+          onUpdateOperatorSetting={onUpdateOperatorSetting || updateUnitOperatorSetting}
+        />
+      ) : (
+        <>
+          {/* Feedback Banner */}
+          {feedback && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center justify-between transition-all ${
+                feedback.type === 'success'
+                  ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                  : feedback.type === 'error'
+                  ? 'bg-rose-950/60 border-rose-800 text-rose-300'
+                  : 'bg-amber-950/60 border-amber-800 text-amber-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {feedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{feedback.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedback(null)}
+                className="p-1 hover:bg-stone-800/50 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* FORM REGISTRASI ASSET */}
+          <section 
+            id="form-registrasi-asset"
+            className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl relative"
+          >
         {!canEdit && (
           <div className="mb-4 p-3.5 rounded-xl bg-sky-950/40 border border-sky-800/70 text-sky-200 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -901,6 +977,8 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
           </table>
         </div>
       </section>
+    </>
+  )}
 
       {/* VIEW DETAIL MODAL */}
       {viewingUnit && (
@@ -936,6 +1014,55 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
 
             {/* Modal Body: Detail Spesifikasi Lengkap */}
             <div className="p-6 space-y-4 text-xs">
+              {/* Operator & Barcode Fuel Information */}
+              <div className="bg-stone-950/80 p-4 rounded-xl border border-stone-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-amber-400" />
+                    Penugasan Operator & Status Barcode BBM
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-500">
+                    Sub Modul Setting Operator
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono pt-1">
+                  <div className="p-2.5 rounded-lg bg-stone-900/80 border border-stone-800/80">
+                    <span className="text-stone-400 block text-[10px] uppercase">Operator / Sopir:</span>
+                    <strong className="text-stone-100 text-sm block truncate">
+                      {viewingUnit.operatorName || '-'}
+                    </strong>
+                    {viewingUnit.operatorJabatan && (
+                      <span className="text-[10px] text-amber-400/90 font-semibold block">
+                        {viewingUnit.operatorJabatan}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-stone-900/80 border border-stone-800/80">
+                    <span className="text-stone-400 block text-[10px] uppercase">Job / Deskripsi Tugas:</span>
+                    <span className="text-stone-200 font-bold block truncate">
+                      {viewingUnit.operatorJob || '-'}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-stone-900/80 border border-stone-800/80">
+                    <span className="text-stone-400 block text-[10px] uppercase">Status Barcode Fuel:</span>
+                    <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                      {viewingUnit.barcodeFuelStatus || 'BELUM ADA'}
+                    </span>
+                  </div>
+                </div>
+
+                {viewingUnit.operatorRemark && (
+                  <div className="p-2.5 rounded-lg bg-stone-900/80 border border-stone-800/80 text-[11px] text-stone-300">
+                    <span className="text-stone-400 font-mono text-[10px] uppercase block mb-0.5">Remark Operasional:</span>
+                    <span>{viewingUnit.operatorRemark}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Data Mesin & Unit */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-stone-950/60 p-4 rounded-xl border border-stone-800 font-mono">
                 <div>
                   <span className="text-stone-400 block text-[10px] uppercase">CN_NEW:</span>

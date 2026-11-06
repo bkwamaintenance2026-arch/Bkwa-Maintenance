@@ -1,6 +1,7 @@
 import { 
   ActivityLog, 
   AssetUnit, 
+  BarcodeFuelStatus,
   BreakdownRecord, 
   BreakdownUpdateEntry, 
   BreakdownProgressOption,
@@ -820,6 +821,69 @@ export function updateUnit(
   });
 
   return { success: true, message: `Data unit [${updatedUnit.cnNew}] berhasil diperbarui!`, unit: updatedUnit };
+}
+
+// Modul 1 Sub-Menu: Setting Operator & Barcode Fuel Unit
+export function updateUnitOperatorSetting(
+  unitId: string,
+  setting: {
+    operatorName?: string;
+    operatorManpowerId?: string;
+    operatorJabatan?: string;
+    operatorJob?: string;
+    barcodeFuelStatus?: BarcodeFuelStatus | string;
+    operatorRemark?: string;
+  }
+): { success: boolean; message: string; unit?: AssetUnit } {
+  const units = getAllUnits();
+  const index = units.findIndex((u) => u.id === unitId);
+  if (index === -1) {
+    return { success: false, message: 'Data Unit tidak ditemukan!' };
+  }
+
+  const currentUser = getCurrentUser();
+  const today = new Date().toISOString().split('T')[0];
+  const oldUnit = units[index];
+
+  const updatedUnit: AssetUnit = {
+    ...oldUnit,
+    operatorName: setting.operatorName !== undefined ? setting.operatorName : oldUnit.operatorName,
+    operatorManpowerId: setting.operatorManpowerId !== undefined ? setting.operatorManpowerId : oldUnit.operatorManpowerId,
+    operatorJabatan: setting.operatorJabatan !== undefined ? setting.operatorJabatan : oldUnit.operatorJabatan,
+    operatorJob: setting.operatorJob !== undefined ? setting.operatorJob : oldUnit.operatorJob,
+    barcodeFuelStatus: setting.barcodeFuelStatus !== undefined ? setting.barcodeFuelStatus : oldUnit.barcodeFuelStatus,
+    operatorRemark: setting.operatorRemark !== undefined ? setting.operatorRemark : oldUnit.operatorRemark,
+    operatorUpdatedAt: new Date().toISOString(),
+    operatorUpdatedBy: currentUser?.fullName || 'Staf Admin',
+    terakhirDiperbarui: today,
+  };
+
+  const historyLog: ActivityLog = {
+    id: `log-${Date.now()}`,
+    tanggal: today,
+    aksi: 'UPDATE',
+    user: currentUser?.fullName || 'Sistem',
+    role: currentUser?.role || 'ADMIN',
+    keterangan: `Setting Operator Unit [${updatedUnit.cnNew}]: Operator "${updatedUnit.operatorName || '-'}", Job "${updatedUnit.operatorJob || '-'}", Barcode "${updatedUnit.barcodeFuelStatus || '-'}"`,
+    detailUnit: updatedUnit.cnNew,
+  };
+
+  updatedUnit.riwayatLog = [historyLog, ...(oldUnit.riwayatLog || [])].slice(0, 15);
+  units[index] = updatedUnit;
+  saveUnits(units);
+  syncItemToFirestore('units', unitId, updatedUnit);
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Setting Operator Unit [${updatedUnit.cnNew}]: ${updatedUnit.operatorName || 'Tanpa Operator'}`,
+    detailUnit: updatedUnit.cnNew,
+  });
+
+  return {
+    success: true,
+    message: `Setting operator unit ${updatedUnit.cnNew} berhasil disimpan!`,
+    unit: updatedUnit,
+  };
 }
 
 // Modul 1: Delete Unit

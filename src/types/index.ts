@@ -99,6 +99,26 @@ export interface ActivityLog {
   detailUnit?: string;
 }
 
+export type BarcodeFuelStatus = 
+  | 'TERPASANG' 
+  | 'AKTIF' 
+  | 'RUSAK' 
+  | 'BELUM ADA' 
+  | 'HILANG';
+
+export const BARCODE_FUEL_STATUS_OPTIONS: {
+  value: BarcodeFuelStatus;
+  label: string;
+  badgeClass: string;
+  colorClass: string;
+}[] = [
+  { value: 'TERPASANG', label: 'Terpasang', badgeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', colorClass: 'text-emerald-400' },
+  { value: 'AKTIF', label: 'Aktif Normal', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', colorClass: 'text-emerald-400' },
+  { value: 'RUSAK', label: 'Rusak / Pudar', badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40', colorClass: 'text-amber-400' },
+  { value: 'BELUM ADA', label: 'Belum Ada', badgeClass: 'bg-stone-700/50 text-stone-300 border-stone-600', colorClass: 'text-stone-400' },
+  { value: 'HILANG', label: 'Hilang / Lepas', badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40', colorClass: 'text-rose-400' },
+];
+
 export interface AssetUnit {
   id: string;
   // Field-field resmi Modul 1 Registrasi Asset sesuai spesifikasi:
@@ -114,6 +134,16 @@ export interface AssetUnit {
   engineModel: string;     // ENGINE MODEL (SAA6D107E, C4.4, J08E, dll.)
   snEngine: string;        // SN ENGINE (Serial Number Mesin)
   merkEngine: string;      // MERK ENGINE (Komatsu, CAT, Hino, Perkins, dll.)
+
+  // Setting Operator & Barcode Fuel (Sub Menu Modul 1)
+  operatorName?: string;             // Nama operator/sopir dari Modul 2
+  operatorManpowerId?: string;       // Referensi ID Manpower Modul 2
+  operatorJabatan?: string;          // Jabatan manpower (Operator / Sopir / dll)
+  operatorJob?: string;              // Job pekerjaan (diketik manual)
+  barcodeFuelStatus?: BarcodeFuelStatus | string; // Status Barcode Fuel (TERPASANG, AKTIF, RUSAK, BELUM ADA, HILANG)
+  operatorRemark?: string;           // Kolom Remark catatan setting operator
+  operatorUpdatedAt?: string;        // Timestamp pembaruan
+  operatorUpdatedBy?: string;        // Nama staf yang memperbarui
 
   // Metadata sistem
   tanggalRegistrasi: string;

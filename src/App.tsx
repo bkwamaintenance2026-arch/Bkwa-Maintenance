@@ -16,6 +16,7 @@ import {
   OutFieldFuelRecord,
   GreaseStockRecord,
   GreaseDistributionRecord,
+  BarcodeFuelStatus,
 } from './types';
 import { 
   getCurrentUser, 
@@ -24,6 +25,7 @@ import {
   registerUnit, 
   updateUnit, 
   deleteUnit,
+  updateUnitOperatorSetting,
   getAllManpower,
   registerManpower,
   updateManpower,
@@ -253,6 +255,24 @@ export default function App() {
   const handleDeleteUnit = (id: string) => {
     const role = currentUser?.role || 'KARYAWAN';
     const res = deleteUnit(id, role);
+    if (res.success) {
+      refreshAllData();
+    }
+    return res;
+  };
+
+  const handleUpdateUnitOperatorSetting = (
+    unitId: string,
+    setting: {
+      operatorName?: string;
+      operatorManpowerId?: string;
+      operatorJabatan?: string;
+      operatorJob?: string;
+      barcodeFuelStatus?: BarcodeFuelStatus | string;
+      operatorRemark?: string;
+    }
+  ) => {
+    const res = updateUnitOperatorSetting(unitId, setting);
     if (res.success) {
       refreshAllData();
     }
@@ -689,9 +709,11 @@ export default function App() {
           /* Modul 1: Registrasi Asset (Materi Script Dipertahankan Utuh dan Tidak Dirubah) */
           <AssetRegistrationView
             units={units}
+            manpowerList={manpowerList}
             currentUser={currentUser}
             onSaveUnit={handleSaveUnit}
             onDeleteUnit={handleDeleteUnit}
+            onUpdateOperatorSetting={handleUpdateUnitOperatorSetting}
             onBackToMainMenu={handleGoHome}
           />
         ) : activeModuleId === 2 ? (
