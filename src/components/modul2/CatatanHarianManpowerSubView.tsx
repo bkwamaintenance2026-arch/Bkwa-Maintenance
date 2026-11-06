@@ -295,7 +295,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setSelectedNama(record.nama || '');
     setIsFullday(record.isFullday ?? true);
     setJamStart(record.jamStart || '07:00');
-    setJamStop(record.jamStop || '17:00');
+    setJamStop(record.jamStop || '16:00');
     setKeterangan((record.keterangan as KeteranganCatatanManpower) || 'Hadir');
     setCatatan(record.catatan || '');
     setDibuatOleh(record.dibuatOleh || defaultAdminName);

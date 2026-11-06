@@ -87,11 +87,25 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
     }
   };
 
-  // Unit yang sedang aktif breakdown (statusUnit !== 'READY')
+  // Helper mencari update breakdown paling mutakhir
+  const getLatestBreakdownUpdate = (b: BreakdownRecord) => {
+    const updates = b.riwayatUpdate;
+    if (!updates || updates.length === 0) return null;
+    if (updates.length === 1) return updates[0];
+    return [...updates].sort((x, y) => {
+      const timeX = x.createdAt || `${x.startJob || x.tanggal || ''} ${x.jamStart || '00:00'}`;
+      const timeY = y.createdAt || `${y.startJob || y.tanggal || ''} ${y.jamStart || '00:00'}`;
+      return timeY.localeCompare(timeX);
+    })[0];
+  };
+
+  // Unit yang sedang aktif breakdown (status unit dari update breakdown terakhir !== 'READY')
   const activeBreakdowns = useMemo(() => {
-    return breakdowns.filter(
-      (b) => (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
-    );
+    return breakdowns.filter((b) => {
+      const latest = getLatestBreakdownUpdate(b);
+      const effectiveStatus = (latest?.statusUnit || b.statusUnit || 'BREAKDOWN').toUpperCase().trim();
+      return effectiveStatus !== 'READY';
+    });
   }, [breakdowns]);
 
   // Filter & Search data
@@ -108,11 +122,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         const mo = (b.noMaintenanceOrder || b.noNotifikasi || '').toLowerCase();
         const problem = (b.detailProblem || '').toLowerCase();
         const comp = (b.component || '').toLowerCase();
+        const bType = (b.breakdownType || '').toLowerCase();
 
         // Cari juga di rincian update pekerjaan terakhir & mekanik
-        const latestUpdate = b.riwayatUpdate && b.riwayatUpdate.length > 0 
-          ? b.riwayatUpdate[b.riwayatUpdate.length - 1] 
-          : null;
+        const latestUpdate = getLatestBreakdownUpdate(b);
         const job = (latestUpdate?.detailKerusakan || latestUpdate?.detailPekerjaan || '').toLowerCase();
         const pics = `${latestUpdate?.pic1 || ''} ${latestUpdate?.pic2 || ''} ${latestUpdate?.pic3 || ''}`.toLowerCase();
 
@@ -122,6 +135,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
           mo.includes(kw) ||
           problem.includes(kw) ||
           comp.includes(kw) ||
+          bType.includes(kw) ||
           job.includes(kw) ||
           pics.includes(kw)
         );
@@ -182,14 +196,20 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         <div className="absolute top-0 right-0 w-80 h-80 bg-rose-500/5 rounded-full blur-3xl pointer-events-none" />
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
                 LIVE REALTIME MONITORING
               </span>
               <span className="text-[10px] font-mono text-stone-500">
-                Pembaruan interval: 60 detik
+                Interval: 60 dtk
               </span>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono ml-1">
+                <span className="text-stone-500 font-bold">Tipe:</span>
+                <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-bold" title="Schedule">SC = Schedule</span>
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold" title="Unschedule">Uns = Unschedule</span>
+                <span className="px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold" title="Accident">Acc = Accident</span>
+              </div>
             </div>
             <h2 className="text-lg sm:text-xl font-black font-mono text-stone-100 tracking-wide mt-1.5 flex items-center gap-2">
               <Clock className="w-6 h-6 text-amber-500" />
@@ -311,6 +331,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                 <tr>
                   <th className="px-3.5 py-3.5 w-10 text-center">No</th>
                   <th className="px-3.5 py-3.5 whitespace-nowrap">Unit Alat</th>
+                  <th className="px-3 py-3.5 text-center whitespace-nowrap" title="Breakdown Type: SC = Schedule, Uns = Unschedule, Acc = Accident">Tipe</th>
                   <th className="px-3.5 py-3.5 whitespace-nowrap">Reff No. MO</th>
                   <th className="px-3.5 py-3.5 whitespace-nowrap">Mulai Breakdown</th>
                   <th className="px-3.5 py-3.5 whitespace-nowrap">Komponen &amp; Problem</th>
@@ -327,20 +348,34 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                   const isSevere = dt.totalHours >= 72;
                   const isCritical = dt.totalHours >= 24 && dt.totalHours < 72;
 
-                  // Ambil data mutakhir dari riwayatUpdate terakhir
-                  const updates = b.riwayatUpdate || [];
-                  const latestUpdate = updates.length > 0 ? updates[updates.length - 1] : null;
+                  // Ambil data mutakhir strictly dari riwayatUpdate breakdown terakhir
+                  const latestUpdate = getLatestBreakdownUpdate(b);
 
                   const lastJob = latestUpdate
                     ? (latestUpdate.detailKerusakan || latestUpdate.detailPekerjaan || '-')
                     : (b.detailKerusakan || b.detailProblem || '-');
 
-                  const mechanics = latestUpdate
-                    ? [latestUpdate.pic1, latestUpdate.pic2, latestUpdate.pic3].filter(Boolean).join(', ') || '-'
-                    : [b.pic1, b.pic2, b.pic3].filter(Boolean).join(', ') || '-';
+                  // PIC Teknisi strictly dari update breakdown terakhir (tidak mengambil PIC Pelapor input)
+                  const rawPics = latestUpdate
+                    ? [latestUpdate.pic1, latestUpdate.pic2, latestUpdate.pic3].filter((p) => Boolean(p && p.trim())).join(', ')
+                    : '';
+                  const mechanics = rawPics || '-';
 
                   const currentProgress = latestUpdate?.progress || b.progress || 'On Progress';
-                  const currentStatus = latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN';
+
+                  // Status Unit strictly dari update breakdown terakhir
+                  const currentStatus = (latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN').toUpperCase().trim();
+
+                  // Tipe Breakdown: Schedule : SC, Unschedule : Uns, Accident : Acc
+                  const typeRaw = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
+                  const typeShort = typeRaw === 'SCHEDULE' ? 'SC' : typeRaw === 'ACCIDENT' ? 'Acc' : 'Uns';
+                  const typeLabel = typeRaw === 'SCHEDULE' ? 'Schedule' : typeRaw === 'ACCIDENT' ? 'Accident' : 'Unschedule';
+                  const typeColor =
+                    typeRaw === 'SCHEDULE'
+                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                      : typeRaw === 'ACCIDENT'
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
 
                   return (
                     <tr
@@ -366,7 +401,17 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         </div>
                       </td>
 
-                      {/* 3. Reff No MO */}
+                      {/* 3. Tipe Breakdown (SC, Uns, Acc) */}
+                      <td className="px-3 py-3.5 text-center whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-mono font-black border ${typeColor} shadow-sm inline-block`}
+                          title={`Tipe Breakdown: ${typeLabel} (${typeShort})`}
+                        >
+                          {typeShort}
+                        </span>
+                      </td>
+
+                      {/* 4. Reff No MO */}
                       <td className="px-3.5 py-3.5 whitespace-nowrap">
                         <span className="font-bold text-amber-400 block">
                           {b.noMaintenanceOrder || b.noNotifikasi || '-'}
@@ -376,7 +421,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         </span>
                       </td>
 
-                      {/* 4. Tanggal & Jam Mulai Breakdown */}
+                      {/* 5. Tanggal & Jam Mulai Breakdown */}
                       <td className="px-3.5 py-3.5 whitespace-nowrap">
                         <div className="text-stone-200">{b.tanggal}</div>
                         <div className="text-[10px] text-amber-400/90 font-bold">
@@ -384,22 +429,11 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         </div>
                       </td>
 
-                      {/* 5. Komponen, Type & Problem Awal */}
+                      {/* 6. Komponen & Problem Awal */}
                       <td className="px-3.5 py-3.5 max-w-[200px]">
                         <div className="flex items-center gap-1.5 flex-wrap mb-1">
                           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50">
                             {b.component || 'Other'}
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono inline-block ${
-                              (b.breakdownType || 'UNSCHEDULE') === 'SCHEDULE'
-                                ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                                : (b.breakdownType || 'UNSCHEDULE') === 'ACCIDENT'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            }`}
-                          >
-                            {b.breakdownType || 'UNSCHEDULE'}
                           </span>
                         </div>
                         <div className="text-stone-300 font-sans line-clamp-2 text-[11px]" title={b.detailProblem}>
@@ -407,7 +441,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         </div>
                       </td>
 
-                      {/* 6. Pekerjaan Terakhir (Hasil Update Terkini) */}
+                      {/* 7. Pekerjaan Terakhir (Hasil Update Terkini) */}
                       <td className="px-3.5 py-3.5 max-w-[260px]">
                         <div className="font-sans text-stone-100 line-clamp-2 text-xs" title={lastJob}>
                           {lastJob}
@@ -419,17 +453,17 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         )}
                       </td>
 
-                      {/* 7. PIC Mekanik yang Mengerjakan */}
+                      {/* 8. PIC Mekanik yang Mengerjakan (Strict Update Terakhir) */}
                       <td className="px-3.5 py-3.5 whitespace-nowrap font-sans">
                         <div className="text-stone-200 font-semibold text-xs">
                           {mechanics}
                         </div>
                         <div className="text-[10px] text-stone-500 font-mono">
-                          Teknisi Lapangan
+                          {rawPics ? 'Teknisi Update Terkini' : 'Belum Ada Penugasan'}
                         </div>
                       </td>
 
-                      {/* 8. Realtime Downtime Counter */}
+                      {/* 9. Realtime Downtime Counter */}
                       <td className="px-3.5 py-3.5 whitespace-nowrap">
                         <span
                           className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold inline-flex items-center gap-1.5 ${
@@ -448,7 +482,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         </span>
                       </td>
 
-                      {/* 9. Status Unit & Progress */}
+                      {/* 10. Status Unit & Progress (Strict Update Terakhir) */}
                       <td className="px-3.5 py-3.5 whitespace-nowrap">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold ${

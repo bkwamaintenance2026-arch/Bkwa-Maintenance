@@ -5,6 +5,7 @@ import {
   BreakdownUpdateEntry, 
   BreakdownProgressOption,
   BreakdownStatusUnitOption,
+  BreakdownComponentOption,
   BreakdownPartJasaItem,
   FogStockInputRecord,
   FogFuelDistributionRecord,
@@ -1552,6 +1553,7 @@ export function updateBreakdownActivity(
     pic3?: string;
     remark?: string;
     partsJasa?: BreakdownPartJasaItem[];
+    component?: BreakdownComponentOption | string;
   }
 ): {
   success: boolean;
@@ -1608,6 +1610,7 @@ export function updateBreakdownActivity(
     jamStart: updateData.jamStart !== undefined ? updateData.jamStart : target.jamStart,
     jamFinish: updateData.jamFinish !== undefined ? updateData.jamFinish : target.jamFinish,
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan,
+    component: updateData.component !== undefined ? (updateData.component as BreakdownComponentOption) : target.component,
     progress: updateData.progress || target.progress,
     statusUnit: newStatus,
     pic1: updateData.pic1 !== undefined ? updateData.pic1 : target.pic1,

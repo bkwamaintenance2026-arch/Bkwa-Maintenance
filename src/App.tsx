@@ -312,6 +312,7 @@ export default function App() {
       pic3?: string;
       remark?: string;
       partsJasa?: import('./types').BreakdownPartJasaItem[];
+      component?: import('./types').BreakdownComponentOption | string;
     }
   ) => {
     const res = updateBreakdownActivity(id, updateData);

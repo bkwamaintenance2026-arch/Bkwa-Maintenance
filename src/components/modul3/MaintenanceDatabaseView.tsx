@@ -5,6 +5,7 @@ import {
   BreakdownPartJasaItem, 
   BreakdownProgressOption, 
   BreakdownStatusUnitOption, 
+  BreakdownComponentOption,
   ManpowerData, 
   UserAccount,
   P2HRecord
@@ -21,7 +22,7 @@ interface MaintenanceDatabaseViewProps {
   units: AssetUnit[];
   manpowerList: ManpowerData[];
   breakdowns: BreakdownRecord[];
-  p2hRecords?: P2HRecord[];
+  p2hRecords: P2HRecord[];
   currentUser: UserAccount;
   onSaveBreakdown: (
     data: Omit<BreakdownRecord, 'id' | 'noNotifikasi' | 'createdAt' | 'updatedAt' | 'riwayatUpdate'>
@@ -40,6 +41,7 @@ interface MaintenanceDatabaseViewProps {
       pic3?: string;
       remark?: string;
       partsJasa?: BreakdownPartJasaItem[];
+      component?: BreakdownComponentOption | string;
     }
   ) => { success: boolean; message: string; record?: BreakdownRecord };
   onDeleteBreakdown: (id: string) => { success: boolean; message: string };

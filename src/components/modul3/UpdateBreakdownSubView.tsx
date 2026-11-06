@@ -6,6 +6,8 @@ import {
   BREAKDOWN_PROGRESS_OPTIONS, 
   BreakdownStatusUnitOption, 
   BREAKDOWN_STATUS_UNIT_OPTIONS, 
+  BreakdownComponentOption,
+  BREAKDOWN_COMPONENT_OPTIONS,
   PART_SATUAN_OPTIONS, 
   PartSatuanOption, 
   ManpowerData, 
@@ -27,7 +29,8 @@ import {
   Package,
   Wrench,
   Archive,
-  ExternalLink
+  ExternalLink,
+  Cpu
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { isDeveloper } from '../../utils/storage';
@@ -53,6 +56,7 @@ interface UpdateBreakdownSubViewProps {
       pic3?: string;
       remark?: string;
       partsJasa?: BreakdownPartJasaItem[];
+      component?: BreakdownComponentOption | string;
     }
   ) => { success: boolean; message: string; record?: BreakdownRecord };
   onSelectBreakdown: (record: BreakdownRecord | null) => void;
@@ -103,6 +107,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
   const [detailKerusakan, setDetailKerusakan] = useState<string>('');
   const [progress, setProgress] = useState<BreakdownProgressOption>('On Progress');
   const [statusUnit, setStatusUnit] = useState<BreakdownStatusUnitOption>('BREAKDOWN');
+  const [component, setComponent] = useState<BreakdownComponentOption | ''>('Other');
   const [pic1, setPic1] = useState<string>('');
   const [pic2, setPic2] = useState<string>('');
   const [pic3, setPic3] = useState<string>('');
@@ -177,6 +182,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
     setDetailKerusakan('');
     setProgress('On Progress');
     setStatusUnit('BREAKDOWN');
+    setComponent('Other');
     setPic1('');
     setPic2('');
     setPic3('');
@@ -198,6 +204,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
     setDetailKerusakan(b.detailKerusakan || '');
     setProgress((b.progress as BreakdownProgressOption) || 'On Progress');
     setStatusUnit((b.statusUnit as BreakdownStatusUnitOption) || 'BREAKDOWN');
+    setComponent((b.component as BreakdownComponentOption) || 'Other');
     setPic1(b.pic1 || '');
     setPic2(b.pic2 || '');
     setPic3(b.pic3 || '');
@@ -307,6 +314,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
       detailKerusakan: detailKerusakan.trim(),
       progress,
       statusUnit,
+      component: (component as BreakdownComponentOption) || 'Other',
       pic1,
       pic2,
       pic3,
@@ -604,8 +612,33 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
             </div>
           </div>
 
-          {/* BARIS 2: PROGRESS & STATUS UNIT */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* BARIS 2: KOMPONEN RUSAK, PROGRESS & STATUS UNIT */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* KOMPONEN RUSAK (Dipindahkan dari Input Breakdown ke Menu Update) */}
+            <div>
+              <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1 flex items-center justify-between">
+                <span>KOMPONEN <span className="text-rose-400">*</span></span>
+                <span className="text-[10px] text-stone-400 font-normal lowercase">(sistem alat)</span>
+              </label>
+              <div className="relative">
+                <select
+                  id="field-update-component"
+                  required
+                  value={component}
+                  onChange={(e) => setComponent(e.target.value as BreakdownComponentOption)}
+                  className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  <option value="">-- Pilih Komponen --</option>
+                  {BREAKDOWN_COMPONENT_OPTIONS.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[10px] text-stone-500 mt-1">Klasifikasi komponen sistem yang diperbaiki</p>
+            </div>
+
             {/* PROGRESS: On Progress, Waiting Mechanic, Waiting Part, Rest Time, Waiting Instruksi, Waiting Transportasi, Cuaca Buruk */}
             <div>
               <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">

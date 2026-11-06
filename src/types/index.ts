@@ -213,6 +213,7 @@ export interface ManpowerData {
 // Sub-Modul 2: Catatan Harian Manpower (Jabatan, Filter Nama, Jam Start - Stop, Fitur Fullday, Keterangan, Catatan)
 export type KeteranganCatatanManpower =
   | 'Hadir'
+  | 'Ijin'
   | 'Sakit'
   | 'Alpha / Tanpa Keterangan'
   | 'Cuti'
@@ -227,6 +228,7 @@ export const KETERANGAN_CATATAN_MANPOWER_OPTIONS: {
   colorClass: string;
 }[] = [
   { value: 'Hadir', label: 'Hadir', badgeClass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', colorClass: 'text-emerald-400' },
+  { value: 'Ijin', label: 'Ijin', badgeClass: 'bg-amber-500/15 text-amber-400 border-amber-500/30', colorClass: 'text-amber-400' },
   { value: 'Sakit', label: 'Sakit', badgeClass: 'bg-rose-500/15 text-rose-400 border-rose-500/30', colorClass: 'text-rose-400' },
   { value: 'Alpha / Tanpa Keterangan', label: 'Alpha / Tanpa Keterangan', badgeClass: 'bg-red-500/20 text-red-400 border-red-500/40', colorClass: 'text-red-400' },
   { value: 'Cuti', label: 'Cuti', badgeClass: 'bg-purple-500/15 text-purple-400 border-purple-500/30', colorClass: 'text-purple-400' },

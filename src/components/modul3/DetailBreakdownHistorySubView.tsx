@@ -1224,18 +1224,34 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                     remark: b.remark || '-'
                   }];
 
-              const latestUpdate = updates[updates.length - 1];
-              const displayDate = latestUpdate?.tanggal || b.tanggal || '-';
-              const displayJam = (latestUpdate?.startJob || latestUpdate?.finishJob)
-                ? `${latestUpdate?.startJob || '-'} s/d ${latestUpdate?.finishJob || 'Proses'}`
+              // Helper untuk mendapatkan update paling mutakhir secara akurat
+              const latestUpdate = (() => {
+                if (!updates || updates.length === 0) return null;
+                if (updates.length === 1) return updates[0];
+                return [...updates].sort((x, y) => {
+                  const timeX = x.createdAt || `${x.startJob || x.tanggal || ''} ${x.jamStart || ''}`;
+                  const timeY = y.createdAt || `${y.startJob || y.tanggal || ''} ${y.jamStart || ''}`;
+                  return timeY.localeCompare(timeX);
+                })[0];
+              })();
+
+              const displayDate = latestUpdate?.startJob || latestUpdate?.tanggal || b.tanggal || '-';
+              const displayJam = (latestUpdate?.jamStart || latestUpdate?.startJob || latestUpdate?.jamFinish || latestUpdate?.finishJob)
+                ? `${latestUpdate?.jamStart || latestUpdate?.startJob || '-'} s/d ${latestUpdate?.jamFinish || latestUpdate?.finishJob || 'Proses'}`
                 : (b.jamBreakdown ? `Pkl ${b.jamBreakdown}` : '-');
               const displayTindakan = latestUpdate?.detailPekerjaan || latestUpdate?.detailKerusakan || b.detailKerusakan || b.detailProblem || '-';
-              const displayPics = [latestUpdate?.pic1, latestUpdate?.pic2, latestUpdate?.pic3].filter(Boolean).join(', ') || '-';
+              
+              // PIC Teknisi strictly dari update breakdown terakhir (tidak mengambil PIC Pelapor input)
+              const rawPics = latestUpdate
+                ? [latestUpdate?.pic1, latestUpdate?.pic2, latestUpdate?.pic3].filter((p) => Boolean(p && p.trim())).join(', ')
+                : '';
+              const displayPics = rawPics || '-';
+              
               const displayRemark = latestUpdate?.remark || b.remark || '-';
-              const displayStatus = latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN';
+              const displayStatus = (latestUpdate?.statusUnit || b.statusUnit || 'BREAKDOWN').toUpperCase().trim();
               const displayProgress = latestUpdate?.progress || b.progress || 'On Progress';
-              const isReady = (displayStatus || '').toUpperCase().trim() === 'READY';
-              const isLimit = (displayStatus || '').toUpperCase().trim() === 'LIMIT OPERASI';
+              const isReady = displayStatus === 'READY';
+              const isLimit = displayStatus === 'LIMIT OPERASI';
 
               return (
                 <div
@@ -1291,9 +1307,14 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                             ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                             : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                         }`}
-                        title="Breakdown Type (Klasifikasi Kerusakan)"
+                        title="Breakdown Type: SC = Schedule, Uns = Unschedule, Acc = Accident"
                       >
-                        {b.breakdownType || 'UNSCHEDULE'}
+                        {(() => {
+                          const t = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
+                          const shortCode = t === 'SCHEDULE' ? 'SC' : t === 'ACCIDENT' ? 'Acc' : 'Uns';
+                          const fullLabel = t === 'SCHEDULE' ? 'Schedule' : t === 'ACCIDENT' ? 'Accident' : 'Unschedule';
+                          return `${shortCode} (${fullLabel})`;
+                        })()}
                       </span>
                       <span
                         className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
@@ -1765,17 +1786,25 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/50">
                             {b.component || 'Other'}
                           </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono inline-block ${
-                              (b.breakdownType || 'UNSCHEDULE') === 'SCHEDULE'
+                          {(() => {
+                            const t = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
+                            const shortCode = t === 'SCHEDULE' ? 'SC' : t === 'ACCIDENT' ? 'Acc' : 'Uns';
+                            const fullLabel = t === 'SCHEDULE' ? 'Schedule' : t === 'ACCIDENT' ? 'Accident' : 'Unschedule';
+                            const badgeStyle =
+                              t === 'SCHEDULE'
                                 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                                : (b.breakdownType || 'UNSCHEDULE') === 'ACCIDENT'
+                                : t === 'ACCIDENT'
                                 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            }`}
-                          >
-                            {b.breakdownType || 'UNSCHEDULE'}
-                          </span>
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                            return (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono inline-block ${badgeStyle}`}
+                                title={`Breakdown Type: ${fullLabel} (${shortCode})`}
+                              >
+                                {shortCode}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="text-stone-300 font-sans line-clamp-2 text-[11px]" title={b.detailProblem}>
                           {b.detailProblem || '-'}

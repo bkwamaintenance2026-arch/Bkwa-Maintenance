@@ -646,18 +646,18 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
             </div>
           </div>
 
-          {/* GRID 3: Component Rusak & Detail Problem / Update Pekerjaan */}
+          {/* GRID 3: Klasifikasi Breakdown Type & Detail Problem */}
           <div className="pt-2 border-t border-stone-800/80">
             <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2 mb-3">
               <Cpu className="w-4 h-4" />
               <span>
                 {activeBreakdownForSelectedUnit
                   ? `3. Pembaruan Pekerjaan & Status Unit (Reff MO: ${activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})`
-                  : '3. Gejala & Komponen Kerusakan'}
+                  : '3. Klasifikasi Kerusakan & Detail Problem Awal'}
               </span>
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Breakdown Type: SCHEDULE, UNSCHEDULE, ACCIDENT */}
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1 flex items-center justify-between">
@@ -682,37 +682,15 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                             : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'
                         }`}
                       >
-                        <span>{type}</span>
+                        <span>{type === 'SCHEDULE' ? 'SC' : type === 'ACCIDENT' ? 'Acc' : 'Uns'}</span>
                         <span className="text-[9px] font-normal opacity-80">
-                          {type === 'UNSCHEDULE' ? 'Mendadak' : type === 'SCHEDULE' ? 'Terencana' : 'Kecelakaan'}
+                          {type === 'UNSCHEDULE' ? 'Unschedule' : type === 'SCHEDULE' ? 'Schedule' : 'Accident'}
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-stone-500 mt-1">Default: UNSCHEDULE (Pilihan: SCHEDULE, UNSCHEDULE, ACCIDENT)</p>
-              </div>
-
-              {/* Component Pilihan Dropdown */}
-              <div>
-                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
-                  Component Rusak <span className="text-rose-400">*</span>
-                </label>
-                <select
-                  id="field-breakdown-component"
-                  required
-                  value={formData.component}
-                  onChange={(e) => setFormData({ ...formData, component: e.target.value as BreakdownComponentOption })}
-                  className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="">-- Pilih Komponen --</option>
-                  {BREAKDOWN_COMPONENT_OPTIONS.map((comp) => (
-                    <option key={comp} value={comp}>
-                      {comp}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-stone-500 mt-1">Data komponen untuk analisis Pareto</p>
+                <p className="text-[10px] text-stone-500 mt-1">Default: UNSCHEDULE (Pilihan: SC, Uns, Acc)</p>
               </div>
 
               {/* Jika unit sedang breakdown, tampilkan pilihan Status Unit & Progress */}
@@ -937,17 +915,25 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                       {b.component || 'Other'}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono inline-block ${
-                          (b.breakdownType || 'UNSCHEDULE') === 'SCHEDULE'
-                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                            : (b.breakdownType || 'UNSCHEDULE') === 'ACCIDENT'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        }`}
-                      >
-                        {b.breakdownType || 'UNSCHEDULE'}
-                      </span>
+                      {(() => {
+                        const t = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
+                        const shortCode = t === 'SCHEDULE' ? 'SC' : t === 'ACCIDENT' ? 'Acc' : 'Uns';
+                        const fullLabel = t === 'SCHEDULE' ? 'Schedule' : t === 'ACCIDENT' ? 'Accident' : 'Unschedule';
+                        const colorClass =
+                          t === 'SCHEDULE'
+                            ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                            : t === 'ACCIDENT'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+                        return (
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono inline-block border ${colorClass}`}
+                            title={`Breakdown Type: ${fullLabel} (${shortCode})`}
+                          >
+                            {shortCode}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3 font-sans text-stone-300 max-w-[200px] truncate" title={b.detailProblem}>
                       {b.detailProblem}
