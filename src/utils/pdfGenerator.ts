@@ -3497,6 +3497,12 @@ export interface GenerateOperatorSettingPdfParams {
     pembuat?: string;
     diperiksa?: string;
     diketahui?: string;
+    pembuatName?: string;
+    pembuatJabatan?: string;
+    disetujuiName?: string;
+    disetujuiJabatan?: string;
+    diketahuiName?: string;
+    diketahuiJabatan?: string;
   };
 }
 
@@ -3681,48 +3687,56 @@ export const generateOperatorSettingPDF = ({
   const sigY = finalY;
   const colWidth = 75;
 
-  const pembuatNama = signatories?.pembuat || exporterName;
-  const diperiksaNama = signatories?.diperiksa || 'Supervisor Lapangan / Maintenance';
-  const diketahuiNama = signatories?.diketahui || 'Project Manager / KTT';
+  const pembuatNama = signatories?.pembuatName || signatories?.pembuat || exporterName;
+  const pembuatJabatan = signatories?.pembuatJabatan || 'Admin / Dispatcher';
+
+  const disetujuiNama = signatories?.disetujuiName || signatories?.diperiksa || 'Dodik Mariyadi';
+  const disetujuiJabatan = signatories?.disetujuiJabatan || 'Kabag Workshop';
+
+  const diketahuiNama = signatories?.diketahuiName || signatories?.diketahui || 'KTT / Project Manager';
+  const diketahuiJabatan = signatories?.diketahuiJabatan || 'KTT';
 
   // 1. Dibuat Oleh
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(...darkTextColor);
-  doc.text('Dibuat Oleh (Admin / Dispatcher):', 14 + colWidth / 2, sigY, { align: 'center' });
+  doc.text('Dibuat Oleh :', 14 + colWidth / 2, sigY, { align: 'center' });
   doc.line(14 + 10, sigY + 18, 14 + colWidth - 10, sigY + 18);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.text(pembuatNama, 14 + colWidth / 2, sigY + 22, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text('Admin Operasi & Workshop', 14 + colWidth / 2, sigY + 26, { align: 'center' });
+  doc.text(pembuatJabatan, 14 + colWidth / 2, sigY + 26, { align: 'center' });
 
-  // 2. Diperiksa Oleh
+  // 2. Di Setujui Oleh : Kabag Workshop
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(...darkTextColor);
-  doc.text('Diperiksa Oleh:', 14 + colWidth + 20 + colWidth / 2, sigY, { align: 'center' });
+  doc.text('Di Setujui Oleh : Kabag Workshop', 14 + colWidth + 20 + colWidth / 2, sigY, { align: 'center' });
   doc.line(14 + colWidth + 20 + 10, sigY + 18, 14 + colWidth + 20 + colWidth - 10, sigY + 18);
   doc.setFont('helvetica', 'bold');
-  doc.text(diperiksaNama, 14 + colWidth + 20 + colWidth / 2, sigY + 22, { align: 'center' });
+  doc.setFontSize(8.5);
+  doc.text(disetujuiNama, 14 + colWidth + 20 + colWidth / 2, sigY + 22, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text('Supervisor Maintenance & Quarry', 14 + colWidth + 20 + colWidth / 2, sigY + 26, { align: 'center' });
+  doc.text(disetujuiJabatan || 'Kabag Workshop', 14 + colWidth + 20 + colWidth / 2, sigY + 26, { align: 'center' });
 
-  // 3. Disetujui Oleh
+  // 3. diKetahui Oleh : KTT
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(...darkTextColor);
-  doc.text('Disetujui Oleh:', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY, { align: 'center' });
+  doc.text('diKetahui Oleh : KTT', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY, { align: 'center' });
   doc.line(14 + (colWidth + 20) * 2 + 10, sigY + 18, 14 + (colWidth + 20) * 2 + colWidth - 10, sigY + 18);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
   doc.text(diketahuiNama, 14 + (colWidth + 20) * 2 + colWidth / 2, sigY + 22, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(7.5);
   doc.setTextColor(...grayTextColor);
-  doc.text('Kepala Teknik Tambang (KTT) / PM', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY + 26, { align: 'center' });
+  doc.text(diketahuiJabatan || 'KTT', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY + 26, { align: 'center' });
 
   // Page Footers
   const totalPages = doc.getNumberOfPages();

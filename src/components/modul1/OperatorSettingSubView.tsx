@@ -31,11 +31,24 @@ import {
   ArrowDown,
   ArrowUpDown,
   Eye,
-  FileDown
+  FileDown,
+  FileText,
+  CheckCheck
 } from 'lucide-react';
 import { canAccessRegistrationForm, updateUnitOperatorSetting } from '../../utils/storage';
 import { generateOperatorSettingPDF, exportOperatorSettingToPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
+
+export interface OperatorDocSignatories {
+  pembuatName: string;
+  pembuatJabatan: string;
+  disetujuiName: string;
+  disetujuiJabatan: string;
+  diketahuiName: string;
+  diketahuiJabatan: string;
+}
+
+export const STORAGE_KEY_OPERATOR_SIGNATORIES = 'bkwa_operator_setting_signatories_v1';
 
 export type OperatorSortField = 
   | 'cnNew' 
@@ -120,6 +133,80 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // ==========================================
+  // SIGNATORIES (LEMBAR PENGESAHAN DOKUMEN CETAK)
+  // 1. Dibuat Oleh :
+  // 2. Di Setujui Oleh : Kabag Workshop
+  // 3. diKetahui Oleh : KTT
+  // ==========================================
+  const [operatorSignatories, setOperatorSignatories] = useState<OperatorDocSignatories>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_OPERATOR_SIGNATORIES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            pembuatName: parsed.pembuatName || currentUser?.fullName || currentUser?.username || '',
+            pembuatJabatan: parsed.pembuatJabatan || 'Admin / Dispatcher',
+            disetujuiName: parsed.disetujuiName || 'Dodik Mariyadi',
+            disetujuiJabatan: parsed.disetujuiJabatan || 'Kabag Workshop',
+            diketahuiName: parsed.diketahuiName || 'KTT / Project Manager',
+            diketahuiJabatan: parsed.diketahuiJabatan || 'KTT',
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      pembuatName: currentUser?.fullName || currentUser?.username || '',
+      pembuatJabatan: 'Admin / Dispatcher',
+      disetujuiName: 'Dodik Mariyadi',
+      disetujuiJabatan: 'Kabag Workshop',
+      diketahuiName: 'KTT / Project Manager',
+      diketahuiJabatan: 'KTT',
+    };
+  });
+  const [signatoriesSavedFeedback, setSignatoriesSavedFeedback] = useState<boolean>(false);
+
+  // Daftar lengkap semua manpower tersortir
+  const sortedAllManpower = useMemo(() => {
+    return [...(manpowerList || [])].sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
+  }, [manpowerList]);
+
+  // Kandidat Kabag Workshop (Modul 2)
+  const kabagCandidates = useMemo(() => {
+    return sortedAllManpower.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase();
+      const n = (m.nama || '').toUpperCase();
+      return j.includes('KABAG') || j.includes('WORKSHOP') || j.includes('BENGKEL') || n.includes('DODIK');
+    });
+  }, [sortedAllManpower]);
+
+  // Kandidat KTT / Management (Modul 2)
+  const kttCandidates = useMemo(() => {
+    return sortedAllManpower.filter((m) => {
+      const j = (m.jabatan || '').toUpperCase();
+      return j.includes('KTT') || j.includes('KEPALA TEKNIK') || j.includes('PROJECT MANAGER') || j.includes('PM');
+    });
+  }, [sortedAllManpower]);
+
+  // Simpan pengaturan tanda tangan ke local storage
+  const handleSaveSignatories = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY_OPERATOR_SIGNATORIES, JSON.stringify(operatorSignatories));
+      setSignatoriesSavedFeedback(true);
+      setTimeout(() => setSignatoriesSavedFeedback(false), 3000);
+      setFeedback({
+        type: 'success',
+        message: '✓ Pengaturan Tanda Tangan Validasi Dokumen Cetak berhasil disimpan!',
+      });
+    } catch (e) {
+      console.error('Failed to save signatories:', e);
+    }
+  };
 
   // Handler toggle sort kolom
   const handleSort = (field: OperatorSortField) => {
@@ -477,6 +564,17 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           barcodeFilter: tableFilterBarcode,
           viewMode,
         },
+        signatories: {
+          pembuat: operatorSignatories.pembuatName,
+          pembuatName: operatorSignatories.pembuatName,
+          pembuatJabatan: operatorSignatories.pembuatJabatan,
+          diperiksa: operatorSignatories.disetujuiName,
+          disetujuiName: operatorSignatories.disetujuiName,
+          disetujuiJabatan: operatorSignatories.disetujuiJabatan || 'Kabag Workshop',
+          diketahui: operatorSignatories.diketahuiName,
+          diketahuiName: operatorSignatories.diketahuiName,
+          diketahuiJabatan: operatorSignatories.diketahuiJabatan || 'KTT',
+        },
       });
       setPreviewPdfUrl(result.blobUrl);
       setPreviewFilename(result.filename);
@@ -502,6 +600,17 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           jenisFilter: tableFilterJenis,
           barcodeFilter: tableFilterBarcode,
           viewMode,
+        },
+        signatories: {
+          pembuat: operatorSignatories.pembuatName,
+          pembuatName: operatorSignatories.pembuatName,
+          pembuatJabatan: operatorSignatories.pembuatJabatan,
+          diperiksa: operatorSignatories.disetujuiName,
+          disetujuiName: operatorSignatories.disetujuiName,
+          disetujuiJabatan: operatorSignatories.disetujuiJabatan || 'Kabag Workshop',
+          diketahui: operatorSignatories.diketahuiName,
+          diketahuiName: operatorSignatories.diketahuiName,
+          diketahuiJabatan: operatorSignatories.diketahuiJabatan || 'KTT',
         },
       });
     } catch (e) {
@@ -946,7 +1055,288 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       </section>
 
       {/* ======================================================== */}
-      {/* 2. TABEL DAFTAR HASIL PENUGASAN OPERATOR & BARCODE      */}
+      {/* 2. LEMBAR PENGESAHAN DOKUMEN CETAK (VALIDASI DATA MANPOWER) */}
+      {/* Kolom 1: Dibuat Oleh :                                  */}
+      {/* Kolom 2: Di Setujui Oleh : Kabag Workshop               */}
+      {/* Kolom 3: diKetahui Oleh : KTT                           */}
+      {/* ======================================================== */}
+      <section className="bg-stone-900/95 border border-stone-800 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Header Section Pengesahan */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-stone-800 gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                LEMBAR PENGESAHAN
+              </span>
+              <h3 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide flex items-center gap-2">
+                <FileText className="w-5 h-5 text-amber-400" />
+                <span>VALIDASI DOKUMEN LAPORAN (PILIHAN DARI DATA MANPOWER)</span>
+              </h3>
+            </div>
+            <p className="text-xs text-stone-400 mt-1">
+              Validasi dokumen ini dibuat manual dengan pemilihan langsung dari <strong>Data Manpower (Modul 2)</strong> untuk tanda tangan cetak PDF.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {signatoriesSavedFeedback && (
+              <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1 bg-emerald-950/70 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 animate-fade-in">
+                <CheckCheck className="w-3.5 h-3.5" />
+                <span>Tersimpan di Browser</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSaveSignatories}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-mono font-bold border border-stone-700 transition cursor-pointer"
+              title="Simpan susunan tanda tangan ke preferensi browser agar tidak hilang saat reload"
+            >
+              <Save className="w-3.5 h-3.5 text-amber-400" />
+              <span>Simpan Format</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Grid 3 Kolom Penandatangan Dokumen */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+          
+          {/* KOLOM 1: Dibuat Oleh : */}
+          <div className="space-y-3 p-4 rounded-2xl bg-stone-950/70 border border-stone-800">
+            <div className="flex items-center justify-between pb-1.5 border-b border-stone-800/80">
+              <label className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wide">
+                Dibuat Oleh :
+              </label>
+              <span className="text-[10px] text-stone-500 font-mono">Penyusun</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-stone-400 font-mono uppercase flex items-center justify-between">
+                <span>Nama Manpower (Modul 2):</span>
+                <span className="text-amber-400/80">Pilihan Manual</span>
+              </label>
+              <select
+                id="select-penandatangan-pembuat"
+                value={operatorSignatories.pembuatName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = (manpowerList || []).find((m) => m && m.nama === val);
+                  setOperatorSignatories((prev) => ({
+                    ...prev,
+                    pembuatName: val,
+                    pembuatJabatan: matched?.jabatan || prev.pembuatJabatan || 'Admin / Dispatcher',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 font-mono font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              >
+                <option value="">-- Pilih dari Data Manpower --</option>
+                {currentUser?.fullName && (
+                  <option value={currentUser.fullName}>
+                    {currentUser.fullName} ({currentUser.username || 'User Login Saat Ini'})
+                  </option>
+                )}
+                <optgroup label="── DATA MANPOWER (MODUL 2) ──">
+                  {sortedAllManpower.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Staff'} {m.nik ? `(${m.nik})` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-stone-400 font-mono uppercase">Jabatan di Dokumen:</label>
+              <input
+                type="text"
+                value={operatorSignatories.pembuatJabatan}
+                onChange={(e) =>
+                  setOperatorSignatories((prev) => ({ ...prev, pembuatJabatan: e.target.value }))
+                }
+                placeholder="Admin / Dispatcher"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-200 placeholder-stone-600 focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+            </div>
+            
+            <div className="pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
+              <span>Di Tanda Tangan:</span>
+              <span className="text-amber-300 font-bold truncate max-w-[150px]">
+                {operatorSignatories.pembuatName || '(Belum dipilih)'}
+              </span>
+            </div>
+          </div>
+
+          {/* KOLOM 2: Di Setujui Oleh : Kabag Workshop */}
+          <div className="space-y-3 p-4 rounded-2xl bg-stone-950/70 border border-stone-800">
+            <div className="flex items-center justify-between pb-1.5 border-b border-stone-800/80">
+              <label className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wide">
+                Di Setujui Oleh : Kabag Workshop
+              </label>
+              <span className="text-[10px] text-stone-500 font-mono">Pemeriksa</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-stone-400 font-mono uppercase flex items-center justify-between">
+                <span>Nama Kabag (Modul 2):</span>
+                <span className="text-amber-400/80">Pilihan Manual</span>
+              </label>
+              <select
+                id="select-penandatangan-kabag"
+                value={operatorSignatories.disetujuiName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = (manpowerList || []).find((m) => m && m.nama === val);
+                  setOperatorSignatories((prev) => ({
+                    ...prev,
+                    disetujuiName: val,
+                    disetujuiJabatan: matched?.jabatan || 'Kabag Workshop',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 font-mono font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              >
+                <option value="">-- Pilih dari Data Manpower --</option>
+                {kabagCandidates.length > 0 && (
+                  <optgroup label="── REKOMENDASI KABAG WORKSHOP ──">
+                    {kabagCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} — {m.jabatan}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="── SEMUA DATA MANPOWER ──">
+                  {sortedAllManpower.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Staff'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-stone-400 font-mono uppercase">Jabatan di Dokumen:</label>
+              <input
+                type="text"
+                value={operatorSignatories.disetujuiJabatan}
+                onChange={(e) =>
+                  setOperatorSignatories((prev) => ({ ...prev, disetujuiJabatan: e.target.value }))
+                }
+                placeholder="Kabag Workshop"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-200 placeholder-stone-600 focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
+              <span>Di Tanda Tangan:</span>
+              <span className="text-amber-300 font-bold truncate max-w-[150px]">
+                {operatorSignatories.disetujuiName || '(Belum dipilih)'}
+              </span>
+            </div>
+          </div>
+
+          {/* KOLOM 3: diKetahui Oleh : KTT */}
+          <div className="space-y-3 p-4 rounded-2xl bg-stone-950/70 border border-stone-800">
+            <div className="flex items-center justify-between pb-1.5 border-b border-stone-800/80">
+              <label className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wide">
+                diKetahui Oleh : KTT
+              </label>
+              <span className="text-[10px] text-stone-500 font-mono">Pimpinan</span>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-stone-400 font-mono uppercase flex items-center justify-between">
+                <span>Nama KTT / PM (Modul 2):</span>
+                <span className="text-amber-400/80">Pilihan Manual</span>
+              </label>
+              <select
+                id="select-penandatangan-ktt"
+                value={operatorSignatories.diketahuiName}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const matched = (manpowerList || []).find((m) => m && m.nama === val);
+                  setOperatorSignatories((prev) => ({
+                    ...prev,
+                    diketahuiName: val,
+                    diketahuiJabatan: matched?.jabatan || 'KTT',
+                  }));
+                }}
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 font-mono font-bold focus:ring-2 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              >
+                <option value="">-- Pilih dari Data Manpower --</option>
+                {kttCandidates.length > 0 && (
+                  <optgroup label="── REKOMENDASI KTT / MANAGEMENT ──">
+                    {kttCandidates.map((m) => (
+                      <option key={m.id} value={m.nama}>
+                        {m.nama} — {m.jabatan}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="── SEMUA DATA MANPOWER ──">
+                  {sortedAllManpower.map((m) => (
+                    <option key={m.id} value={m.nama}>
+                      {m.nama} — {m.jabatan || 'Staff'}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-stone-400 font-mono uppercase">Jabatan di Dokumen:</label>
+              <input
+                type="text"
+                value={operatorSignatories.diketahuiJabatan}
+                onChange={(e) =>
+                  setOperatorSignatories((prev) => ({ ...prev, diketahuiJabatan: e.target.value }))
+                }
+                placeholder="KTT"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-1.5 text-xs text-stone-200 placeholder-stone-600 focus:ring-1 focus:ring-amber-500 font-mono"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] font-mono text-stone-400">
+              <span>Di Tanda Tangan:</span>
+              <span className="text-amber-300 font-bold truncate max-w-[150px]">
+                {operatorSignatories.diketahuiName || '(Belum dipilih)'}
+              </span>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Live Signatory Status Indicator */}
+        <div className="mt-4 pt-3 border-t border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] font-mono text-stone-400 gap-2 bg-stone-950/40 px-3.5 py-2.5 rounded-xl border border-stone-800/50">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-stone-500">Validasi Terpasang:</span>
+            <span className="text-stone-300">
+              [Dibuat: <strong className="text-amber-400">{operatorSignatories.pembuatName || '-'}</strong>]
+            </span>
+            <span className="text-stone-600">•</span>
+            <span className="text-stone-300">
+              [Di Setujui: <strong className="text-amber-400">{operatorSignatories.disetujuiName || '-'}</strong>]
+            </span>
+            <span className="text-stone-600">•</span>
+            <span className="text-stone-300">
+              [diKetahui: <strong className="text-amber-400">{operatorSignatories.diketahuiName || '-'}</strong>]
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenPdfPreview}
+            className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Lihat Hasil pada Print Preview &rarr;</span>
+          </button>
+        </div>
+      </section>
+
+      {/* ======================================================== */}
+      {/* 3. TABEL DAFTAR HASIL PENUGASAN OPERATOR & BARCODE      */}
       {/* Menampilkan unit yang telah disetting (atau semua jika dipilih) */}
       {/* ======================================================== */}
       <section
@@ -1256,6 +1646,11 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
         onDownload={handleDownloadPdfDirect}
+        signatoriesSummary={{
+          pembuat: `${operatorSignatories.pembuatName || '-'} (${operatorSignatories.pembuatJabatan || 'Admin / Dispatcher'})`,
+          diperiksa: `${operatorSignatories.disetujuiName || '-'} (${operatorSignatories.disetujuiJabatan || 'Kabag Workshop'})`,
+          diketahui: `${operatorSignatories.diketahuiName || '-'} (${operatorSignatories.diketahuiJabatan || 'KTT'})`,
+        }}
       />
     </div>
   );
