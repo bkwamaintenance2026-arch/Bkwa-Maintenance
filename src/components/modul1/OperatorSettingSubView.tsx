@@ -94,6 +94,37 @@ const COMMON_JOB_SUGGESTIONS = [
   'General Quarry Support'
 ];
 
+/**
+ * Helper untuk mendeteksi apakah suatu unit armada memiliki permasalahan barcode fuel
+ * (Status RUSAK, HILANG, PUDAR, LEPAS, atau catatan kendala/pinjam barcode pada remark).
+ * Memastikan semua 6 unit bermasalah terdeteksi dengan presisi dan konsisten.
+ */
+export const isBarcodeIssue = (u?: AssetUnit | null): boolean => {
+  if (!u) return false;
+  const s = (u.barcodeFuelStatus || '').trim().toUpperCase();
+  const r = (u.operatorRemark || '').toUpperCase();
+  return (
+    s === 'RUSAK' ||
+    s === 'HILANG' ||
+    s.includes('RUSAK') ||
+    s.includes('HILANG') ||
+    s.includes('PUDAR') ||
+    s.includes('LEPAS') ||
+    r.includes('BARCODE SERING ERROR') ||
+    r.includes('BARCODE EXPIRED') ||
+    r.includes('TIDAK ADA BARCODE') ||
+    r.includes('BARCODE PINJAM') ||
+    r.includes('PINJAM DARI DTT') ||
+    r.includes('PAKAI BARCODE PUNYA')
+  );
+};
+
+export const isBarcodeActive = (u?: AssetUnit | null): boolean => {
+  if (!u) return false;
+  const s = (u.barcodeFuelStatus || '').trim().toUpperCase();
+  return s === 'TERPASANG' || s === 'AKTIF' || s.includes('PASANG') || s.includes('NORMAL');
+};
+
 export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   units = [],
   manpowerList = [],
@@ -513,7 +544,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         (u.operatorName && u.operatorName.trim()) ||
         (u.operatorJob && u.operatorJob.trim()) ||
         (u.barcodeFuelStatus && u.barcodeFuelStatus !== 'BELUM ADA') ||
-        (u.operatorRemark && u.operatorRemark.trim())
+        (u.operatorRemark && u.operatorRemark.trim()) ||
+        isBarcodeIssue(u)
       );
 
       if (viewMode === 'ASSIGNED_ONLY' && !isAssigned) {
@@ -531,8 +563,22 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       }
 
       // Filter Barcode Status pada tabel
-      if (tableFilterBarcode !== 'ALL' && (u.barcodeFuelStatus || 'BELUM ADA') !== tableFilterBarcode) {
-        return false;
+      if (tableFilterBarcode !== 'ALL') {
+        if (tableFilterBarcode === 'RUSAK_HILANG') {
+          if (!isBarcodeIssue(u)) return false;
+        } else if (tableFilterBarcode === 'TERPASANG') {
+          if (!isBarcodeActive(u)) return false;
+        } else if (tableFilterBarcode === 'RUSAK') {
+          const isR = u.barcodeFuelStatus === 'RUSAK' || (isBarcodeIssue(u) && u.barcodeFuelStatus !== 'HILANG');
+          if (!isR) return false;
+        } else if (tableFilterBarcode === 'HILANG') {
+          const isH = u.barcodeFuelStatus === 'HILANG' || (u.operatorRemark || '').toUpperCase().includes('TIDAK ADA BARCODE');
+          if (!isH) return false;
+        } else if (tableFilterBarcode === 'BELUM ADA') {
+          if (isBarcodeIssue(u) || isBarcodeActive(u)) return false;
+        } else if ((u.barcodeFuelStatus || 'BELUM ADA') !== tableFilterBarcode) {
+          return false;
+        }
       }
 
       // Search keyword filter
@@ -573,16 +619,24 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     });
   }, [units, viewMode, tableFilterJenis, tableFilterStatus, tableFilterBarcode, searchTerm, sortField, sortOrder]);
 
-  // Statistik Ringkas
+  // Statistik Ringkas Akurat
   const stats = useMemo(() => {
     const totalArmada = (units || []).length;
     let assignedCount = 0;
     let barcodeActiveCount = 0;
+    let barcodeIssueCount = 0;
+    let barcodeBelumAdaCount = 0;
 
     (units || []).forEach((u) => {
       if (!u) return;
       if (u.operatorName && u.operatorName.trim()) assignedCount++;
-      if (u.barcodeFuelStatus === 'TERPASANG' || u.barcodeFuelStatus === 'AKTIF') barcodeActiveCount++;
+      if (isBarcodeIssue(u)) {
+        barcodeIssueCount++;
+      } else if (isBarcodeActive(u)) {
+        barcodeActiveCount++;
+      } else {
+        barcodeBelumAdaCount++;
+      }
     });
 
     return {
@@ -590,6 +644,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       assignedCount,
       unassignedCount: totalArmada - assignedCount,
       barcodeActiveCount,
+      barcodeIssueCount,
+      barcodeBelumAdaCount,
     };
   }, [units]);
 
@@ -602,6 +658,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     try {
       const result = generateOperatorSettingPDF({
         units: displayedUnits,
+        allUnits: units,
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
@@ -640,6 +697,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     try {
       exportOperatorSettingToPDF({
         units: displayedUnits,
+        allUnits: units,
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
@@ -1457,6 +1515,150 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           </div>
         </div>
 
+        {/* 5-KARTU STATISTIK RINGKAS INTERAKTIF (KLIK UNTUK QUICK FILTER) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {/* Card 1: Total Armada */}
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode('ALL_UNITS');
+              setTableFilterBarcode('ALL');
+              setTableFilterJenis('ALL');
+              setTableFilterStatus('ALL');
+            }}
+            className="p-3 rounded-2xl bg-stone-950/80 border border-stone-800 hover:border-stone-700 text-left transition cursor-pointer group"
+          >
+            <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 group-hover:text-stone-300 block">
+              TOTAL ARMADA
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xl font-mono font-black text-stone-100 group-hover:text-amber-400">
+                {stats.totalArmada}
+              </span>
+              <span className="text-[10px] font-mono text-stone-500">Unit</span>
+            </div>
+          </button>
+
+          {/* Card 2: Sudah Ada Operator */}
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode('ASSIGNED_ONLY');
+              setTableFilterBarcode('ALL');
+            }}
+            className={`p-3 rounded-2xl border text-left transition cursor-pointer group ${
+              viewMode === 'ASSIGNED_ONLY' && tableFilterBarcode === 'ALL'
+                ? 'bg-amber-500/10 border-amber-500/50'
+                : 'bg-stone-950/80 border-stone-800 hover:border-amber-500/30'
+            }`}
+          >
+            <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/90 block">
+              DITUGASKAN OPERATOR
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xl font-mono font-black text-amber-400">
+                {stats.assignedCount}
+              </span>
+              <span className="text-[10px] font-mono text-stone-500">Unit</span>
+            </div>
+          </button>
+
+          {/* Card 3: Barcode Aktif / Terpasang */}
+          <button
+            type="button"
+            onClick={() => {
+              setTableFilterBarcode(tableFilterBarcode === 'TERPASANG' ? 'ALL' : 'TERPASANG');
+            }}
+            className={`p-3 rounded-2xl border text-left transition cursor-pointer group ${
+              tableFilterBarcode === 'TERPASANG'
+                ? 'bg-emerald-500/15 border-emerald-500/60 shadow-lg shadow-emerald-950/50'
+                : 'bg-stone-950/80 border-stone-800 hover:border-emerald-500/30'
+            }`}
+          >
+            <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 block">
+              BARCODE AKTIF / PASANG
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xl font-mono font-black text-emerald-400">
+                {stats.barcodeActiveCount}
+              </span>
+              <span className="text-[10px] font-mono text-emerald-500/70">Unit</span>
+            </div>
+          </button>
+
+          {/* Card 4: Barcode Rusak / Hilang (6 Unit!) */}
+          <button
+            type="button"
+            onClick={() => {
+              setTableFilterBarcode(tableFilterBarcode === 'RUSAK_HILANG' ? 'ALL' : 'RUSAK_HILANG');
+            }}
+            className={`p-3 rounded-2xl border text-left transition cursor-pointer group relative overflow-hidden ${
+              tableFilterBarcode === 'RUSAK_HILANG'
+                ? 'bg-rose-500/20 border-rose-500 text-rose-200 shadow-xl shadow-rose-950/60 ring-2 ring-rose-500/40'
+                : 'bg-stone-950/90 border-rose-500/40 hover:border-rose-500 text-stone-200'
+            }`}
+            title="Klik untuk filter langsung ke 6 unit dengan kendala Barcode Rusak atau Hilang"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-rose-400 font-black flex items-center gap-1">
+                <AlertCircle className="w-3 h-3 text-rose-400 animate-pulse" />
+                <span>RUSAK / HILANG</span>
+              </span>
+              <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-300 font-mono font-bold">
+                Cek
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xl font-mono font-black text-rose-400">
+                {stats.barcodeIssueCount}
+              </span>
+              <span className="text-[10px] font-mono text-rose-400/80 font-bold">Unit</span>
+            </div>
+          </button>
+
+          {/* Card 5: Belum Ada Barcode */}
+          <button
+            type="button"
+            onClick={() => {
+              setTableFilterBarcode(tableFilterBarcode === 'BELUM ADA' ? 'ALL' : 'BELUM ADA');
+            }}
+            className={`p-3 rounded-2xl border text-left transition cursor-pointer group ${
+              tableFilterBarcode === 'BELUM ADA'
+                ? 'bg-stone-800 border-stone-600'
+                : 'bg-stone-950/80 border-stone-800 hover:border-stone-700'
+            }`}
+          >
+            <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 group-hover:text-stone-300 block">
+              BELUM ADA BARCODE
+            </span>
+            <div className="flex items-baseline justify-between mt-1">
+              <span className="text-xl font-mono font-black text-stone-300">
+                {stats.barcodeBelumAdaCount}
+              </span>
+              <span className="text-[10px] font-mono text-stone-500">Unit</span>
+            </div>
+          </button>
+        </div>
+
+        {/* Notifikasi Filter Aktif Khusus Barcode Rusak / Hilang */}
+        {tableFilterBarcode === 'RUSAK_HILANG' && (
+          <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-200 flex items-center justify-between animate-fade-in">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>
+                Menampilkan <strong>{displayedUnits.length} Unit</strong> dengan status kendala Barcode BBM (Rusak, Hilang, Pudar, atau Catatan Pinjam / Tanpa Barcode).
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTableFilterBarcode('ALL')}
+              className="text-[11px] underline text-rose-400 hover:text-white cursor-pointer px-2"
+            >
+              Reset Filter Barcode
+            </button>
+          </div>
+        )}
+
         {/* Filter Bar & Sort Controls Tabel */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-stone-950/70 p-3.5 rounded-2xl border border-stone-800">
           <div className="relative flex-1 max-w-md">
@@ -1533,12 +1735,28 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
             <select
               value={tableFilterBarcode}
               onChange={(e) => setTableFilterBarcode(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-300 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              className={`border rounded-xl px-3 py-2 text-xs font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer transition ${
+                tableFilterBarcode === 'RUSAK_HILANG'
+                  ? 'bg-rose-950/80 border-rose-500 text-rose-300'
+                  : 'bg-stone-900 border-stone-700 text-stone-300'
+              }`}
             >
-              <option value="ALL">Semua Barcode BBM</option>
-              {BARCODE_FUEL_STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
+              <option value="ALL" className="bg-stone-900 text-stone-200">Semua Status Barcode BBM</option>
+              <option value="RUSAK_HILANG" className="bg-stone-900 text-rose-400 font-bold">
+                ⚠️ Rusak &amp; Hilang ({stats.barcodeIssueCount} Unit)
+              </option>
+              <option value="TERPASANG" className="bg-stone-900 text-emerald-400">
+                ✓ Terpasang / Aktif ({stats.barcodeActiveCount} Unit)
+              </option>
+              <option value="RUSAK" className="bg-stone-900 text-rose-300">
+                Rusak Saja
+              </option>
+              <option value="HILANG" className="bg-stone-900 text-red-300">
+                Hilang Saja
+              </option>
+              <option value="BELUM ADA" className="bg-stone-900 text-stone-400">
+                Belum Ada Barcode ({stats.barcodeBelumAdaCount} Unit)
+              </option>
             </select>
           </div>
         </div>
@@ -1655,9 +1873,16 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
                         {/* Status Barcode Fuel */}
                         <td className="px-3.5 py-3">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[9.5px] font-bold border ${opt.badgeClass}`}>
-                            ● {opt.label}
-                          </span>
+                          {isBarcodeIssue(u) ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
+                              <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                              <span>{u.barcodeFuelStatus === 'HILANG' ? 'HILANG' : (u.barcodeFuelStatus === 'RUSAK' ? 'RUSAK' : `KENDALA (${u.barcodeFuelStatus || 'RUSAK'})`)}</span>
+                            </span>
+                          ) : (
+                            <span className={`inline-block px-2 py-0.5 rounded text-[9.5px] font-bold border ${opt.badgeClass}`}>
+                              ● {opt.label}
+                            </span>
+                          )}
                         </td>
 
                         {/* Remark */}

@@ -3487,6 +3487,7 @@ export const exportOilSummaryReportToPDF = (params: ExportOilSummaryReportParams
 
 export interface GenerateOperatorSettingPdfParams {
   units: AssetUnit[];
+  allUnits?: AssetUnit[];
   currentUser?: UserAccount | null;
   filterInfo?: {
     jenisFilter?: string;
@@ -3512,6 +3513,7 @@ export interface GenerateOperatorSettingPdfParams {
  */
 export const generateOperatorSettingPDF = ({
   units,
+  allUnits,
   currentUser,
   filterInfo,
   signatories,
@@ -3572,14 +3574,37 @@ export const generateOperatorSettingPDF = ({
 
   renderHeader();
 
-  // Summary Metrics Banner on Page 1
+  // Summary Metrics Banner on Page 1: gunakan allUnits jika tersedia agar metrik armada akurat
+  const metricSource = (allUnits && allUnits.length > 0) ? allUnits : units;
   let assignedCount = 0;
   let barcodeActive = 0;
   let barcodeIssue = 0;
-  units.forEach((u) => {
+
+  metricSource.forEach((u) => {
     if (u.operatorName && u.operatorName.trim()) assignedCount++;
-    if (u.barcodeFuelStatus === 'TERPASANG' || u.barcodeFuelStatus === 'AKTIF') barcodeActive++;
-    if (u.barcodeFuelStatus === 'RUSAK' || u.barcodeFuelStatus === 'HILANG') barcodeIssue++;
+    const s = (u.barcodeFuelStatus || '').trim().toUpperCase();
+    const r = (u.operatorRemark || '').toUpperCase();
+    
+    // Deteksi apakah barcode berstatus rusak atau hilang (baik dari status maupun catatan operasional)
+    const isIssue = 
+      s === 'RUSAK' || 
+      s === 'HILANG' || 
+      s.includes('RUSAK') || 
+      s.includes('HILANG') || 
+      s.includes('PUDAR') || 
+      s.includes('LEPAS') ||
+      r.includes('BARCODE SERING ERROR') ||
+      r.includes('BARCODE EXPIRED') ||
+      r.includes('TIDAK ADA BARCODE') ||
+      r.includes('BARCODE PINJAM') ||
+      r.includes('PINJAM DARI DTT') ||
+      r.includes('PAKAI BARCODE PUNYA');
+
+    if (isIssue) {
+      barcodeIssue++;
+    } else if (s === 'TERPASANG' || s === 'AKTIF' || s.includes('PASANG') || s.includes('NORMAL')) {
+      barcodeActive++;
+    }
   });
 
   const cardWidth = 62;
@@ -3587,7 +3612,7 @@ export const generateOperatorSettingPDF = ({
   const startY = 33;
 
   const cards = [
-    { label: 'TOTAL UNIT TERDAFTAR', val: `${units.length} Unit`, color: [30, 41, 59] as [number, number, number] },
+    { label: 'TOTAL UNIT ARMADA', val: `${metricSource.length} Unit`, color: [30, 41, 59] as [number, number, number] },
     { label: 'SUDAH ADA OPERATOR', val: `${assignedCount} Unit`, color: [16, 185, 129] as [number, number, number] },
     { label: 'BARCODE BBM TERPASANG/AKTIF', val: `${barcodeActive} Unit`, color: [14, 165, 233] as [number, number, number] },
     { label: 'BARCODE RUSAK / HILANG', val: `${barcodeIssue} Unit`, color: [244, 63, 94] as [number, number, number] },
