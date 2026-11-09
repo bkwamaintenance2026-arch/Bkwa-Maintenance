@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { 
+  AssetUnit,
   BreakdownRecord, 
   BreakdownPartJasaItem, 
   P2HRecord, 
@@ -3483,4 +3484,278 @@ export const exportOilSummaryReportToPDF = (params: ExportOilSummaryReportParams
   result.download();
   return result;
 };
+
+export interface GenerateOperatorSettingPdfParams {
+  units: AssetUnit[];
+  currentUser?: UserAccount | null;
+  filterInfo?: {
+    jenisFilter?: string;
+    barcodeFilter?: string;
+    viewMode?: string;
+  };
+  signatories?: {
+    pembuat?: string;
+    diperiksa?: string;
+    diketahui?: string;
+  };
+}
+
+/**
+ * Utility untuk men-generate Dokumen Resmi Laporan Penugasan Operator & Status Barcode Fuel Armada ke PDF Landscape
+ */
+export const generateOperatorSettingPDF = ({
+  units,
+  currentUser,
+  filterInfo,
+  signatories,
+}: GenerateOperatorSettingPdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const now = new Date();
+  const nowStr = now.toLocaleString('id-ID');
+  const dateStr = now.toISOString().split('T')[0];
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / Workshop';
+
+  const primaryColor: [number, number, number] = [180, 83, 9]; // Amber-700
+  const darkTextColor: [number, number, number] = [30, 41, 59]; // Slate-800
+  const grayTextColor: [number, number, number] = [100, 116, 139]; // Slate-500
+
+  const jenisFilterLabel = filterInfo?.jenisFilter && filterInfo.jenisFilter !== 'ALL' ? filterInfo.jenisFilter : 'Semua Jenis';
+  const barcodeFilterLabel = filterInfo?.barcodeFilter && filterInfo.barcodeFilter !== 'ALL' ? filterInfo.barcodeFilter : 'Semua Barcode';
+  const modeLabel = filterInfo?.viewMode === 'ALL_UNITS' ? 'Semua Armada Unit' : 'Hanya Unit Ditugaskan';
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & OPERASI ALAT BERAT • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text('DOKUMEN OPERASIONAL ARMADA RESMI', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text('LAPORAN PENUGASAN OPERATOR & STATUS BARCODE FUEL ARMADA', 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Mode: ${modeLabel}   |   Jenis: ${jenisFilterLabel}   |   Barcode: ${barcodeFilterLabel}   |   Total: ${units.length} Unit   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  // Summary Metrics Banner on Page 1
+  let assignedCount = 0;
+  let barcodeActive = 0;
+  let barcodeIssue = 0;
+  units.forEach((u) => {
+    if (u.operatorName && u.operatorName.trim()) assignedCount++;
+    if (u.barcodeFuelStatus === 'TERPASANG' || u.barcodeFuelStatus === 'AKTIF') barcodeActive++;
+    if (u.barcodeFuelStatus === 'RUSAK' || u.barcodeFuelStatus === 'HILANG') barcodeIssue++;
+  });
+
+  const cardWidth = 62;
+  const cardHeight = 11;
+  const startY = 33;
+
+  const cards = [
+    { label: 'TOTAL UNIT TERDAFTAR', val: `${units.length} Unit`, color: [30, 41, 59] as [number, number, number] },
+    { label: 'SUDAH ADA OPERATOR', val: `${assignedCount} Unit`, color: [16, 185, 129] as [number, number, number] },
+    { label: 'BARCODE BBM TERPASANG/AKTIF', val: `${barcodeActive} Unit`, color: [14, 165, 233] as [number, number, number] },
+    { label: 'BARCODE RUSAK / HILANG', val: `${barcodeIssue} Unit`, color: [244, 63, 94] as [number, number, number] },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 3.8);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 3, startY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...c.color);
+    doc.text(c.val, x + 3, startY + 8.8);
+  });
+
+  // Table Data
+  const tableData = units.map((u, i) => [
+    (i + 1).toString(),
+    u.cnNew || '-',
+    u.namaAlat || '-',
+    u.jenis || '-',
+    u.loc || '-',
+    u.operatorName || '-- Belum Ada --',
+    u.operatorJabatan || '-',
+    u.operatorJob || '-',
+    u.barcodeFuelStatus || 'BELUM ADA',
+    u.operatorRemark || '-',
+  ]);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [[
+      'No',
+      'No. Unit\n(CN New)',
+      'Nama Alat',
+      'Jenis Unit',
+      'Lokasi',
+      'Nama Operator / Sopir\n(Reff Modul 2)',
+      'Jabatan',
+      'Job (Tugas Pekerjaan)',
+      'Status\nBarcode Fuel',
+      'Remark',
+    ]],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      1: { halign: 'center', fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 26 },
+      2: { cellWidth: 38 },
+      3: { cellWidth: 26 },
+      4: { halign: 'center', cellWidth: 18 },
+      5: { fontStyle: 'bold', cellWidth: 38 },
+      6: { cellWidth: 25 },
+      7: { cellWidth: 36 },
+      8: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
+      9: { cellWidth: 28 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // Check where the table ended
+  let finalY = (doc as any).lastAutoTable?.finalY || 160;
+
+  // Signatures
+  if (finalY > 148) {
+    doc.addPage();
+    renderHeader();
+    finalY = 38;
+  } else {
+    finalY += 8;
+  }
+
+  const sigY = finalY;
+  const colWidth = 75;
+
+  const pembuatNama = signatories?.pembuat || exporterName;
+  const diperiksaNama = signatories?.diperiksa || 'Supervisor Lapangan / Maintenance';
+  const diketahuiNama = signatories?.diketahui || 'Project Manager / KTT';
+
+  // 1. Dibuat Oleh
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Dibuat Oleh (Admin / Dispatcher):', 14 + colWidth / 2, sigY, { align: 'center' });
+  doc.line(14 + 10, sigY + 18, 14 + colWidth - 10, sigY + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.text(pembuatNama, 14 + colWidth / 2, sigY + 22, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...grayTextColor);
+  doc.text('Admin Operasi & Workshop', 14 + colWidth / 2, sigY + 26, { align: 'center' });
+
+  // 2. Diperiksa Oleh
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Diperiksa Oleh:', 14 + colWidth + 20 + colWidth / 2, sigY, { align: 'center' });
+  doc.line(14 + colWidth + 20 + 10, sigY + 18, 14 + colWidth + 20 + colWidth - 10, sigY + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.text(diperiksaNama, 14 + colWidth + 20 + colWidth / 2, sigY + 22, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...grayTextColor);
+  doc.text('Supervisor Maintenance & Quarry', 14 + colWidth + 20 + colWidth / 2, sigY + 26, { align: 'center' });
+
+  // 3. Disetujui Oleh
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...darkTextColor);
+  doc.text('Disetujui Oleh:', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY, { align: 'center' });
+  doc.line(14 + (colWidth + 20) * 2 + 10, sigY + 18, 14 + (colWidth + 20) * 2 + colWidth - 10, sigY + 18);
+  doc.setFont('helvetica', 'bold');
+  doc.text(diketahuiNama, 14 + (colWidth + 20) * 2 + colWidth / 2, sigY + 22, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...grayTextColor);
+  doc.text('Kepala Teknik Tambang (KTT) / PM', 14 + (colWidth + 20) * 2 + colWidth / 2, sigY + 26, { align: 'center' });
+
+  // Page Footers
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(14, 200, 283, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH • Dokumen Penugasan Operator & Barcode Fuel • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  const cleanDate = dateStr.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Laporan_Setting_Operator_Barcode_Fuel_PT_BKWA_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+export const exportOperatorSettingToPDF = (params: GenerateOperatorSettingPdfParams): GeneratedPDFResult => {
+  const result = generateOperatorSettingPDF(params);
+  result.download();
+  return result;
+};
+
 

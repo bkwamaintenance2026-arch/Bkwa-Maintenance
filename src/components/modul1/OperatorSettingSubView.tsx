@@ -26,9 +26,27 @@ import {
   ArrowRight,
   ListFilter,
   Layers,
-  Wrench
+  Wrench,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Eye,
+  FileDown
 } from 'lucide-react';
 import { canAccessRegistrationForm, updateUnitOperatorSetting } from '../../utils/storage';
+import { generateOperatorSettingPDF, exportOperatorSettingToPDF } from '../../utils/pdfGenerator';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+
+export type OperatorSortField = 
+  | 'cnNew' 
+  | 'namaAlat' 
+  | 'jenis' 
+  | 'loc' 
+  | 'operatorName' 
+  | 'operatorJabatan' 
+  | 'operatorJob' 
+  | 'barcodeFuelStatus' 
+  | 'operatorRemark';
 
 interface OperatorSettingSubViewProps {
   units?: AssetUnit[];
@@ -93,6 +111,54 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   const [tableFilterJenis, setTableFilterJenis] = useState<string>('ALL');
   const [tableFilterBarcode, setTableFilterBarcode] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'ASSIGNED_ONLY' | 'ALL_UNITS'>('ASSIGNED_ONLY');
+
+  // Sorting state untuk Header Kolom Tabel
+  const [sortField, setSortField] = useState<OperatorSortField>('cnNew');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // PDF Preview Modal States
+  const [showPdfPreview, setShowPdfPreview] = useState<boolean>(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState<string>('');
+
+  // Handler toggle sort kolom
+  const handleSort = (field: OperatorSortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  // Helper render header dengan Sort By indikator
+  const renderSortHeader = (label: string, field: OperatorSortField, minWidth?: string, align: 'left' | 'center' = 'left') => {
+    const isSorted = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        className={`px-3.5 py-3.5 whitespace-nowrap cursor-pointer hover:bg-stone-900 transition select-none group text-${align} ${
+          minWidth || ''
+        }`}
+        title={`Klik untuk mengurutkan (Sort by ${label})`}
+      >
+        <div className={`flex items-center gap-1.5 ${align === 'center' ? 'justify-center' : 'justify-start'}`}>
+          <span className={isSorted ? 'text-amber-400 font-black' : 'text-stone-400 group-hover:text-stone-200'}>
+            {label}
+          </span>
+          {isSorted ? (
+            sortOrder === 'asc' ? (
+              <ArrowUp className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            ) : (
+              <ArrowDown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3.5 h-3.5 text-stone-600 group-hover:text-stone-400 shrink-0 transition" />
+          )}
+        </div>
+      </th>
+    );
+  };
 
   // Daftar jenis unit unik dari database armada
   const uniqueJenisList = useMemo(() => {
@@ -312,10 +378,10 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   };
 
   // ==========================================
-  // FILTERED UNITS UNTUK TABEL DI BAWAH
+  // FILTERED & SORTED UNITS UNTUK TABEL DI BAWAH
   // ==========================================
   const displayedUnits = useMemo(() => {
-    return (units || []).filter((u) => {
+    const filtered = (units || []).filter((u) => {
       if (!u) return false;
 
       // Filter berdasarkan Mode: Hanya yang sudah di-setting vs Semua Unit
@@ -364,7 +430,17 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
       return true;
     });
-  }, [units, viewMode, tableFilterJenis, tableFilterBarcode, searchTerm]);
+
+    // Urutkan (Sorting) secara dinamis sesuai sortField dan sortOrder
+    return [...filtered].sort((a, b) => {
+      let aVal = (a[sortField] || '').toString().toLowerCase();
+      let bVal = (b[sortField] || '').toString().toLowerCase();
+
+      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [units, viewMode, tableFilterJenis, tableFilterBarcode, searchTerm, sortField, sortOrder]);
 
   // Statistik Ringkas
   const stats = useMemo(() => {
@@ -385,6 +461,53 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       barcodeActiveCount,
     };
   }, [units]);
+
+  // Handler Pratinjau Dokumen PDF Resmi
+  const handleOpenPdfPreview = () => {
+    if (displayedUnits.length === 0) {
+      setFeedback({ type: 'error', message: 'Tidak ada data untuk ditampilkan pada Pratinjau Dokumen PDF.' });
+      return;
+    }
+    try {
+      const result = generateOperatorSettingPDF({
+        units: displayedUnits,
+        currentUser,
+        filterInfo: {
+          jenisFilter: tableFilterJenis,
+          barcodeFilter: tableFilterBarcode,
+          viewMode,
+        },
+      });
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setShowPdfPreview(true);
+      setFeedback({
+        type: 'success',
+        message: '✓ Dokumen Pratinjau PDF Penugasan Operator & Barcode siap diperiksa & dicetak.',
+      });
+    } catch (e) {
+      console.error('Error generating Operator Setting PDF preview:', e);
+      setFeedback({ type: 'error', message: 'Gagal membuat pratinjau dokumen PDF.' });
+    }
+  };
+
+  // Handler Download PDF Langsung
+  const handleDownloadPdfDirect = () => {
+    if (displayedUnits.length === 0) return;
+    try {
+      exportOperatorSettingToPDF({
+        units: displayedUnits,
+        currentUser,
+        filterInfo: {
+          jenisFilter: tableFilterJenis,
+          barcodeFilter: tableFilterBarcode,
+          viewMode,
+        },
+      });
+    } catch (e) {
+      console.error('Error downloading Operator Setting PDF:', e);
+    }
+  };
 
   // Export CSV
   const handleExportCSV = () => {
@@ -425,7 +548,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
     const csvContent = '\uFEFF' +
       `"PT BATU KALI WELANG AMPUH - DAFTAR SETTING OPERATOR & BARCODE FUEL ARMADA"\r\n` +
-      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Unit: ${displayedUnits.length} Unit"\r\n\r\n` +
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Unit: ${displayedUnits.length} Unit | Sort By: ${sortField} (${sortOrder.toUpperCase()})"\r\n\r\n` +
       [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -887,17 +1010,18 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
             <button
               type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-300 hover:text-amber-400 hover:border-amber-500/40 text-xs font-mono font-bold transition shadow cursor-pointer"
-              title="Cetak lembar operator"
+              onClick={handleOpenPdfPreview}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-stone-950 hover:bg-amber-400 text-xs font-mono font-black transition shadow-lg shadow-amber-500/20 cursor-pointer"
+              title="Buka Dokumen Pratinjau PDF Resmi untuk Cetak & Download"
             >
-              <Printer className="w-3.5 h-3.5 text-blue-400" />
-              <span>Print</span>
+              <Eye className="w-3.5 h-3.5 text-stone-950" />
+              <Printer className="w-3.5 h-3.5 text-stone-950" />
+              <span>Print Preview</span>
             </button>
           </div>
         </div>
 
-        {/* Filter Bar Tabel */}
+        {/* Filter Bar & Sort Controls Tabel */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-stone-950/70 p-3.5 rounded-2xl border border-stone-800">
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-stone-500" />
@@ -911,6 +1035,35 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Quick Sort By Selector */}
+            <div className="flex items-center gap-1.5 bg-stone-900 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-300 font-mono">
+              <span className="text-[10px] text-stone-500 uppercase font-bold flex items-center gap-1">
+                <ArrowUpDown className="w-3 h-3 text-amber-400" />
+                <span>Sort By:</span>
+              </span>
+              <select
+                value={sortField}
+                onChange={(e) => setSortField(e.target.value as OperatorSortField)}
+                className="bg-transparent text-amber-300 font-bold focus:outline-none cursor-pointer"
+              >
+                <option value="cnNew" className="bg-stone-900 text-stone-200">No. Unit (CN New)</option>
+                <option value="namaAlat" className="bg-stone-900 text-stone-200">Nama Alat</option>
+                <option value="jenis" className="bg-stone-900 text-stone-200">Jenis Unit</option>
+                <option value="operatorName" className="bg-stone-900 text-stone-200">Nama Operator</option>
+                <option value="operatorJob" className="bg-stone-900 text-stone-200">Job (Pekerjaan)</option>
+                <option value="barcodeFuelStatus" className="bg-stone-900 text-stone-200">Status Barcode</option>
+                <option value="operatorRemark" className="bg-stone-900 text-stone-200">Remark</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-amber-400 font-bold text-[10px] transition cursor-pointer"
+                title={`Urutan: ${sortOrder === 'asc' ? 'Menaik (A-Z)' : 'Menurun (Z-A)'}`}
+              >
+                {sortOrder === 'asc' ? '▲ ASC' : '▼ DESC'}
+              </button>
+            </div>
+
             {/* Filter Jenis Unit */}
             <select
               value={tableFilterJenis}
@@ -959,12 +1112,12 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                 <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
                   <tr>
                     <th className="px-3.5 py-3.5 w-10 text-center">No</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[170px]">No. Unit (CN New)</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[130px]">Jenis Unit</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[200px]">Nama Operator / Sopir</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[180px]">Job (Pekerjaan)</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[150px]">Status Barcode Fuel</th>
-                    <th className="px-3.5 py-3.5 whitespace-nowrap min-w-[160px]">Remark</th>
+                    {renderSortHeader('No. Unit (CN New)', 'cnNew', 'min-w-[170px]')}
+                    {renderSortHeader('Jenis Unit', 'jenis', 'min-w-[130px]')}
+                    {renderSortHeader('Nama Operator / Sopir', 'operatorName', 'min-w-[200px]')}
+                    {renderSortHeader('Job (Pekerjaan)', 'operatorJob', 'min-w-[180px]')}
+                    {renderSortHeader('Status Barcode Fuel', 'barcodeFuelStatus', 'min-w-[150px]')}
+                    {renderSortHeader('Remark', 'operatorRemark', 'min-w-[160px]')}
                     <th className="px-3.5 py-3.5 text-center whitespace-nowrap w-24">Aksi</th>
                   </tr>
                 </thead>
@@ -1093,6 +1246,17 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           )}
         </div>
       </section>
+
+      {/* MODAL PRATINJAU DOKUMEN PDF RESMI */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="PRATINJAU DOKUMEN - SETTING OPERATOR & BARCODE FUEL ARMADA"
+        subtitle={`PT BATU KALI WELANG AMPUH • Site Quarry Purwosari • Total ${displayedUnits.length} Unit Armada`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleDownloadPdfDirect}
+      />
     </div>
   );
 };
