@@ -3491,6 +3491,7 @@ export interface GenerateOperatorSettingPdfParams {
   filterInfo?: {
     jenisFilter?: string;
     barcodeFilter?: string;
+    statusFilter?: string;
     viewMode?: string;
   };
   signatories?: {
@@ -3532,6 +3533,7 @@ export const generateOperatorSettingPDF = ({
 
   const jenisFilterLabel = filterInfo?.jenisFilter && filterInfo.jenisFilter !== 'ALL' ? filterInfo.jenisFilter : 'Semua Jenis';
   const barcodeFilterLabel = filterInfo?.barcodeFilter && filterInfo.barcodeFilter !== 'ALL' ? filterInfo.barcodeFilter : 'Semua Barcode';
+  const statusFilterLabel = filterInfo?.statusFilter && filterInfo.statusFilter !== 'ALL' ? filterInfo.statusFilter : 'Semua Status';
   const modeLabel = filterInfo?.viewMode === 'ALL_UNITS' ? 'Semua Armada Unit' : 'Hanya Unit Ditugaskan';
 
   const renderHeader = () => {
@@ -3557,7 +3559,7 @@ export const generateOperatorSettingPDF = ({
     doc.setFontSize(8);
     doc.setTextColor(...grayTextColor);
     doc.text(
-      `Mode: ${modeLabel}   |   Jenis: ${jenisFilterLabel}   |   Barcode: ${barcodeFilterLabel}   |   Total: ${units.length} Unit   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      `Mode: ${modeLabel}   |   Status: ${statusFilterLabel}   |   Jenis: ${jenisFilterLabel}   |   Barcode: ${barcodeFilterLabel}   |   Total: ${units.length} Unit   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
       148.5,
       28,
       { align: 'center' }

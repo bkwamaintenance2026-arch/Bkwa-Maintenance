@@ -4,7 +4,9 @@ import {
   ManpowerData, 
   UserAccount, 
   BarcodeFuelStatus, 
-  BARCODE_FUEL_STATUS_OPTIONS 
+  BARCODE_FUEL_STATUS_OPTIONS,
+  OperationalStatus,
+  ASSET_STATUS_OPTIONS 
 } from '../../types';
 import { 
   UserCheck, 
@@ -55,6 +57,7 @@ export type OperatorSortField =
   | 'namaAlat' 
   | 'jenis' 
   | 'loc' 
+  | 'status'
   | 'operatorName' 
   | 'operatorJabatan' 
   | 'operatorJob' 
@@ -122,6 +125,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   // Filter & Search states untuk Tabel List di bawah
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [tableFilterJenis, setTableFilterJenis] = useState<string>('ALL');
+  const [tableFilterStatus, setTableFilterStatus] = useState<string>('ALL');
   const [tableFilterBarcode, setTableFilterBarcode] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'ASSIGNED_ONLY' | 'ALL_UNITS'>('ASSIGNED_ONLY');
 
@@ -257,6 +261,39 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     });
     return Array.from(s).sort();
   }, [units]);
+
+  // Daftar status unit unik dari database armada Registrasi Asset
+  const uniqueStatusList = useMemo(() => {
+    const s = new Set<string>();
+    (units || []).forEach((u) => {
+      if (u && u.status && u.status.trim()) {
+        s.add(u.status.trim());
+      }
+    });
+    // Sertakan opsi standar resmi registrasi asset
+    ASSET_STATUS_OPTIONS.forEach((opt) => s.add(opt));
+    return Array.from(s).sort();
+  }, [units]);
+
+  // Helper styling badge status unit resmi dari Modul Registrasi Asset
+  const getAssetStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'Operasi Etika 05':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
+      case 'Operasi Etika 09':
+        return 'bg-teal-500/20 text-teal-400 border-teal-500/40';
+      case 'Breakdown':
+      case 'BREAKDOWN':
+        return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+      case 'Stanby':
+      case 'STANDBY':
+        return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+      case 'OPERASI':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
+      default:
+        return 'bg-stone-800 text-stone-300 border-stone-700';
+    }
+  };
 
   // Unit yang tersedia berdasarkan Jenis yang dipilih pada form step 1
   const unitsOfSelectedJenis = useMemo(() => {
@@ -488,6 +525,11 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         return false;
       }
 
+      // Filter Status Unit pada tabel (dari Registrasi Asset)
+      if (tableFilterStatus !== 'ALL' && (u.status || '').trim().toLowerCase() !== tableFilterStatus.trim().toLowerCase()) {
+        return false;
+      }
+
       // Filter Barcode Status pada tabel
       if (tableFilterBarcode !== 'ALL' && (u.barcodeFuelStatus || 'BELUM ADA') !== tableFilterBarcode) {
         return false;
@@ -499,6 +541,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         const cn = (u.cnNew || '').toLowerCase();
         const nama = (u.namaAlat || '').toLowerCase();
         const jenis = (u.jenis || '').toLowerCase();
+        const status = (u.status || '').toLowerCase();
         const op = (u.operatorName || '').toLowerCase();
         const job = (u.operatorJob || '').toLowerCase();
         const bc = (u.barcodeFuelStatus || '').toLowerCase();
@@ -508,6 +551,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           cn.includes(q) ||
           nama.includes(q) ||
           jenis.includes(q) ||
+          status.includes(q) ||
           op.includes(q) ||
           job.includes(q) ||
           bc.includes(q) ||
@@ -527,7 +571,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [units, viewMode, tableFilterJenis, tableFilterBarcode, searchTerm, sortField, sortOrder]);
+  }, [units, viewMode, tableFilterJenis, tableFilterStatus, tableFilterBarcode, searchTerm, sortField, sortOrder]);
 
   // Statistik Ringkas
   const stats = useMemo(() => {
@@ -561,6 +605,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
+          statusFilter: tableFilterStatus,
           barcodeFilter: tableFilterBarcode,
           viewMode,
         },
@@ -598,6 +643,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
+          statusFilter: tableFilterStatus,
           barcodeFilter: tableFilterBarcode,
           viewMode,
         },
@@ -657,7 +703,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
     const csvContent = '\uFEFF' +
       `"PT BATU KALI WELANG AMPUH - DAFTAR SETTING OPERATOR & BARCODE FUEL ARMADA"\r\n` +
-      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Unit: ${displayedUnits.length} Unit | Sort By: ${sortField} (${sortOrder.toUpperCase()})"\r\n\r\n` +
+      `"Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Unit: ${displayedUnits.length} Unit | Filter Status: ${tableFilterStatus} | Sort By: ${sortField} (${sortOrder.toUpperCase()})"\r\n\r\n` +
       [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1439,6 +1485,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                 <option value="cnNew" className="bg-stone-900 text-stone-200">No. Unit (CN New)</option>
                 <option value="namaAlat" className="bg-stone-900 text-stone-200">Nama Alat</option>
                 <option value="jenis" className="bg-stone-900 text-stone-200">Jenis Unit</option>
+                <option value="status" className="bg-stone-900 text-stone-200">Status Unit (Registrasi)</option>
                 <option value="operatorName" className="bg-stone-900 text-stone-200">Nama Operator</option>
                 <option value="operatorJob" className="bg-stone-900 text-stone-200">Job (Pekerjaan)</option>
                 <option value="barcodeFuelStatus" className="bg-stone-900 text-stone-200">Status Barcode</option>
@@ -1458,7 +1505,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
             <select
               value={tableFilterJenis}
               onChange={(e) => setTableFilterJenis(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-300 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-300 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
             >
               <option value="ALL">Semua Jenis Unit</option>
               {uniqueJenisList.map((j) => (
@@ -1466,11 +1513,27 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               ))}
             </select>
 
+            {/* Filter Status Unit dari Data Registrasi Asset */}
+            <select
+              id="filter-status-unit-registrasi"
+              value={tableFilterStatus}
+              onChange={(e) => setTableFilterStatus(e.target.value)}
+              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              title="Filter unit berdasarkan Status Operasional dari data Registrasi Asset"
+            >
+              <option value="ALL" className="bg-stone-900 text-stone-200">Semua Status (Registrasi Asset)</option>
+              {uniqueStatusList.map((st) => (
+                <option key={st} value={st} className="bg-stone-900 text-stone-200">
+                  Status: {st}
+                </option>
+              ))}
+            </select>
+
             {/* Filter Barcode */}
             <select
               value={tableFilterBarcode}
               onChange={(e) => setTableFilterBarcode(e.target.value)}
-              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-300 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-300 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
             >
               <option value="ALL">Semua Barcode BBM</option>
               {BARCODE_FUEL_STATUS_OPTIONS.map((opt) => (
@@ -1488,12 +1551,12 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               <h4 className="text-sm font-mono font-bold text-stone-200">
                 {viewMode === 'ASSIGNED_ONLY'
                   ? 'Belum Ada Unit yang Di-setting Penugasan Operator'
-                  : 'Tidak Ada Unit yang Cocok dengan Pencarian'}
+                  : 'Tidak Ada Unit yang Cocok dengan Pencarian / Filter'}
               </h4>
               <p className="text-xs text-stone-400 mt-1 max-w-md mx-auto">
                 {viewMode === 'ASSIGNED_ONLY'
                   ? 'Gunakan form di atas: Pilih Jenis Unit, pilih Nomor Unit, tentukan Operator & Barcode, lalu klik "Simpan & Masukkan ke List".'
-                  : 'Ubah kata kunci pencarian atau sesuaikan filter jenis/barcode.'}
+                  : 'Ubah kata kunci pencarian atau sesuaikan filter jenis, status, dan barcode.'}
               </p>
             </div>
           ) : (
@@ -1504,6 +1567,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                     <th className="px-3.5 py-3.5 w-10 text-center">No</th>
                     {renderSortHeader('No. Unit (CN New)', 'cnNew', 'min-w-[170px]')}
                     {renderSortHeader('Jenis Unit', 'jenis', 'min-w-[130px]')}
+                    {renderSortHeader('Status Unit', 'status', 'min-w-[140px]')}
                     {renderSortHeader('Nama Operator / Sopir', 'operatorName', 'min-w-[200px]')}
                     {renderSortHeader('Job (Pekerjaan)', 'operatorJob', 'min-w-[180px]')}
                     {renderSortHeader('Status Barcode Fuel', 'barcodeFuelStatus', 'min-w-[150px]')}
@@ -1541,8 +1605,6 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                           </div>
                           <div className="text-[9px] text-stone-500 font-sans flex items-center gap-1 mt-0.5">
                             <span>Loc: {u.loc || '-'}</span>
-                            <span>•</span>
-                            <span className="text-stone-400">{u.status || 'Operasi'}</span>
                           </div>
                         </td>
 
@@ -1550,6 +1612,13 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                         <td className="px-3.5 py-3">
                           <span className="text-stone-200 font-bold block truncate max-w-[130px]" title={u.jenis}>
                             {u.jenis || '-'}
+                          </span>
+                        </td>
+
+                        {/* Status Unit (dari Registrasi Asset) */}
+                        <td className="px-3.5 py-3">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getAssetStatusBadge(u.status)} font-mono`}>
+                            ● {u.status || 'Operasi'}
                           </span>
                         </td>
 
