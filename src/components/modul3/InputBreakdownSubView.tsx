@@ -31,7 +31,10 @@ import {
   Layers,
   X,
   ArrowRight,
-  Trash2
+  Trash2,
+  Search,
+  History,
+  Sparkles
 } from 'lucide-react';
 import { isDeveloper, canUserDeleteModule } from '../../utils/storage';
 
@@ -115,6 +118,10 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
   // Tab filter tampilan tabel di bawah: ACTIVE (sedang breakdown) vs ALL (semua riwayat)
   const [tableFilterTab, setTableFilterTab] = useState<'ACTIVE' | 'ALL'>('ACTIVE');
+  // State pencarian tabel hasil input breakdown
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  // State ID record yang baru saja diinput/diupdate agar langsung di-highlight
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
 
   // Filter unit yang berstatus aktif breakdown (belum READY)
   const activeBreakdownRecords = useMemo(() => {
@@ -123,16 +130,46 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     );
   }, [breakdowns]);
 
-  const displayedBreakdownRecords = tableFilterTab === 'ACTIVE' ? activeBreakdownRecords : breakdowns;
+  const rawDisplayedRecords = tableFilterTab === 'ACTIVE' ? activeBreakdownRecords : breakdowns;
 
-  // Urutkan data: yang terbaru di bagian atas
+  // Filter berdasarkan kata kunci pencarian
+  const displayedBreakdownRecords = useMemo(() => {
+    if (!searchQuery.trim()) return rawDisplayedRecords;
+    const q = searchQuery.toLowerCase().trim();
+    return rawDisplayedRecords.filter((b) => {
+      const mo = (b.noMaintenanceOrder || b.noNotifikasi || '').toLowerCase();
+      const unit = (b.noUnit || '').toLowerCase();
+      const noLama = (b.namaAlat || b.noLama || '').toLowerCase();
+      const jenis = (b.jenis || '').toLowerCase();
+      const pelapor = (b.pelapor || '').toLowerCase();
+      const problem = (b.detailProblem || '').toLowerCase();
+      const update = (b.detailKerusakan || '').toLowerCase();
+      const comp = (b.component || '').toLowerCase();
+      return (
+        mo.includes(q) ||
+        unit.includes(q) ||
+        noLama.includes(q) ||
+        jenis.includes(q) ||
+        pelapor.includes(q) ||
+        problem.includes(q) ||
+        update.includes(q) ||
+        comp.includes(q)
+      );
+    });
+  }, [rawDisplayedRecords, searchQuery]);
+
+  // Urutkan data: jika ada record yang baru saja di-input/update, tempatkan di paling atas; sisanya urut tanggal & waktu terbaru
   const sortedBreakdownRecords = useMemo(() => {
     return [...displayedBreakdownRecords].sort((a, b) => {
+      if (lastSavedId) {
+        if (a.id === lastSavedId) return -1;
+        if (b.id === lastSavedId) return 1;
+      }
       const dateA = a.updatedAt || a.createdAt || `${a.tanggal} ${a.jamBreakdown || '00:00'}`;
       const dateB = b.updatedAt || b.createdAt || `${b.tanggal} ${b.jamBreakdown || '00:00'}`;
       return dateB.localeCompare(dateA);
     });
-  }, [displayedBreakdownRecords]);
+  }, [displayedBreakdownRecords, lastSavedId]);
 
   // Cek apakah unit terpilih saat ini sedang aktif breakdown (status belum READY)
   const norm = (s: string = '') => s.toLowerCase().replace(/[\s\-_]/g, '').trim();
@@ -253,6 +290,11 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
         message: res.message,
         noNotifikasi: res.record.noMaintenanceOrder || res.record.noNotifikasi,
       });
+      setLastSavedId(res.record.id);
+      // Jika statusnya READY dan sedang di tab ACTIVE, otomatis pindah ke tab ALL agar record tetap terlihat
+      if (res.record.statusUnit === 'READY') {
+        setTableFilterTab('ALL');
+      }
       handleResetForm();
     } else {
       setFeedback({
@@ -796,65 +838,122 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
 
       {/* LIST DI BAWAHNYA: Unit yang sudah berhasil di Input */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 mb-4 border-b border-stone-800">
-          <div>
-            <h3 className="text-sm font-bold text-stone-100 font-mono uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-4 h-4 text-amber-400" />
-              <span>Daftar Laporan Breakdown Hasil Input</span>
-            </h3>
-            <p className="text-xs text-stone-400 mt-0.5">
-              Menampilkan {displayedBreakdownRecords.length} dari {breakdowns.length} total laporan kerusakan terdaftar di database
-            </p>
+        <div className="flex flex-col gap-3 pb-4 mb-4 border-b border-stone-800">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-stone-100 font-mono uppercase tracking-wider flex items-center gap-2">
+                <Layers className="w-4 h-4 text-amber-400" />
+                <span>Daftar Laporan Breakdown Hasil Input</span>
+              </h3>
+              <p className="text-xs text-stone-400 mt-0.5">
+                Menampilkan {displayedBreakdownRecords.length} dari {breakdowns.length} total laporan kerusakan terdaftar di database
+                {searchQuery && (
+                  <span className="text-amber-400 ml-1.5 font-mono font-bold">
+                    (Filter pencarian: &quot;{searchQuery}&quot;)
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Tab Filter: Unit Sedang Breakdown vs Semua Riwayat */}
+            <div className="flex items-center gap-1.5 p-1 bg-stone-950 rounded-xl border border-stone-800">
+              <button
+                type="button"
+                onClick={() => setTableFilterTab('ACTIVE')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  tableFilterTab === 'ACTIVE'
+                    ? 'bg-amber-500 text-stone-950 shadow'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>Sedang Breakdown</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    tableFilterTab === 'ACTIVE'
+                      ? 'bg-stone-950/20 text-stone-950'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  }`}
+                >
+                  {activeBreakdownRecords.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableFilterTab('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  tableFilterTab === 'ALL'
+                    ? 'bg-amber-500 text-stone-950 shadow'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+              >
+                <span>Semua Riwayat (Termasuk READY)</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    tableFilterTab === 'ALL'
+                      ? 'bg-stone-950/20 text-stone-950'
+                      : 'bg-stone-800 text-stone-300'
+                  }`}
+                >
+                  {breakdowns.length}
+                </span>
+              </button>
+            </div>
           </div>
 
-          {/* Tab Filter: Unit Sedang Breakdown vs Semua Riwayat */}
-          <div className="flex items-center gap-1.5 p-1 bg-stone-950 rounded-xl border border-stone-800">
-            <button
-              type="button"
-              onClick={() => setTableFilterTab('ACTIVE')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                tableFilterTab === 'ACTIVE'
-                  ? 'bg-amber-500 text-stone-950 shadow'
-                  : 'text-stone-400 hover:text-stone-200'
-              }`}
-            >
-              <span>Sedang Breakdown</span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                  tableFilterTab === 'ACTIVE'
-                    ? 'bg-stone-950/20 text-stone-950'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                }`}
+          {/* Baris Pencarian Cepat & Tombol Reset Sorotan */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari No Unit, MO, Jenis, Pelapor, Kerusakan..."
+                className="w-full bg-stone-950 border border-stone-700/80 rounded-xl pl-9 pr-8 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-2 text-stone-400 hover:text-stone-200 text-xs px-1 cursor-pointer"
+                  title="Hapus pencarian"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {lastSavedId && (
+              <button
+                type="button"
+                onClick={() => setLastSavedId(null)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-mono hover:bg-amber-500/30 transition self-start sm:self-center cursor-pointer"
+                title="Hapus sorotan item yang baru disimpan"
               >
-                {activeBreakdownRecords.length}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTableFilterTab('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                tableFilterTab === 'ALL'
-                  ? 'bg-amber-500 text-stone-950 shadow'
-                  : 'text-stone-400 hover:text-stone-200'
-              }`}
-            >
-              <span>Semua Riwayat (Termasuk READY)</span>
-              <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
-                  tableFilterTab === 'ALL'
-                    ? 'bg-stone-950/20 text-stone-950'
-                    : 'bg-stone-800 text-stone-300'
-                }`}
-              >
-                {breakdowns.length}
-              </span>
-            </button>
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Baru Disimpan (Klik untuk reset sorotan)</span>
+              </button>
+            )}
           </div>
         </div>
 
         {displayedBreakdownRecords.length === 0 ? (
           <div className="text-center py-10 border border-dashed border-stone-800 rounded-xl bg-stone-950/40">
-            {tableFilterTab === 'ACTIVE' ? (
+            {searchQuery ? (
+              <>
+                <Search className="w-8 h-8 text-stone-500 mx-auto mb-2" />
+                <p className="text-xs text-stone-200 font-mono font-bold">
+                  Tidak ditemukan laporan breakdown dengan kata kunci &quot;{searchQuery}&quot;.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="mt-2 px-3 py-1 rounded bg-stone-800 text-stone-300 hover:text-stone-100 text-xs font-mono"
+                >
+                  Reset Pencarian
+                </button>
+              </>
+            ) : tableFilterTab === 'ACTIVE' ? (
               <>
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
                 <p className="text-xs text-stone-200 font-mono font-bold">
@@ -884,98 +983,145 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   <th className="px-3 py-3">Nama Alat (No Lama)</th>
                   <th className="px-3 py-3">Pelapor / Jabatan</th>
                   <th className="px-3 py-3">Component</th>
-                  <th className="px-3 py-3">Breakdown Type</th>
-                  <th className="px-3 py-3">Problem Awal</th>
+                  <th className="px-3 py-3">Type</th>
+                  <th className="px-3 py-3 min-w-[200px]">Problem &amp; Update Terkini</th>
+                  <th className="px-3 py-3 text-center">Riwayat</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
-                {sortedBreakdownRecords.map((b) => (
-                  <tr key={b.id} className="hover:bg-stone-800/40 transition">
-                    <td className="px-3 py-3 font-bold text-amber-400 whitespace-nowrap">
-                      {b.noMaintenanceOrder || b.noNotifikasi}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-stone-300">
-                      <div>{b.tanggal}</div>
-                      {b.jamBreakdown && (
-                        <div className="text-[10px] font-mono text-amber-400 font-bold mt-0.5">
-                          Jam {b.jamBreakdown}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-stone-300 font-sans">{b.jenis || '-'}</td>
-                    <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">{b.noUnit}</td>
-                    <td className="px-3 py-3 text-stone-400 whitespace-nowrap">{b.namaAlat || b.noLama || '-'}</td>
-                    <td className="px-3 py-3 font-sans">
-                      <div className="font-semibold text-stone-200">{b.pelapor}</div>
-                      <div className="text-[10px] text-stone-400">{b.jabatan}</div>
-                    </td>
-                    <td className="px-3 py-3 text-amber-300 whitespace-nowrap font-sans font-semibold">
-                      {b.component || 'Other'}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      {(() => {
-                        const t = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
-                        const shortCode = t === 'SCHEDULE' ? 'SC' : t === 'ACCIDENT' ? 'Acc' : 'Uns';
-                        const fullLabel = t === 'SCHEDULE' ? 'Schedule' : t === 'ACCIDENT' ? 'Accident' : 'Unschedule';
-                        const colorClass =
-                          t === 'SCHEDULE'
-                            ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                            : t === 'ACCIDENT'
-                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                            : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
-                        return (
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono inline-block border ${colorClass}`}
-                            title={`Breakdown Type: ${fullLabel} (${shortCode})`}
-                          >
-                            {shortCode}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-3 py-3 font-sans text-stone-300 max-w-[200px] truncate" title={b.detailProblem}>
-                      {b.detailProblem}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          b.statusUnit === 'READY'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : b.statusUnit === 'LIMIT OPERASI'
-                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                            : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                        }`}
-                      >
-                        {b.statusUnit}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-1.5 font-sans">
-                        {/* Tombol UPDATE -> langsung mengarahkan ke Sub Modul 2 */}
-                        <button
-                          type="button"
-                          onClick={() => onNavigateToUpdate(b)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/30 text-[11px] font-bold transition"
-                          title="Update breakdown unit ini di Sub Modul 2"
-                        >
-                          <Edit className="w-3 h-3" />
-                          <span>Update</span>
-                        </button>
+                {sortedBreakdownRecords.map((b) => {
+                  const isJustSaved = lastSavedId === b.id;
+                  const updatesCount = b.riwayatUpdate?.length || 1;
+                  const latestUpdate = b.riwayatUpdate && b.riwayatUpdate.length > 0 ? b.riwayatUpdate[0] : null;
+                  const hasDistinctUpdate =
+                    latestUpdate &&
+                    latestUpdate.detailKerusakan &&
+                    latestUpdate.detailKerusakan.trim() !== b.detailProblem.trim();
 
-                        {/* Tombol VIEW -> Modal Detail Lengkap */}
+                  return (
+                    <tr
+                      key={b.id}
+                      className={`hover:bg-stone-800/40 transition ${
+                        isJustSaved
+                          ? 'bg-amber-500/10 border-l-4 border-l-amber-400'
+                          : ''
+                      }`}
+                    >
+                      <td className="px-3 py-3 font-bold text-amber-400 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span>{b.noMaintenanceOrder || b.noNotifikasi}</span>
+                          {isJustSaved && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-400 text-stone-950 text-[9px] font-black uppercase tracking-wider animate-pulse">
+                              Baru
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-stone-300">
+                        <div>{b.tanggal}</div>
+                        {b.jamBreakdown && (
+                          <div className="text-[10px] font-mono text-amber-400 font-bold mt-0.5">
+                            Jam {b.jamBreakdown}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 text-stone-300 font-sans">{b.jenis || '-'}</td>
+                      <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">{b.noUnit}</td>
+                      <td className="px-3 py-3 text-stone-400 whitespace-nowrap">{b.namaAlat || b.noLama || '-'}</td>
+                      <td className="px-3 py-3 font-sans">
+                        <div className="font-semibold text-stone-200">{b.pelapor}</div>
+                        <div className="text-[10px] text-stone-400">{b.jabatan}</div>
+                      </td>
+                      <td className="px-3 py-3 text-amber-300 whitespace-nowrap font-sans font-semibold">
+                        {b.component || 'Other'}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {(() => {
+                          const t = (b.breakdownType || 'UNSCHEDULE').toUpperCase().trim();
+                          const shortCode = t === 'SCHEDULE' ? 'SC' : t === 'ACCIDENT' ? 'Acc' : 'Uns';
+                          const fullLabel = t === 'SCHEDULE' ? 'Schedule' : t === 'ACCIDENT' ? 'Accident' : 'Unschedule';
+                          const colorClass =
+                            t === 'SCHEDULE'
+                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                              : t === 'ACCIDENT'
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono inline-block border ${colorClass}`}
+                              title={`Breakdown Type: ${fullLabel} (${shortCode})`}
+                            >
+                              {shortCode}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-3 py-3 font-sans max-w-[260px]">
+                        <div className="text-stone-200 text-xs" title={b.detailProblem}>
+                          <span className="text-[9.5px] font-mono text-stone-400 block font-bold uppercase tracking-wider">
+                            Problem Awal:
+                          </span>
+                          <span className="line-clamp-2">{b.detailProblem}</span>
+                        </div>
+                        {hasDistinctUpdate && (
+                          <div className="mt-1.5 pt-1.5 border-t border-stone-800 text-amber-300 text-[11px]" title={latestUpdate?.detailKerusakan}>
+                            <span className="text-[9px] font-mono text-amber-400 font-bold block uppercase tracking-wider">
+                              Update Terkini:
+                            </span>
+                            <span className="line-clamp-2 italic">{latestUpdate?.detailKerusakan}</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-center">
                         <button
                           type="button"
                           onClick={() => setViewingRecord(b)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-100 border border-stone-700 text-[11px] font-semibold transition"
-                          title="Lihat seluruh informasi sesuai No Notifikasi"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-800/90 hover:bg-amber-500/20 hover:border-amber-500/40 text-stone-300 hover:text-amber-300 border border-stone-700/80 text-[11px] font-mono font-bold transition cursor-pointer"
+                          title="Klik untuk membuka detail kronologi riwayat update"
                         >
-                          <Eye className="w-3 h-3" />
-                          <span>View</span>
+                          <History className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{updatesCount} Catatan</span>
                         </button>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            b.statusUnit === 'READY'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : b.statusUnit === 'LIMIT OPERASI'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          }`}
+                        >
+                          {b.statusUnit}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1.5 font-sans">
+                          {/* Tombol UPDATE -> langsung mengarahkan ke Sub Modul 2 */}
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToUpdate(b)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer"
+                            title="Update breakdown unit ini di Sub Modul 2"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Update</span>
+                          </button>
 
-                        {/* Tombol HAPUS: Untuk Admin / Developer */}
+                          {/* Tombol VIEW -> Modal Detail Lengkap */}
+                          <button
+                            type="button"
+                            onClick={() => setViewingRecord(b)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 text-stone-300 hover:bg-stone-700 hover:text-stone-100 border border-stone-700 text-[11px] font-semibold transition cursor-pointer"
+                            title="Lihat seluruh informasi sesuai No Notifikasi"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View</span>
+                          </button>
+
                         {canDelete && onDeleteBreakdown && (
                           <button
                             type="button"
@@ -989,7 +1135,8 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+              })}
               </tbody>
             </table>
           </div>
@@ -1102,7 +1249,7 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               {/* Riwayat Part / Jasa */}
               {viewingRecord.partsJasa && viewingRecord.partsJasa.length > 0 && (
                 <div>
-                  <span className="text-stone-400 font-bold block mb-1">KEBUTUHAN PART & JASA:</span>
+                  <span className="text-stone-400 font-bold block mb-1">KEBUTUHAN PART &amp; JASA:</span>
                   <div className="overflow-x-auto rounded-xl border border-stone-800">
                     <table className="w-full text-left text-[11px] text-stone-300">
                       <thead className="bg-stone-950 text-stone-500">
@@ -1131,6 +1278,90 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* KRONOLOGI & RIWAYAT UPDATE PEKERJAAN */}
+              <div className="pt-2 border-t border-stone-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-amber-400 font-bold font-mono uppercase text-xs flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-amber-400" />
+                    <span>Kronologi &amp; Riwayat Update Pekerjaan ({viewingRecord.riwayatUpdate?.length || 1} Catatan)</span>
+                  </span>
+                  <span className="text-[10px] text-stone-500 font-mono">Urutan: Terbaru di atas</span>
+                </div>
+
+                {(!viewingRecord.riwayatUpdate || viewingRecord.riwayatUpdate.length === 0) ? (
+                  <div className="p-3 rounded-xl bg-stone-950/60 border border-stone-800 text-stone-400 text-xs italic">
+                    Belum ada riwayat catatan update pekerjaan harian untuk MO ini.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                    {viewingRecord.riwayatUpdate.map((u, idx) => {
+                      const tgl =
+                        u.tanggal ||
+                        (u.startJob && u.startJob.includes('-') ? u.startJob : viewingRecord.tanggal) ||
+                        '-';
+                      const jam = u.jamStart
+                        ? u.jamFinish
+                          ? `${u.jamStart} - ${u.jamFinish}`
+                          : `Mulai ${u.jamStart}`
+                        : u.jamPekerjaan || '-';
+                      const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
+                      const aksi = u.detailPekerjaan || u.detailKerusakan || viewingRecord.detailProblem;
+
+                      return (
+                        <div
+                          key={u.id || idx}
+                          className="p-3 rounded-xl bg-stone-950/80 border border-stone-800/90 hover:border-amber-500/40 transition"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-stone-800/60">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-[10px] border border-amber-500/30">
+                                #{viewingRecord.riwayatUpdate ? viewingRecord.riwayatUpdate.length - idx : 1}
+                              </span>
+                              <span className="text-stone-200 font-bold font-mono text-xs">
+                                {tgl} {jam !== '-' ? `(${jam})` : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                {u.progress || 'On Progress'}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                  (u.statusUnit || '').toUpperCase().trim() === 'READY'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : (u.statusUnit || '').toUpperCase().trim() === 'LIMIT OPERASI'
+                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {u.statusUnit || viewingRecord.statusUnit}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-stone-200 font-sans leading-relaxed mb-2">
+                            {aksi}
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-stone-400 pt-1 border-t border-stone-800/40">
+                            <div>
+                              <span className="text-stone-500">PIC Mekanik: </span>
+                              <span className="text-amber-300 font-semibold">{pics}</span>
+                            </div>
+                            {u.remark && (
+                              <div>
+                                <span className="text-stone-500">Remark: </span>
+                                <span className="text-stone-300 italic">{u.remark}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mt-6 flex items-center justify-between pt-3 border-t border-stone-800">

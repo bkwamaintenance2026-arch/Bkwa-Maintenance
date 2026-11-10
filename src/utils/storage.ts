@@ -1491,8 +1491,12 @@ export function registerBreakdown(
     // Buat entri update pekerjaan baru pada riwayat
     const newUpdateEntry: BreakdownUpdateEntry = {
       id: `upd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      tanggal: today,
       startJob: today,
+      jamStart: data.jamBreakdown || '08:00',
+      jamFinish: '',
       detailKerusakan: data.detailProblem || 'Update Pekerjaan Lanjutan',
+      detailPekerjaan: data.detailProblem || 'Update Pekerjaan Lanjutan',
       progress: data.progress || existingActive.progress || 'On Progress',
       statusUnit: newStatus,
       pic1: data.pic1 || existingActive.pic1 || '',
@@ -1535,7 +1539,11 @@ export function registerBreakdown(
       updatedAt: now,
     };
 
-    records[index] = updatedRecord;
+    // Pindahkan record yang diupdate ke baris paling atas agar langsung terlihat di list
+    if (index !== -1) {
+      records.splice(index, 1);
+    }
+    records.unshift(updatedRecord);
     saveBreakdownList(records);
     syncItemToFirestore('breakdowns', updatedRecord.id, updatedRecord);
     syncBreakdownPartsToSupplyTrackings(records);
@@ -1560,8 +1568,12 @@ export function registerBreakdown(
 
   const initialUpdateEntry: BreakdownUpdateEntry = {
     id: `upd-${Date.now()}`,
+    tanggal: today,
     startJob: today,
+    jamStart: data.jamBreakdown || '08:00',
+    jamFinish: '',
     detailKerusakan: data.detailProblem || 'Laporan Awal Kerusakan',
+    detailPekerjaan: data.detailProblem || 'Laporan Awal Kerusakan',
     progress: data.progress || 'On Progress',
     statusUnit: data.statusUnit || 'BREAKDOWN',
     pic1: data.pic1 || '',
@@ -1569,7 +1581,7 @@ export function registerBreakdown(
     pic3: data.pic3 || '',
     partsJasa: data.partsJasa || [],
     remark: data.remark || '',
-    updatedBy: currentUser?.fullName || 'Operator',
+    updatedBy: currentUser?.fullName || data.pelapor || 'Operator',
     createdAt: now,
   };
 
@@ -1653,10 +1665,12 @@ export function updateBreakdownActivity(
 
   const newEntry: BreakdownUpdateEntry = {
     id: `upd-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    tanggal: today,
     startJob: today,
     jamStart: updateData.jamStart || target.jamStart || '',
     jamFinish: updateData.jamFinish || target.jamFinish || '',
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan || target.detailProblem || '',
+    detailPekerjaan: updateData.detailKerusakan || target.detailKerusakan || target.detailProblem || '',
     progress: updateData.progress || target.progress || 'On Progress',
     statusUnit: newStatus,
     pic1: updateData.pic1 !== undefined ? updateData.pic1 : target.pic1,
@@ -1688,7 +1702,11 @@ export function updateBreakdownActivity(
     updatedAt: now,
   };
 
-  records[index] = updatedRecord;
+  // Pindahkan record yang diupdate ke baris paling atas agar langsung terlihat
+  if (index !== -1) {
+    records.splice(index, 1);
+  }
+  records.unshift(updatedRecord);
   saveBreakdownList(records);
   syncItemToFirestore('breakdowns', id, updatedRecord);
   syncBreakdownPartsToSupplyTrackings(records);

@@ -1475,7 +1475,11 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         <tbody className="divide-y divide-stone-800/60">
                           {updates.map((u: any, uIdx: number) => {
                             const isEditing = editingRowKey === `${b.id}_${uIdx}`;
-                            const jamMulai = u.jamStart || (u.startJob && u.startJob.includes(':') ? u.startJob : (u.startJob && u.startJob.length === 5 ? u.startJob : (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[0].trim() : '-')));
+                            const jamMulai =
+                              u.jamStart ||
+                              (u.startJob && u.startJob.includes(':') ? u.startJob : (u.startJob && u.startJob.length === 5 ? u.startJob : (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[0].trim() : ''))) ||
+                              (uIdx === 0 ? b.jamBreakdown || b.jamStart : '') ||
+                              '-';
                             const jamSelesai = u.jamFinish || u.finishJob || (u.jamPekerjaan?.includes('s/d') ? u.jamPekerjaan.split('s/d')[1].trim() : '-');
                             // Kolom PIC mekanik murni mengambil dari mekanik update (jangan ambil PIC Pelapor)
                             const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
@@ -1605,10 +1609,14 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                             return (
                               <tr key={u.id || uIdx} className="hover:bg-stone-900/40 transition">
                                 <td className="p-2 text-center text-stone-500">{uIdx + 1}</td>
-                                <td className="p-2 text-stone-200 whitespace-nowrap">{u.tanggal || '-'}</td>
+                                <td className="p-2 text-stone-200 whitespace-nowrap">
+                                  {u.tanggal || (u.startJob && u.startJob.includes('-') ? u.startJob : b.tanggal) || '-'}
+                                </td>
                                 <td className="p-2 text-stone-300 whitespace-nowrap font-mono">{jamMulai}</td>
                                 <td className="p-2 text-stone-300 whitespace-nowrap font-mono">{jamSelesai}</td>
-                                <td className="p-2 font-sans text-stone-100">{u.detailPekerjaan || u.detailKerusakan || '-'}</td>
+                                <td className="p-2 font-sans text-stone-100">
+                                  {u.detailPekerjaan || u.detailKerusakan || b.detailProblem || '-'}
+                                </td>
                                 <td className="p-2 text-amber-400 font-semibold whitespace-nowrap">{u.progress || '-'}</td>
                                 <td className="p-2 whitespace-nowrap">
                                   <span

@@ -30,7 +30,10 @@ import {
   Wrench,
   Archive,
   ExternalLink,
-  Cpu
+  Cpu,
+  History,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { isDeveloper } from '../../utils/storage';
@@ -143,6 +146,9 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
 
   // Modal Konfirmasi Hapus Laporan Breakdown
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<BreakdownRecord | null>(null);
+
+  // Toggle buka/tutup riwayat catatan breakdown sebelumnya
+  const [showHistoryTimeline, setShowHistoryTimeline] = useState<boolean>(true);
 
   // Helper hitung durasi jam kerja perbaikan (format 24 jam)
   const calculateWorkDuration = (start: string, finish: string): string | null => {
@@ -492,6 +498,107 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Riwayat Catatan Update Pekerjaan Sebelumnya */}
+            {currentActiveRecord.riwayatUpdate && currentActiveRecord.riwayatUpdate.length > 0 && (
+              <div className="mb-6 rounded-xl border border-stone-800 bg-stone-950/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryTimeline((prev) => !prev)}
+                  className="w-full flex items-center justify-between p-3.5 bg-stone-950/90 hover:bg-stone-800/50 transition cursor-pointer text-left border-b border-stone-800/80"
+                >
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-mono font-bold text-stone-200 uppercase tracking-wider">
+                      Riwayat Catatan Update Sebelumnya ({currentActiveRecord.riwayatUpdate.length} Catatan)
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono">
+                      [MO: {currentActiveRecord.noMaintenanceOrder || currentActiveRecord.noNotifikasi}]
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-stone-400 text-xs font-mono">
+                    <span>{showHistoryTimeline ? 'Sembunyikan' : 'Tampilkan'}</span>
+                    {showHistoryTimeline ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </div>
+                </button>
+
+                {showHistoryTimeline && (
+                  <div className="p-3.5 space-y-2.5 max-h-64 overflow-y-auto">
+                    {currentActiveRecord.riwayatUpdate.map((u, idx) => {
+                      const tgl =
+                        u.tanggal ||
+                        (u.startJob && u.startJob.includes('-') ? u.startJob : currentActiveRecord.tanggal) ||
+                        '-';
+                      const jam = u.jamStart
+                        ? u.jamFinish
+                          ? `${u.jamStart} - ${u.jamFinish}`
+                          : `Mulai ${u.jamStart}`
+                        : u.jamPekerjaan || '-';
+                      const pics = [u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-';
+                      const aksi =
+                        u.detailPekerjaan ||
+                        u.detailKerusakan ||
+                        currentActiveRecord.detailProblem;
+
+                      return (
+                        <div
+                          key={u.id || idx}
+                          className="p-3 rounded-lg bg-stone-900/80 border border-stone-800 text-xs font-mono"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-stone-800/60">
+                            <div className="flex items-center gap-2">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold text-[10px]">
+                                #{currentActiveRecord.riwayatUpdate ? currentActiveRecord.riwayatUpdate.length - idx : 1}
+                              </span>
+                              <span className="text-stone-200 font-bold">
+                                {tgl} {jam !== '-' ? `(${jam})` : ''}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                {u.progress || 'On Progress'}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  (u.statusUnit || '').toUpperCase().trim() === 'READY'
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : (u.statusUnit || '').toUpperCase().trim() === 'LIMIT OPERASI'
+                                    ? 'bg-amber-500/20 text-amber-400'
+                                    : 'bg-rose-500/20 text-rose-400'
+                                }`}
+                              >
+                                {u.statusUnit || currentActiveRecord.statusUnit}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-stone-200 font-sans leading-relaxed text-xs mb-1.5">
+                            {aksi}
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-stone-400 pt-1 border-t border-stone-800/40">
+                            <div>
+                              <span className="text-stone-500">Mekanik: </span>
+                              <span className="text-amber-300">{pics}</span>
+                            </div>
+                            {u.remark && (
+                              <div>
+                                <span className="text-stone-500">Remark: </span>
+                                <span className="text-stone-300 italic">{u.remark}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleSaveUpdate} className="space-y-6">
           {/* BARIS 1: Start Job (Tanggal), Jam Start (24 Jam), Jam Finish (24 Jam) */}
