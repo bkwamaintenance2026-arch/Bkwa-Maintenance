@@ -1096,8 +1096,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   </option>
                   {formData.jenisAlat ? (
                     availableUnitsForSelectedJenis.length > 0 ? (
-                      availableUnitsForSelectedJenis.map((u) => (
-                        <option key={u.id} value={u.cnNew}>
+                      availableUnitsForSelectedJenis.map((u, uIdx) => (
+                        <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                           {u.cnNew} — {u.namaAlat} [{u.jenis}]
                         </option>
                       ))
@@ -1112,8 +1112,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                       if (matchUnits.length === 0) return null;
                       return (
                         <optgroup key={j} label={`Kelompok JENIS: ${j}`}>
-                          {matchUnits.map((u) => (
-                            <option key={u.id} value={u.cnNew}>
+                          {matchUnits.map((u, uIdx) => (
+                            <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                               {u.cnNew} — {u.namaAlat}
                             </option>
                           ))}
@@ -2568,8 +2568,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     </option>
                     {formData.jenisAlat ? (
                       availableUnitsForSelectedJenis.length > 0 ? (
-                        availableUnitsForSelectedJenis.map((u) => (
-                          <option key={u.id} value={u.cnNew}>
+                        availableUnitsForSelectedJenis.map((u, uIdx) => (
+                          <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                             {u.cnNew} — {u.namaAlat} [{u.jenis}]
                           </option>
                         ))
@@ -2584,8 +2584,8 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         if (matchUnits.length === 0) return null;
                         return (
                           <optgroup key={j} label={`Kelompok JENIS: ${j}`}>
-                            {matchUnits.map((u) => (
-                              <option key={u.id} value={u.cnNew}>
+                            {matchUnits.map((u, uIdx) => (
+                              <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                                 {u.cnNew} — {u.namaAlat}
                               </option>
                             ))}

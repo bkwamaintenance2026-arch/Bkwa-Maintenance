@@ -395,10 +395,10 @@ export const FogOilDistributionSubView: React.FC<FogOilDistributionSubViewProps>
                 required
               >
                 <option value="">-- Pilih No Unit --</option>
-                {units.map((u) => {
+                {units.map((u, idx) => {
                   const displayNo = u.nomorUnit || u.cnNew;
                   return (
-                    <option key={u.id} value={displayNo}>
+                    <option key={`${u.id}_${idx}`} value={displayNo}>
                       {displayNo} — {u.namaAlat} [{u.jenis}]
                     </option>
                   );

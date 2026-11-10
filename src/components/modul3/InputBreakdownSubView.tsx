@@ -541,12 +541,12 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2.5 text-xs text-stone-100 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
                   <option value="">-- Pilih No Unit (CN New Modul 1) --</option>
-                  {filteredUnitsByJenis.map((u) => {
+                  {filteredUnitsByJenis.map((u, uIdx) => {
                     const isBD = breakdowns.some(
                       (b) => b.noUnit.toLowerCase().trim() === u.cnNew.toLowerCase().trim() && b.statusUnit !== 'READY'
                     );
                     return (
-                      <option key={u.id} value={u.cnNew}>
+                      <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                         {u.cnNew} - {u.namaAlat} ({u.jenis}) {isBD ? '⚠️ [SEDANG BREAKDOWN]' : ''}
                       </option>
                     );

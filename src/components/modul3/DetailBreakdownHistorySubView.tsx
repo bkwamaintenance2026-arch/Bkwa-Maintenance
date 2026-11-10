@@ -902,8 +902,8 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               className="w-full bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-xs text-amber-400 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none"
             >
               <option value="">-- Semua Unit Alat Berat --</option>
-              {units.map((u) => (
-                <option key={u.id} value={u.cnNew || u.namaAlat}>
+              {units.map((u, uIdx) => (
+                <option key={`${u.id}_${uIdx}`} value={u.cnNew || u.namaAlat}>
                   {u.cnNew} {u.namaAlat ? `- ${u.namaAlat}` : ''} ({u.jenis || '-'})
                 </option>
               ))}

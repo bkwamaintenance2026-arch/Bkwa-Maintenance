@@ -901,8 +901,8 @@ export const P2HView: React.FC<P2HViewProps> = ({
                       className="w-full bg-stone-900 border border-amber-500/50 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     >
                       <option value="">-- Pilih No Unit (CN_NEW) --</option>
-                      {availableUnitsForJenis.map((u) => (
-                        <option key={u.id} value={u.cnNew}>
+                      {availableUnitsForJenis.map((u, uIdx) => (
+                        <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                           {u.cnNew} - {u.namaAlat} ({u.brandMerk || ''})
                         </option>
                       ))}
@@ -1409,8 +1409,8 @@ export const P2HView: React.FC<P2HViewProps> = ({
                   className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-stone-100 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
                 >
                   <option value="">-- Semua Unit --</option>
-                  {units.map((u) => (
-                    <option key={u.id} value={u.cnNew}>
+                  {units.map((u, uIdx) => (
+                    <option key={`${u.id}_${uIdx}`} value={u.cnNew}>
                       {u.cnNew} - {u.namaAlat}
                     </option>
                   ))}

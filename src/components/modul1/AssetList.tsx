@@ -349,9 +349,9 @@ export const AssetList: React.FC<AssetListProps> = ({
               </thead>
               <tbody className="divide-y divide-stone-800/80">
                 {filteredUnits.length > 0 ? (
-                  filteredUnits.map((u) => (
+                  filteredUnits.map((u, idx) => (
                     <tr
-                      key={u.id}
+                      key={`${u.id}_${idx}`}
                       className="hover:bg-stone-800/40 transition group"
                     >
                       {/* Kode Unit / No Lambung */}
@@ -479,9 +479,9 @@ export const AssetList: React.FC<AssetListProps> = ({
       ) : (
         /* Card Grid View */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredUnits.map((u) => (
+          {filteredUnits.map((u, idx) => (
             <div
-              key={u.id}
+              key={`${u.id}_${idx}`}
               className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between hover:border-amber-500/40 transition group"
             >
               <div>

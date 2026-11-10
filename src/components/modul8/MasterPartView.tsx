@@ -727,10 +727,10 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   <option value="">
                     {!selectedJenis ? '-- Pilih Jenis Dahulu --' : '-- Pilih No Unit --'}
                   </option>
-                  {filteredUnits.map((u) => {
+                  {filteredUnits.map((u, idx) => {
                     const cn = u.cnNew || u.nomorLambung || u.kodeUnit || '';
                     return (
-                      <option key={u.id} value={cn}>
+                      <option key={`${u.id}_${idx}`} value={cn}>
                         {cn} {u.namaAlat ? `— ${u.namaAlat}` : ''} {u.modelUnit ? `(${u.modelUnit})` : ''}
                       </option>
                     );

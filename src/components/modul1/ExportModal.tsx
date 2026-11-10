@@ -242,7 +242,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-stone-800 text-[11px]">
                   {units.map((u, i) => (
-                    <tr key={u.id} className="hover:bg-stone-800/40">
+                    <tr key={`${u.id}_${i}`} className="hover:bg-stone-800/40">
                       <td className="py-1.5 px-3 text-stone-400">{i + 1}</td>
                       <td className="py-1.5 px-3 font-mono font-bold text-amber-400">{u.kodeUnit}</td>
                       <td className="py-1.5 px-3 font-medium text-stone-200 truncate max-w-[150px]">{u.namaUnit}</td>

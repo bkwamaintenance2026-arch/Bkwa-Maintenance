@@ -700,7 +700,42 @@ export function getAllUnits(): AssetUnit[] {
       localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(INITIAL_ASSET_UNITS));
       return INITIAL_ASSET_UNITS;
     }
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) return INITIAL_ASSET_UNITS;
+
+    const seenIds = new Set<string>();
+    const seenCn = new Set<string>();
+    const cleaned: AssetUnit[] = [];
+    let hasDupes = false;
+
+    for (let i = 0; i < parsed.length; i++) {
+      const u = parsed[i];
+      if (!u) continue;
+      const cnKey = (u.cnNew || u.namaAlat || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      let idKey = (u.id || '').toString().trim();
+
+      // Buang item jika CN_NEW kembar/duplikat
+      if (cnKey && seenCn.has(cnKey)) {
+        hasDupes = true;
+        continue;
+      }
+
+      // Jika ID kembar atau kosong, buatkan ID unik baru untuk mencegah error React duplicate key
+      if (!idKey || seenIds.has(idKey)) {
+        hasDupes = true;
+        idKey = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${i}`;
+        u.id = idKey;
+      }
+
+      if (cnKey) seenCn.add(cnKey);
+      seenIds.add(idKey);
+      cleaned.push(u);
+    }
+
+    if (hasDupes) {
+      localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch (e) {
     console.error('Error reading units', e);
     return INITIAL_ASSET_UNITS;
@@ -708,7 +743,29 @@ export function getAllUnits(): AssetUnit[] {
 }
 
 export function saveUnits(units: AssetUnit[]): void {
-  localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(units));
+  const seenIds = new Set<string>();
+  const seenCn = new Set<string>();
+  const cleaned: AssetUnit[] = [];
+
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
+    if (!u) continue;
+    const cnKey = (u.cnNew || u.namaAlat || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+    let idKey = (u.id || '').toString().trim();
+
+    if (cnKey && seenCn.has(cnKey)) continue;
+
+    if (!idKey || seenIds.has(idKey)) {
+      idKey = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${i}`;
+      u.id = idKey;
+    }
+
+    if (cnKey) seenCn.add(cnKey);
+    seenIds.add(idKey);
+    cleaned.push(u);
+  }
+
+  localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(cleaned));
 }
 
 // Modul 1: Add Unit Baru

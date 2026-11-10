@@ -295,6 +295,8 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
 
   if (collectionName === 'units') {
     const map = new Map<string, any>();
+    const seenIds = new Set<string>();
+
     list.forEach((item) => {
       if (!item) return;
       // Normalisasi cerdas: 'DT-01', 'DT 01', 'dt01' -> 'dt01'
@@ -315,7 +317,19 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
         map.set(key, item);
       }
     });
-    return Array.from(map.values());
+
+    const dedupedUnits: any[] = [];
+    map.forEach((item, k) => {
+      let id = (item.id || '').toString().trim();
+      if (!id || seenIds.has(id)) {
+        id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${dedupedUnits.length}`;
+        item.id = id;
+      }
+      seenIds.add(id);
+      dedupedUnits.push(item);
+    });
+
+    return dedupedUnits;
   }
 
   if (collectionName === 'manpower') {
@@ -464,9 +478,10 @@ export function cleanLocalDuplicates(): void {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const deduped = deduplicateEntityList(entityType, parsed);
-        if (deduped.length !== parsed.length) {
-          localStorage.setItem(storageKey, JSON.stringify(deduped));
-          console.log(`[Clean] Membersihkan ${parsed.length - deduped.length} data duplikat di [${storageKey}].`);
+        const serialized = JSON.stringify(deduped);
+        if (serialized !== raw) {
+          localStorage.setItem(storageKey, serialized);
+          console.log(`[Clean] Membersihkan duplikat/menormalkan data di [${storageKey}].`);
         }
       }
     };

@@ -294,11 +294,11 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800">
-                {users.map((u) => {
+                {users.map((u, idx) => {
                   const isAdmin = u.role === 'ADMIN';
 
                   return (
-                    <tr key={u.id} className="hover:bg-stone-800/40">
+                    <tr key={`${u.id}_${idx}`} className="hover:bg-stone-800/40">
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-2">
                           <div

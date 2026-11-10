@@ -931,10 +931,10 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                 <option value="">
                   {selectedJenis ? '-- Pilih Nomor Unit (CN New) --' : '-- Pilih Jenis Terlebih Dahulu --'}
                 </option>
-                {unitsOfSelectedJenis.map((u) => {
+                {unitsOfSelectedJenis.map((u, uIdx) => {
                   const hasOp = u.operatorName && u.operatorName.trim();
                   return (
-                    <option key={u.id} value={u.id}>
+                    <option key={`${u.id}_${uIdx}`} value={u.id}>
                       {u.cnNew} - {u.namaAlat} {hasOp ? `✓ [Op: ${u.operatorName}]` : '[Belum Ada Operator]'}
                     </option>
                   );
@@ -1800,7 +1800,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
                     return (
                       <tr
-                        key={u.id}
+                        key={`${u.id}_${idx}`}
                         className={`transition ${
                           isSelectedInForm
                             ? 'bg-amber-500/10 border-l-4 border-l-amber-500'

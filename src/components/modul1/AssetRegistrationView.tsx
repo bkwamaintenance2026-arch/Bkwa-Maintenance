@@ -828,11 +828,11 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
             </thead>
             <tbody className="divide-y divide-stone-800/80">
               {sortedUnits.length > 0 ? (
-                sortedUnits.map((u) => {
+                sortedUnits.map((u, idx) => {
                   const isBeingEdited = editingUnitId === u.id;
                   return (
                     <tr
-                      key={u.id}
+                      key={`${u.id}_${idx}`}
                       className={`transition ${
                         isBeingEdited
                           ? 'bg-amber-500/15 border-l-4 border-amber-500'

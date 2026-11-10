@@ -1072,8 +1072,8 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                     </option>
                     {selectedJenis ? (
                       availableUnitsForSelectedJenis.length > 0 ? (
-                        availableUnitsForSelectedJenis.map((u: any) => (
-                          <option key={u.id} value={getUnitCn(u)}>
+                        availableUnitsForSelectedJenis.map((u: any, uIdx: number) => (
+                          <option key={`${u.id}_${uIdx}`} value={getUnitCn(u)}>
                             {getUnitCn(u)} — {getUnitName(u)} [{u.jenis || selectedJenis}]
                           </option>
                         ))
@@ -1088,8 +1088,8 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                         if (matchUnits.length === 0) return null;
                         return (
                           <optgroup key={j} label={`Kelompok JENIS: ${j}`}>
-                            {matchUnits.map((u: any) => (
-                              <option key={u.id} value={getUnitCn(u)}>
+                            {matchUnits.map((u: any, uIdx: number) => (
+                              <option key={`${u.id}_${uIdx}`} value={getUnitCn(u)}>
                                 {getUnitCn(u)} — {getUnitName(u)}
                               </option>
                             ))}
