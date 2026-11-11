@@ -11,12 +11,10 @@ import {
   P2HRecord
 } from '../../types';
 import { InputBreakdownSubView } from './InputBreakdownSubView';
-import { UpdateBreakdownSubView } from './UpdateBreakdownSubView';
 import { DashboardMaintenanceSubView } from './DashboardMaintenanceSubView';
 import { DetailBreakdownHistorySubView } from './DetailBreakdownHistorySubView';
-import { LaporanHarianReadyBreakdownSubView } from './LaporanHarianReadyBreakdownSubView';
 import { ActiveBreakdownMonitoringSubView } from './ActiveBreakdownMonitoringSubView';
-import { Wrench, Edit3, BarChart3, Layers, ArrowLeft, History, ClipboardCheck, Clock } from 'lucide-react';
+import { Wrench, BarChart3, ArrowLeft, History, Clock } from 'lucide-react';
 
 interface MaintenanceDatabaseViewProps {
   units: AssetUnit[];
@@ -61,22 +59,30 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
   onBackToMainMenu,
   onNavigateToP2H,
 }) => {
-  // 6 Sub Modul: 1 = Input Breakdown, 2 = Update Breakdown, 3 = Dashboard Maintenance, 4 = Detail Breakdown & History Part, 5 = Laporan Harian (Ready & Breakdown), 6 = Monitoring Breakdown & Downtime
-  const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  // 4 Menu Utama Sederhana Sesuai Permintaan User:
+  // 1 = Input BD
+  // 2 = Dashboard Maintenance (Terpadu: Monitoring & Update Bertingkat + Print Preview)
+  // 3 = History Breakdown (Detail Breakdown & History Part)
+  // 4 = Pareto Analisis PA & MTBF
+  const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4>(2);
 
-  // Target record ID yang dipilih dari Sub Modul 1 / 4 untuk dibuka langsung di Sub Modul 2
+  // Target record ID yang dipilih dari Input BD / History untuk dibuka & diexpand langsung di Dashboard Maintenance
   const [selectedBreakdownIdForUpdate, setSelectedBreakdownIdForUpdate] = useState<string | null>(null);
 
-  // Ambil record breakdown secara dinamis dari `breakdowns` agar selalu UP-TO-DATE
-  const selectedBreakdownForUpdate = React.useMemo(() => {
-    if (!selectedBreakdownIdForUpdate) return null;
-    return breakdowns.find((b) => b.id === selectedBreakdownIdForUpdate) || null;
-  }, [selectedBreakdownIdForUpdate, breakdowns]);
-
   // Hitung unit aktif breakdown (semua unit yang belum READY)
-  const activeBreakdownCount = breakdowns.filter(
-    (b) => (b.statusUnit || 'BREAKDOWN').toUpperCase().trim() !== 'READY'
-  ).length;
+  const activeBreakdownCount = React.useMemo(() => {
+    return breakdowns.filter((b) => {
+      const updates = b.riwayatUpdate;
+      let effectiveStatus = (b.statusUnit || 'BREAKDOWN').toUpperCase().trim();
+      if (updates && updates.length > 0) {
+        const sorted = [...updates].sort((x, y) => (y.createdAt || '').localeCompare(x.createdAt || ''));
+        if (sorted[0]?.statusUnit) {
+          effectiveStatus = sorted[0].statusUnit.toUpperCase().trim();
+        }
+      }
+      return effectiveStatus !== 'READY';
+    }).length;
+  }, [breakdowns]);
 
   const handleNavigateToUpdate = (record: BreakdownRecord) => {
     setSelectedBreakdownIdForUpdate(record.id);
@@ -115,13 +121,13 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
             </h1>
           </div>
           <p className="text-xs text-stone-400 mt-1">
-            Sistem Database Maintenance, Pelaporan Kerusakan, Update Activity, Analisis PA &amp; Riwayat Penggantian Part.
+            Sistem Database Maintenance Quarry Purwosari: Input BD, Monitoring &amp; Update Bertingkat, History Breakdown, dan Analisis PA &amp; MTBF.
           </p>
         </div>
 
         {/* 4 Sub Module Navigation Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 bg-stone-950/80 p-1.5 rounded-2xl border border-stone-800 self-start md:self-auto">
-          {/* Sub Modul 1: Input Breakdown */}
+          {/* Sub Modul 1: Input BD */}
           <button
             id="tab-submodul-1"
             type="button"
@@ -133,10 +139,10 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
             }`}
           >
             <Wrench className="w-3.5 h-3.5" />
-            <span>Sub Modul 1: Input Breakdown</span>
+            <span>1. Input BD</span>
           </button>
 
-          {/* Sub Modul 2: Update Breakdown */}
+          {/* Sub Modul 2: Dashboard Maintenance (Terpadu Monitoring & Update) */}
           <button
             id="tab-submodul-2"
             type="button"
@@ -147,8 +153,8 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
             }`}
           >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>Sub Modul 2: Update Breakdown</span>
+            <Clock className="w-3.5 h-3.5 text-amber-950" />
+            <span>2. Dashboard Maintenance</span>
             {activeBreakdownCount > 0 && (
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
@@ -162,67 +168,34 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
             )}
           </button>
 
-          {/* Sub Modul 3: Dashboard Maintenance */}
+          {/* Sub Modul 3: History Breakdown */}
           <button
             id="tab-submodul-3"
             type="button"
             onClick={() => setActiveSubModule(3)}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
               activeSubModule === 3
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
             }`}
           >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>Sub Modul 3: Dashboard Maintenance</span>
+            <History className="w-3.5 h-3.5" />
+            <span>3. History Breakdown</span>
           </button>
 
-          {/* Sub Modul 4: Detail Breakdown & History Part */}
+          {/* Sub Modul 4: Pareto Analisis PA & MTBF */}
           <button
             id="tab-submodul-4"
             type="button"
             onClick={() => setActiveSubModule(4)}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
               activeSubModule === 4
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
                 : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
             }`}
           >
-            <History className="w-3.5 h-3.5" />
-            <span>Sub Modul 4: Detail Breakdown &amp; History Part</span>
-          </button>
-
-          {/* Sub Modul 5: Laporan Harian (Ready & Breakdown) */}
-          <button
-            id="tab-submodul-5"
-            type="button"
-            onClick={() => setActiveSubModule(5)}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
-              activeSubModule === 5
-                ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/20'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
-            }`}
-          >
-            <ClipboardCheck className="w-3.5 h-3.5 text-teal-300" />
-            <span>Sub Modul 5: Laporan Harian Ready &amp; Breakdown</span>
-          </button>
-
-          {/* Sub Modul 6: Monitoring Breakdown & Realtime Downtime */}
-          <button
-            id="tab-submodul-6"
-            type="button"
-            onClick={() => setActiveSubModule(6)}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition relative ${
-              activeSubModule === 6
-                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/20'
-                : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800/60'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5 text-rose-400" />
-            <span>Sub Modul 6: Monitoring Breakdown &amp; Downtime</span>
-            {activeBreakdownCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping ml-1" />
-            )}
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>4. Pareto Analisis PA &amp; MTBF</span>
           </button>
         </div>
       </div>
@@ -241,34 +214,19 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
       )}
 
       {activeSubModule === 2 && (
-        <UpdateBreakdownSubView
+        <ActiveBreakdownMonitoringSubView
+          units={units}
           breakdowns={breakdowns}
-          selectedBreakdownToUpdate={selectedBreakdownForUpdate}
-          selectedBreakdownId={selectedBreakdownIdForUpdate}
-          manpowerList={manpowerList}
           currentUser={currentUser}
+          manpowerList={manpowerList}
           onUpdateActivity={onUpdateActivity}
-          onSelectBreakdown={(rec) => setSelectedBreakdownIdForUpdate(rec ? rec.id : null)}
-          onDeleteBreakdown={(id) => {
-            if (selectedBreakdownIdForUpdate === id) {
-              setSelectedBreakdownIdForUpdate(null);
-            }
-            return onDeleteBreakdown(id);
-          }}
+          onDeleteBreakdown={onDeleteBreakdown}
+          onNavigateToHistory={() => setActiveSubModule(3)}
+          initialExpandedId={selectedBreakdownIdForUpdate}
         />
       )}
 
       {activeSubModule === 3 && (
-        <DashboardMaintenanceSubView
-          breakdowns={breakdowns}
-          units={units}
-          currentUser={currentUser}
-          onBackToMainMenu={onBackToMainMenu}
-          onOpenLaporanHarian={() => setActiveSubModule(5)}
-        />
-      )}
-
-      {activeSubModule === 4 && (
         <DetailBreakdownHistorySubView
           units={units}
           breakdowns={breakdowns}
@@ -279,30 +237,15 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
         />
       )}
 
-      {activeSubModule === 5 && (
-        <LaporanHarianReadyBreakdownSubView
-          units={units}
+      {activeSubModule === 4 && (
+        <DashboardMaintenanceSubView
           breakdowns={breakdowns}
-          p2hRecords={p2hRecords}
-          manpowerList={manpowerList}
-          currentUser={currentUser}
-          onNavigateToUpdate={handleNavigateToUpdate}
-          onNavigateToP2H={onNavigateToP2H}
-        />
-      )}
-
-      {activeSubModule === 6 && (
-        <ActiveBreakdownMonitoringSubView
           units={units}
-          breakdowns={breakdowns}
           currentUser={currentUser}
-          onNavigateToUpdate={handleNavigateToUpdate}
-          onNavigateToDetail={(rec) => {
-            setActiveSubModule(4);
-          }}
+          onBackToMainMenu={onBackToMainMenu}
+          onOpenLaporanHarian={() => setActiveSubModule(2)}
         />
       )}
     </div>
   );
 };
-

@@ -1,131 +1,166 @@
-# Rencana Penyempurnaan Sistem Maintenance PT Batu Kali Welang Ampuh (Modul 3 & Modul 2)
+# Perombakan & Penyederhanaan Modul 3: Dashboard Maintenance PT BKWA
 
-Rencana ini merinci penambahan fitur **Breakdown Type** (SCHEDULE, UNSCHEDULE, ACCIDENT), pemisahan kolom **Tanggal, Jam Mulai, dan Jam Selesai** secara independen pada Kartu MO, sinkronisasi akurat tindakan dan PIC mekanik murni tanpa pelapor fallback, fitur **Inline Editing** baris riwayat pekerjaan, **Monitoring Realtime Downtime Unit Breakdown Aktif** di Sub Modul 6, dokumen cetak **Print Riwayat Unit (Semua MO)**, serta penyesuaian jam kerja Full day (07.00 - 16.00) dan opsi Alpha pada Modul 2 Manpower.
+Menyederhanakan arsitektur dan antarmuka Modul 3 menjadi 4 sub-menu terfokus dengan menggabungkan pembaruan pekerjaan perbaikan langsung ke dalam tabel Monitoring melalui sistem baris bertingkat (*collapsible/expandable* tanda `+`), menyediakan pembaruan jam-ke-jam secara *inline*, serta fitur cetak WYSIWYG dan cetak per No Maintenance Order (MO).
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Keputusan penting yang telah dikonfirmasi melalui sesi klarifikasi:
-> - **Breakdown Type**: Wajib dipilih saat input breakdown dengan nilai baku awal **`UNSCHEDULE`** (pilihan: `SCHEDULE`, `UNSCHEDULE`, `ACCIDENT`). Tersedia di form input, kartu MO, tabel ringkas, serta dokumen PDF resmi.
-> - **Pemisahan Kolom Riwayat Update**: Pada tabel update harian Kartu MO dan Pratinjau PDF, kolom **Tanggal**, **Jam Mulai**, dan **Jam Selesai** dipisahkan menjadi kolom mandiri (bukan digabung rentang teks) untuk kemudahan kontrol dan audit.
-> - **PIC Mekanik & Remark**: Kolom PIC mekanik secara ketat menampilkan teknisi pelaksana perbaikan dari update harian (tanpa mengambil pelapor input awal) beserta catatan Remark terkini.
-> - **Inline Editing**: Pengguna dapat langsung mengedit tanggal, jam mulai, jam selesai, tindakan perbaikan, progress, status, PIC teknisi, dan remark langsung pada baris tabel (inline) dengan tombol Simpan dan Batal.
-> - **Print Unit vs Print MO**: Membedakan dokumen cetak 1 MO spesifik (**Print MO**) dengan buku rangkuman riwayat terpadu seluruh MO yang pernah dialami unit terpilih (**Print Unit**).
-> - **Monitoring Breakdown Aktif**: Tersedia di tab tersendiri (Sub Modul 6) dengan penghitung downtime dinamis berjalan (Hari, Jam, Menit) dari saat breakdown hingga realtime saat ini.
+> Berdasarkan konfirmasi preferensi yang telah disetujui:
+> 1. **Struktur 4 Sub-Menu Utama**:
+>    - **Sub Modul 1: Input BD**: Formulir input laporan awal kerusakan unit saat mulai breakdown di Quarry Purwosari (tetap dipertahankan tanpa perubahan alur).
+>    - **Sub Modul 2: Dashboard Maintenance**: Tabel monitoring breakdown aktif dengan baris bertingkat (tanda `+`), pembaruan pekerjaan harian jam-ke-jam secara langsung (*inline*), tombol Simpan, update status `READY` seketika yang mengarsipkan unit, dan tombol Print Preview WYSIWYG.
+>    - **Sub Modul 3: History Breakdown**: Pencarian dan pelacakan seluruh arsip unit yang telah selesai diperbaiki (`READY`) beserta riwayat lengkap penggantian spare part dan jasa.
+>    - **Sub Modul 4: Pareto Analisis PA & MTBF**: Grafik pareto komponen kerusakan, analisis ketersediaan fisik unit (*Physical Availability* standar MOHH 240 jam/bulan PT BKWA), MTBF, dan MTTR.
+> 2. **Sistem Baris Bertingkat (*Expandable Row* / Tanda `+`)**:
+>    - Baris utama menampilkan ringkasan unit (*Main Problem*, No MO, No Unit, Downtime berjalan, Status).
+>    - Saat tanda `+` diklik, muncul sub-tabel di bawah baris tersebut (konsep seperti tabel kebutuhan Part):
+>      - Baris input ringkas di atas: Tanggal, Jam Start, Jam Finish, Tindakan/Pekerjaan, Progress %, Status Unit, PIC Mekanik (dropdown Modul 2), Remark, dan tombol **"Simpan Update"**.
+>      - Tabel runtutan pekerjaan di bawahnya dalam 1 No MO: pekerjaan terbaru selalu berada di **baris paling atas**.
+> 3. **Penyelesaian Unit (`READY`)**:
+>    - Begitu status diubah menjadi `READY` dan disimpan, unit otomatis keluar dari tabel Dashboard Maintenance (monitoring breakdown aktif) dan langsung tersimpan aman ke database riwayat (dapat diakses kapan saja di *History Breakdown*).
+> 4. **Fitur Cetak & Print Preview WYSIWYG**:
+>    - **Tombol Print Preview di atas tabel**: Mencetak seluruh breakdown aktif sesuai apa yang terlihat di layar (*What You See Is What You Get*). Baris yang di-expand akan tercetak beserta runtutan pekerjaannya; baris yang di-collapse hanya tercetak ringkasannya.
+>    - **Klik No Reff MO**: Membuka preview cetak resmi untuk **1 unit** tersebut (Surat Perintah Kerja & Log Pekerjaan Perbaikan).
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **Apa yang Dibangun**:
-  1. **Modul 3 - Input Breakdown (Sub Modul 1)**: Menambahkan input wajib `Breakdown Type` dengan pilihan `SCHEDULE`, `UNSCHEDULE`, `ACCIDENT` (default: `UNSCHEDULE`).
-  2. **Modul 3 - Kartu No MO & Riwayat (Sub Modul 4)**:
-     - Header kartu tersinkronisasi dengan tanggal, jam pengerjaan, dan status dari update harian terakhir.
-     - Tabel riwayat harian memisahkan kolom: `No`, `Tanggal`, `Jam Mulai`, `Jam Selesai`, `Tindakan / Detail Perbaikan`, `Progress`, `Status Unit`, `PIC Mekanik (Murni)`, `Remark`, dan `Aksi`.
-     - Fitur **Inline Editing** pada setiap baris untuk melengkapi atau memperbaiki jam/tanggal kosong langsung di tempat.
-     - Tombol **Print MO** (khusus 1 insiden MO) dan **Print Unit** (seluruh MO unit terpilih) berformat landscape PDF resmi lengkap dengan pengesahan 3 pihak.
-  3. **Modul 3 - Monitoring Breakdown Aktif & Realtime Downtime (Sub Modul 6)**:
-     - Tab dedikasi untuk unit berstatus `BREAKDOWN` dan `LIMIT OPERASI`.
-     - Timer realtime (interval 60 detik) menghitung durasi breakdown berjalan dari `tanggal` dan `jamBreakdown` awal hingga saat ini.
-     - Menampilkan unit, pekerjaan terakhir, teknisi yang bertugas, badge downtime warna-warni, serta pintasan cepat ke Update dan Detail.
-  4. **Modul 2 - Catatan Harian Manpower**:
-     - Tombol toggle Fullday otomatis menetapkan jam kerja `07:00` s/d `16:00`.
-     - Header/pilihan keterangan menambahkan opsi `Alpha / Tanpa Keterangan` dan menghapus opsi `Ijin`.
+### Masalah yang Diselesaikan
+Sebelumnya Modul 3 memiliki 6 sub-menu terpisah (Input Breakdown, Update Breakdown, Dashboard Maintenance, Detail Breakdown & History Part, Laporan Harian, dan Monitoring Breakdown). Mekanik dan staf administrasi harus bolak-balik berpindah menu untuk menginput kerusakan, mengupdate jam pengerjaan, dan mencetak laporan harian.
+
+### Konsep Inti
+Mengintegrasikan seluruh siklus hidup unit yang sedang breakdown ke dalam **Dashboard Maintenance** tunggal:
+1. Saat No MO terbit dari Input BD, unit langsung muncul di tabel Dashboard Maintenance.
+2. Setiap progres jam kerja diperbarui langsung pada baris unit tersebut melalui tanda `+` tanpa membuka formulir atau halaman baru.
+3. Begitu unit dinyatakan siap operasi (`READY`), status diubah dan unit seketika diarsipkan ke **History Breakdown**.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        MODUL 3: MAINTENANCE                            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┼───────────────────────────────┐
+    │                               │                               │
+┌───▼─────────────┐       ┌─────────▼───────────────┐       ┌───────▼─────────────┐
+│ 1. Input BD     │       │ 2. Dashboard Maintenance│       │ 3. History Breakdown│
+│ • Registrasi MO │──────►│ • Tabel Bertingkat (+)  │──────►│ • Arsip Unit READY  │
+│ • Problem Awal  │       │ • Update Jam ke Jam     │       │ • Filter Pencarian  │
+│ • Penugasan Awal│       │ • Status READY ─────────┼─┐     │ • Riwayat Part/Jasa │
+└─────────────────┘       │ • Cetak WYSIWYG         │ │     └─────────────────────┘
+                          └─────────────────────────┘ │
+                                                      │     ┌─────────────────────┐
+                                                      │     │ 4. Pareto PA & MTBF │
+                                                      └────►│ • PA Unit (MOHH)    │
+                                                            │ • Pareto Komponen   │
+                                                            │ • MTBF & MTTR       │
+                                                            └─────────────────────┘
+```
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### Alur Antarmuka Pengguna (User Flows)
-1. **Pencatatan Breakdown**:
-   - Di Sub Modul 1, form input menyediakan tombol pilihan atau dropdown `Breakdown Type`: `UNSCHEDULE` (terpilih otomatis), `SCHEDULE`, dan `ACCIDENT`.
-   - Data tersimpan dan tersinkronisasi ke Firestore dan daftar monitoring.
-2. **Monitoring Realtime Downtime (Sub Modul 6)**:
-   - Pengguna membuka Sub Modul 6 di Modul 3.
-   - Tabel menampilkan daftar unit alat yang saat ini belum READY.
-   - Badge downtime menyala dinamis: misal `2 Hari 5 Jam 14 Menit` yang terus terhitung otomatis.
-3. **Pemeriksaan & Inline Edit Kartu MO (Sub Modul 4)**:
-   - Pengguna mencari unit atau MO tertentu.
-   - Kartu menampilkan tanggal & jam pengerjaan terkini di header.
-   - Pada tabel riwayat pekerjaan, kolom Tanggal, Jam Mulai, dan Jam Selesai berdiri sendiri.
-   - Pengguna mengklik tombol **Pensil** di baris tertentu: baris berubah menjadi input interaktif. Pengguna memperbaiki jam kosong lalu menekan tombol centang **Simpan**.
-4. **Cetak Dokumen**:
-   - Klik **Print MO**: Pratinjau PDF khusus riwayat pengerjaan 1 MO tersebut.
-   - Klik **Print Unit**: Pratinjau PDF buku riwayat unit yang merangkum seluruh kartu MO masa lalu untuk unit bersangkutan.
+### A. Tampilan Navigasi 4 Sub-Menu Utama
+- Menggantikan 6 tab sebelumnya menjadi 4 tab rapi dan elegan berlatar dark industrial (`stone-900`, `stone-950`, aksen `amber-400`, `rose-400`, dan `emerald-400`):
+  1. `Sub Modul 1: Input BD` (Ikon Wrench)
+  2. `Sub Modul 2: Dashboard Maintenance` (Ikon Activity/Layers dengan indikator jumlah unit aktif)
+  3. `Sub Modul 3: History Breakdown` (Ikon History)
+  4. `Sub Modul 4: Pareto Analisis PA & MTBF` (Ikon BarChart3)
 
-### Bahasa Desain Industri & Visual Theme
-- **Nuansa**: Dark Industrial Workshop Quarry (`stone-950`, `stone-900`, `border-stone-800`).
-- **Aksen**: Amber emas (`amber-400`, `amber-500`) untuk nomor MO, Emerald (`emerald-400`) untuk status READY, Rose (`rose-500`) untuk BREAKDOWN/ACCIDENT, dan Blue/Indigo untuk fitur Riwayat Unit.
-- **Tipografi**: Kode MO dan jam kerja menggunakan `font-mono`, sedangkan uraian tindakan menggunakan `font-sans` proporsional dengan keterbacaan tinggi.
+### B. Tampilan Tabel Bertingkat (Dashboard Maintenance)
+- **Baris Utama (Level 1 - Main Problem)**:
+  - Tombol Expand/Collapse (`+` / `-` dengan animasi rotasi halus).
+  - No. Reff MO (bisa diklik untuk cetak per unit).
+  - Identitas Unit (CN New, Jenis, Nama Alat).
+  - Waktu Mulai Breakdown (Tanggal & Jam).
+  - Problem Awal Kerusakan.
+  - Downtime Berjalan Real-Time (dihitung otomatis jam:menit).
+  - Progress Terkini (% dan tahapan).
+  - Status Unit (`BREAKDOWN` merah, `LIMIT OPERASI` amber).
+  - Ringkasan Jumlah Update Catatan.
+- **Sub-Tabel Bertingkat (Level 2 - Expandable Detail)**:
+  - **Baris Input Cepat (Quick Update Row)**:
+    - Input Tanggal & Jam Mulai s/d Jam Selesai (format 24 jam).
+    - Textarea ringkas: Tindakan / Detail Pekerjaan.
+    - Dropdown Progress (`25%`, `50%`, `75%`, `100%`, `On Progress`, `Waiting Part`, `Waiting Mechanic`).
+    - Dropdown Status (`BREAKDOWN`, `LIMIT OPERASI`, `READY`).
+    - Dropdown PIC Mekanik (terkoneksi database Manpower Modul 2).
+    - Tombol **"Simpan Update"** berwarna amber dengan ikon Save.
+  - **Daftar Runtutan Catatan Harian**:
+    - Disusun urut dari **pekerjaan terbaru di posisi paling atas** (#Terbaru).
+    - Menampilkan kolom: No, Tanggal, Jam Kerja, Tindakan/Pekerjaan, Progress, Status Unit, PIC Mekanik, dan Remark.
+
+### C. Mekanisme Cetak (Print & Preview)
+1. **Tombol Cetak WYSIWYG (Header Tabel)**:
+   - Tombol "Print Preview Laporan Monitoring".
+   - Mencetak data persis sesuai kondisi layar saat ini: jika baris `EX-71` sedang dibuka (+), maka seluruh runtutan pembaruan pekerjaan unit tersebut ikut tercetak. Unit yang dalam keadaan tertutup hanya dicetak ringkasan barisnya.
+   - Dilengkapi kustomisasi kop surat PT Bukit Kencana Wahana Agro dan validasi tanda tangan standar (Dibuat Oleh Mekanik/Admin, Disetujui Kabag Workshop, Diketahui KTT).
+2. **Cetak Satuan per Unit (Klik No Reff MO)**:
+   - Membuka modal preview cetak satu unit (Surat Perintah Kerja & Berita Acara Kerusakan Unit) siap cetak/simpan PDF.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Pemisahan Kolom Tanggal & Jam**:
-  - *Keputusan*: Memisahkan menjadi kolom `Tanggal`, `Jam Mulai` (HH:mm), dan `Jam Selesai` (HH:mm) daripada string gabungan.
-  - *Alasan*: Menjamin presisi waktu kerja teknisi, memudahkan sorting, dan mempermudah pengisian bagian jam yang sebelumnya kosong.
-- **PIC Mekanik Tanpa Pelapor Fallback**:
-  - *Keputusan*: Jika update belum memiliki teknisi, kolom menampilkan tanda strip (`-`), tidak meminjam nama pelapor kerusakan. Pelapor tetap ditampilkan secara terpisah di bagian info awal.
-  - *Alasan*: Pelapor seringkali merupakan sopir/operator, bukan mekanik workshop yang mengeksekusi perbaikan.
-- **Inline Editing vs Modal**:
-  - *Keputusan*: Menggunakan inline row edit di tabel kartu MO.
-  - *Alasan*: Pengguna tidak perlu bolak-balik berpindah tab atau menutup modal saat ingin mengoreksi jam atau tanggal yang terlewat.
+- **Penyatuan Sub Modul 2 & 3**:
+  - *Keputusan*: Menghilangkan sub-menu Update Breakdown mandiri dan memindahkannya menjadi sub-tabel bertingkat langsung di Dashboard Maintenance.
+  - *Alasan*: Menghilangkan kebutuhan mekanik untuk memilih kembali No Unit di dropdown terpisah; alur kerja pembaruan jam ke jam menjadi instan langsung di bawah baris unit yang bersangkutan.
+- **Penghapusan Sub-Menu Laporan Harian Terpisah**:
+  - *Keputusan*: Fitur cetak laporan harian dijadikan fitur Print Preview WYSIWYG langsung pada tabel Dashboard Maintenance.
+  - *Alasan*: Mencegah duplikasi data dan memastikan apa yang dicetak selalu mencerminkan kondisi riil di lapangan pada saat tombol ditekan.
+- **Retensi Data Riwayat Lengkap**:
+  - *Keputusan*: Ketika unit diubah menjadi status `READY`, unit tidak dihapus melainkan statusnya diperbarui, downtime dikunci, dan unit berpindah ke *History Breakdown*.
+  - *Alasan*: Riwayat perbaikan dan penggantian part tetap tersimpan permanen untuk kebutuhan audit, analisis masa pakai part, dan klaim garansi.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 4. Technical Architecture & Implementation Steps
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   DASHBOARD MAINTENANCE (MODUL 3)                      │
-├──────────────────┬───────────────────┬─────────────────────────────────┤
-│ Sub Modul 1:     │ Sub Modul 4:      │ Sub Modul 6:                    │
-│ Input Breakdown  │ Detail & Kartu MO │ Monitoring Breakdown Aktif      │
-│  - Breakdown Type│  - Split Tanggal  │  - Realtime Downtime Counter    │
-│    (SCHED/UNSCHED│    & Jam Kerja    │  - Unit, Problem, Tindakan Terkini│
-│    /ACCIDENT)    │  - Strict PIC Mek │  - PIC Mekanik Bertugas         │
-│                  │  - Inline Edit Row│  - Quick Action to Update       │
-│                  │  - Print MO/Unit  │                                 │
-└────────┬─────────┴─────────┬─────────┴────────────────┬────────────────┘
-         │                   │                          │
-         ▼                   ▼                          ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       STORAGE & SYNCHRONIZATION                        │
-│  - storage.ts (updateBreakdownHistoryEntry, deleteBreakdownHistoryEntry)│
-│  - pdfGenerator.ts (generateDetailHistoryPDF, generateUnitHistoryPDF)   │
-│  - firestore.rules & firebaseSync.ts (Firestore Cloud Sync)           │
-└────────────────────────────────────────────────────────────────────────┘
+│                        ALUR DATA & KOMPONEN                            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┴───────────────────────────────┐
+    ▼                                                               ▼
+┌───────────────────────────────────────┐   ┌───────────────────────────────────┐
+│ MaintenanceDatabaseView.tsx           │   │ ActiveBreakdownMonitoringSubView  │
+│ • State activeSubModule (1, 2, 3, 4)  │──►│ • Tabel Bertingkat (Expandable +) │
+│ • 4 Tab Navigasi Bersih               │   │ • Inline Quick Update Row         │
+│ • Routing ke sub-view yang sesuai     │   │ • WYSIWYG Print Preview Modal     │
+└───────────────────────────────────────┘   │ • Single MO Print Preview Modal   │
+                                            └─────────────────┬─────────────────┘
+                                                              │
+                                            ┌─────────────────┴─────────────────┐
+                                            ▼                                   ▼
+                               ┌─────────────────────────┐         ┌─────────────────────────┐
+                               │ storage.ts              │         │ Cloud Firestore         │
+                               │ • updateBreakdownAct... │◄───────►│ • collection('breakd...')│
+                               │ • unshift to top        │         │ • Realtime multi-device │
+                               │ • Auto-calculate downt..│         │ • Persist & Audit trail │
+                               └─────────────────────────┘         └─────────────────────────┘
 ```
 
-### Entitas Data yang Dimutakhirkan
-1. `BreakdownRecord`:
-   - `breakdownType?: 'SCHEDULE' | 'UNSCHEDULE' | 'ACCIDENT'` (default: `'UNSCHEDULE'`).
-2. `BreakdownUpdateEntry`:
-   - `startJob: string` (Tanggal)
-   - `jamStart?: string` (Jam Mulai)
-   - `jamFinish?: string` (Jam Selesai)
-   - `detailKerusakan: string` (Tindakan)
-   - `pic1?: string`, `pic2?: string`, `pic3?: string` (Teknisi Workshop)
-   - `remark?: string`
-3. `CatatanHarianManpower`:
-   - Fullday default: `07:00` - `16:00`.
-   - Opsi `Alpha / Tanpa Keterangan` dan `Ijin`.
-
----
-
-## 5. Modul 1: Sub Menu Setting Operator & Barcode Fuel
-
-### Spesifikasi Fitur:
-1. **Navigasi Tab Sub Menu**:
-   - `Sub Menu 1: Registrasi Asset & Inventaris`: Form registrasi 12 field spesifikasi unit dan tabel daftar unit.
-   - `Sub Menu 2: Setting Operator & Barcode Fuel`: Pengaturan penugasan operator, barcode BBM, deskripsi pekerjaan, dan catatan khusus armada.
-2. **Sinkronisasi Data**:
-   - Pilihan nama operator/sopir bersumber langsung secara dinamis dari **Modul 2 (Data Manpower)** dengan pemisahan prioritas jabatan Operator/Sopir di atas.
-   - Kolom `Job` fleksibel (ketik bebas + datalist rekomendasi tugas hauling/loading/stripping).
-   - Kolom `Status Barcode Fuel`: `TERPASANG`, `AKTIF`, `RUSAK`, `BELUM ADA`, `HILANG`.
-   - Kolom `Remark`: Catatan kondisi atau penugasan khusus.
-   - Penyimpanan interaktif per baris (*inline save*) dan massal (*bulk save*).
-   - Ekspor lembar kerja CSV dan Pratinjau Cetak Lembar Operator.
-   - Sinkronisasi instan ke `localStorage` dan Firestore `units`.
-
+### Rincian Perubahan File:
+1. **`src/components/modul3/MaintenanceDatabaseView.tsx`**:
+   - Memperbarui tab navigasi menjadi 4 sub-menu:
+     - 1: `Input BD` (`InputBreakdownSubView`)
+     - 2: `Dashboard Maintenance` (`ActiveBreakdownMonitoringSubView`)
+     - 3: `History Breakdown` (`DetailBreakdownHistorySubView`)
+     - 4: `Pareto Analisis PA & MTBF` (`DashboardMaintenanceSubView`)
+   - Membersihkan impor sub-menu yang tidak lagi digunakan secara mandiri.
+2. **`src/components/modul3/ActiveBreakdownMonitoringSubView.tsx`**:
+   - Menambahkan state `expandedMoIds: Set<string>` untuk mengontrol baris yang terbuka.
+   - Merancang baris bertingkat (*collapsible row*):
+     - Form input cepat inline dengan validasi jam 24 jam Indonesia.
+     - Sub-tabel runtutan pekerjaan dalam 1 No MO (terbaru di posisi atas).
+     - Tombol Simpan Update dengan pembaruan status `READY` yang otomatis mengarsipkan unit.
+   - Menambahkan modal Print Preview WYSIWYG (mencetak unit dan rincian pekerjaan yang sedang terbuka di layar).
+   - Menambahkan handler klik No Reff MO untuk cetak per unit.
+3. **`src/utils/storage.ts`**:
+   - Memastikan `updateBreakdownActivity` mengunci downtime saat status `READY` dan menyimpan urutan riwayat terbaru di baris pertama (`unshift`).
+4. **Verifikasi & Uji**:
+   - Menjalankan `compile_applet` dan `lint_applet` untuk menjamin tidak ada kesalahan sintaks maupun dependensi.

@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana implementasi penyempurnaan fitur Modul 3 (Breakdown Type, sinkronisasi tanggal & jam terpisah, PIC mekanik murni, inline editing, monitoring breakdown aktif dengan realtime downtime, dan print unit multi-MO) serta Modul 2 (Fullday 07.00-16.00 dan Alpha/Tanpa Keterangan).",
-  "updatedAt": "2026-11-05T02:32:04.207205950Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Rencana implementasi perombakan dan penyederhanaan Modul 3 Dashboard Maintenance: merampingkan menjadi 4 sub-menu (Input BD, Dashboard Maintenance dengan tabel bertingkat expand/collapse dan inline update jam ke jam, History Breakdown, serta Pareto Analisis PA & MTBF), dilengkapi fitur cetak WYSIWYG dan cetak per MO.",
+  "updatedAt":  "2026-11-11T07:54:14.789080953Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }
