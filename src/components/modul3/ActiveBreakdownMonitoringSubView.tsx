@@ -4,6 +4,7 @@ import {
   BreakdownRecord, 
   BreakdownProgressOption,
   BreakdownStatusUnitOption,
+  BreakdownComponentOption,
   BreakdownPartJasaItem,
   PartSatuanOption,
   PART_SATUAN_OPTIONS,
@@ -12,6 +13,11 @@ import {
   ManpowerData, 
   UserAccount 
 } from '../../types';
+import { 
+  resolveReportSignatories, 
+  getSavedReportSignatories, 
+  saveReportSignatories 
+} from '../../utils/reportSignatories';
 import { 
   Clock, 
   AlertTriangle, 
@@ -33,8 +39,26 @@ import {
   Package,
   Trash2,
   User,
-  Layers
+  Layers,
+  Settings,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
+
+// Daftar label komponen khusus update pekerjaan sesuai permintaan user
+export const WORK_COMPONENT_OPTIONS: string[] = [
+  'Engine',
+  'Transmisi',
+  'Differential & Axel',
+  'clutch & PTO',
+  'Hydraulic',
+  'Electric',
+  'Steering System',
+  'Brake System',
+  'Tyre',
+  'Undercurriage',
+  'attachment',
+];
 
 interface ActiveBreakdownMonitoringSubViewProps {
   units: AssetUnit[];
@@ -56,6 +80,7 @@ interface ActiveBreakdownMonitoringSubViewProps {
       pic3?: string;
       remark?: string;
       partsJasa?: BreakdownPartJasaItem[];
+      component?: BreakdownComponentOption | string;
     }
   ) => { success: boolean; message: string; record?: BreakdownRecord };
   onDeleteBreakdown?: (id: string) => { success: boolean; message: string };
@@ -135,6 +160,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
     startTime: string;
     endDate: string;
     endTime: string;
+    component: string;
     detailKerusakan: string;
     progress: BreakdownProgressOption | string;
     statusUnit: BreakdownStatusUnitOption | string;
@@ -157,6 +183,38 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
   const [formInputs, setFormInputs] = useState<Record<string, InlineFormState>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Setup Validasi Pengesahan Manual (Dibuat Oleh, Diperiksa Oleh, Disetujui Oleh)
+  const resolvedSig = useMemo(() => {
+    return resolveReportSignatories(manpowerList, currentUser);
+  }, [manpowerList, currentUser]);
+
+  const savedSigConfig = useMemo(() => getSavedReportSignatories(), []);
+
+  const [signatories, setSignatories] = useState({
+    pembuatName: savedSigConfig?.pembuatName || resolvedSig.pembuatName || currentUser.nama || 'Administrasi',
+    pembuatJabatan: savedSigConfig?.pembuatJabatan || resolvedSig.pembuatJabatan || 'Administrasi',
+    diperiksaName: savedSigConfig?.diperiksaName || resolvedSig.diperiksaName || 'Staff Administrasi',
+    diperiksaJabatan: savedSigConfig?.diperiksaJabatan || resolvedSig.diperiksaJabatan || 'Administrasi',
+    disetujuiName: savedSigConfig?.disetujuiName || resolvedSig.disetujuiName || 'DODIK MARIYADI',
+    disetujuiJabatan: savedSigConfig?.disetujuiJabatan || resolvedSig.disetujuiJabatan || 'Kabag Workshop',
+  });
+
+  const [showSignatorySetup, setShowSignatorySetup] = useState<boolean>(false);
+  const [saveSigSuccess, setSaveSigSuccess] = useState<boolean>(false);
+
+  const handleSaveSignatories = () => {
+    saveReportSignatories({
+      pembuatName: signatories.pembuatName,
+      pembuatJabatan: signatories.pembuatJabatan,
+      diperiksaName: signatories.diperiksaName,
+      diperiksaJabatan: signatories.diperiksaJabatan,
+      disetujuiName: signatories.disetujuiName,
+      disetujuiJabatan: signatories.disetujuiJabatan,
+    });
+    setSaveSigSuccess(true);
+    setTimeout(() => setSaveSigSuccess(false), 3000);
+  };
 
   // Modal Print Preview Laporan Monitoring (WYSIWYG)
   const [showMonitoringPrintModal, setShowMonitoringPrintModal] = useState<boolean>(false);
@@ -331,9 +389,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
     return { total, criticalCount, severeCount, avgHours };
   }, [activeBreakdowns, currentTime]);
 
-  // Daftar Komponen Unik
+  // Daftar Komponen Unik untuk filter
   const componentOptions = useMemo(() => {
     const set = new Set<string>();
+    WORK_COMPONENT_OPTIONS.forEach((c) => set.add(c));
     activeBreakdowns.forEach((b) => {
       if (b.component) set.add(b.component);
     });
@@ -373,6 +432,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
       startTime: getCurrentTimeString(),
       endDate: getTodayDateString(),
       endTime: '',
+      component: b.component || 'Engine',
       detailKerusakan: '',
       progress: latest?.progress || b.progress || 'On Progress',
       statusUnit: latest?.statusUnit || b.statusUnit || 'BREAKDOWN',
@@ -404,6 +464,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         startTime: getCurrentTimeString(),
         endDate: getTodayDateString(),
         endTime: '',
+        component: 'Engine',
         detailKerusakan: '',
         progress: 'On Progress',
         statusUnit: 'BREAKDOWN',
@@ -502,6 +563,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         jamStart: form.startTime || '08:00',
         endDate: form.endDate || form.startDate || getTodayDateString(),
         jamFinish: form.endTime || '',
+        component: form.component || b.component || 'Engine',
         detailKerusakan: form.detailKerusakan.trim(),
         progress: form.progress,
         statusUnit: form.statusUnit,
@@ -604,7 +666,9 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
             .sub-timeline { background: #f9fafb; margin: 4px 0; border: 1px dashed #888; padding: 4px; }
             .signatures { margin-top: 25px; display: flex; justify-content: space-around; text-align: center; page-break-inside: avoid; }
             .sign-box { width: 200px; }
-            .sign-space { height: 45px; }
+            .sign-title { font-size: 9px; color: #444; display: block; }
+            .sign-job { font-size: 9.5px; font-weight: bold; color: #222; display: block; margin-top: 1px; }
+            .sign-space { height: 48px; }
             .sign-name { border-top: 1px solid #333; padding-top: 3px; font-weight: bold; font-size: 10px; }
           </style>
         </head>
@@ -654,7 +718,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                 LIVE REALTIME MONITORING
               </span>
               <span className="text-[10px] font-mono text-stone-500">
-                Refresh: 60s
+                PT BATU KALI WELANG AMPUH (ETIKA09)
               </span>
               <div className="flex items-center gap-1 text-[10px] font-mono">
                 <span className="text-stone-500 font-bold">Tipe:</span>
@@ -668,7 +732,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
               <span>DASHBOARD MAINTENANCE &amp; MONITORING BREAKDOWN</span>
             </h2>
             <p className="text-[11px] text-stone-400 mt-0.5 max-w-2xl">
-              Tracking downtime aktual, update Start/End Date-Time, penugasan PIC (termasuk Mekanik Luar), dan input kebutuhan Spare Part langsung di bawah No. MO (+).
+              Tracking downtime aktual, update Start/End Date-Time, Komponen sistem, penugasan PIC (Mekanik Luar), input Spare Part langsung di bawah No. MO (+), dan setup validasi 3 pihak.
             </p>
           </div>
 
@@ -1162,8 +1226,27 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                 </div>
                               </div>
 
-                              {/* BARIS 2: PIC 1, PIC 2, PIC 3 (dengan opsi "Mekanik Luar"), Progress & Status Unit */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                              {/* BARIS 2: Komponen Sistem, PIC 1, PIC 2, PIC 3, Progress & Status Unit */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+                                {/* Komponen Sistem (Permintaan 3: Engine, Transmisi, Differential & Axel, clutch & PTO, Hydraulic, Electric, Steering System, Brake System, Tyre, Undercurriage, attachment) */}
+                                <div>
+                                  <label className="text-[9px] font-mono text-amber-400 block mb-0.5 font-bold">
+                                    Komponen Sistem *
+                                  </label>
+                                  <select
+                                    value={inlineForm.component}
+                                    onChange={(e) => updateInlineFormField(b.id, 'component', e.target.value)}
+                                    className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs text-amber-300 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                                  >
+                                    {WORK_COMPONENT_OPTIONS.map((c) => (
+                                      <option key={c} value={c}>{c}</option>
+                                    ))}
+                                    {inlineForm.component && !WORK_COMPONENT_OPTIONS.includes(inlineForm.component) && (
+                                      <option value={inlineForm.component}>{inlineForm.component}</option>
+                                    )}
+                                  </select>
+                                </div>
+
                                 {/* PIC 1 */}
                                 <div>
                                   <label className="text-[9px] font-mono text-stone-400 block mb-0.5 font-bold">
@@ -1294,7 +1377,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                     rows={2}
                                     value={inlineForm.detailKerusakan}
                                     onChange={(e) => updateInlineFormField(b.id, 'detailKerusakan', e.target.value)}
-                                    placeholder="Contoh: Penggantian filter solar, flushing tangki hidrolik, bleeding sistem..."
+                                    placeholder="Contoh: Penggantian filter solar, perbaikan silinder hidrolik, bleeding sistem..."
                                     className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-200 placeholder-stone-600 focus:ring-1 focus:ring-amber-500 focus:outline-none font-sans"
                                   />
                                 </div>
@@ -1628,7 +1711,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto no-print-backdrop">
           <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
             {/* Modal Header */}
-            <div className="p-3.5 sm:p-4 border-b border-stone-800 flex items-center justify-between bg-stone-950 no-print">
+            <div className="p-3.5 sm:p-4 border-b border-stone-800 flex items-center justify-between bg-stone-950 no-print flex-wrap gap-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
                   <Printer className="w-4 h-4" />
@@ -1638,15 +1721,31 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                     PRINT PREVIEW LAPORAN MONITORING BREAKDOWN &amp; DOWNTIME
                   </h3>
                   <p className="text-[10px] text-stone-400 font-sans">
-                    Prinsip WYSIWYG: Unit yang sedang di-expand akan tercetak beserta rincian update nya.
+                    PT BATU KALI WELANG AMPUH (ETIKA09) • Prinsip WYSIWYG
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Tombol Setup Validasi Manual */}
                 <button
                   type="button"
-                  onClick={() => handleDirectPrintElement('printable-monitoring-report-area', 'Laporan_Monitoring_Breakdown_PT_BKWA')}
+                  onClick={() => setShowSignatorySetup(!showSignatorySetup)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono font-bold transition cursor-pointer ${
+                    showSignatorySetup 
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' 
+                      : 'bg-stone-900 text-stone-300 border-stone-700 hover:border-amber-500/50'
+                  }`}
+                  title="Atur penandatangan Dibuat Oleh, Diperiksa Oleh, dan Disetujui Oleh"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Setup Validasi</span>
+                  {showSignatorySetup ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDirectPrintElement('printable-monitoring-report-area', 'Laporan_Monitoring_Breakdown_PT_BATU_KALI_WELANG_AMPUH_ETIKA09')}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1662,13 +1761,142 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
               </div>
             </div>
 
+            {/* Panel Form Setup Validasi Manual */}
+            {showSignatorySetup && (
+              <div className="p-3.5 bg-stone-950 border-b border-stone-800 space-y-3 no-print animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>SETUP VALIDASI LAPORAN (PILIH DARI MANPOWER MODUL 2)</span>
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {saveSigSuccess && (
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        Tersimpan ke Sistem!
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSaveSignatories}
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs transition"
+                    >
+                      <Save className="w-3 h-3" />
+                      <span>Simpan Setup</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* 1. Dibuat Oleh */}
+                  <div className="p-2.5 bg-stone-900 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold text-stone-300 block">
+                      1. Dibuat Oleh (Pengawas / Admin)
+                    </span>
+                    <select
+                      value={signatories.pembuatName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          pembuatName: e.target.value,
+                          pembuatJabatan: chosen?.jabatan || prev.pembuatJabatan || 'Administrasi',
+                        }));
+                      }}
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-xs text-stone-100 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.pembuatJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatJabatan: e.target.value }))}
+                      placeholder="Jabatan (cth: Pengawas Maintenance)"
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-300 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* 2. Diperiksa Oleh */}
+                  <div className="p-2.5 bg-stone-900 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold text-stone-300 block">
+                      2. Diperiksa Oleh (Supervisor / Planner)
+                    </span>
+                    <select
+                      value={signatories.diperiksaName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          diperiksaName: e.target.value,
+                          diperiksaJabatan: chosen?.jabatan || prev.diperiksaJabatan || 'Supervisor Maintenance',
+                        }));
+                      }}
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-xs text-stone-100 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.diperiksaJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaJabatan: e.target.value }))}
+                      placeholder="Jabatan (cth: Supervisor Maintenance)"
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-300 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* 3. Disetujui Oleh */}
+                  <div className="p-2.5 bg-stone-900 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-mono font-bold text-stone-300 block">
+                      3. Disetujui Oleh (Kabag Workshop)
+                    </span>
+                    <select
+                      value={signatories.disetujuiName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          disetujuiName: e.target.value,
+                          disetujuiJabatan: chosen?.jabatan || prev.disetujuiJabatan || 'Kabag Workshop',
+                        }));
+                      }}
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-xs text-stone-100 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.disetujuiJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, disetujuiJabatan: e.target.value }))}
+                      placeholder="Jabatan (cth: Kabag Workshop)"
+                      className="w-full bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-300 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Document Printable Sheet */}
             <div className="p-4 sm:p-6 overflow-y-auto bg-stone-950 text-stone-200 font-sans space-y-4 printable-report-modal">
               <div id="printable-monitoring-report-area" className="space-y-4 bg-white text-stone-950 p-4 rounded-xl">
-                {/* Kop Surat PT BUKIT KHATULISTIWA WAHANA */}
+                {/* Kop Surat PT BATU KALI WELANG AMPUH (ETIKA09) */}
                 <div className="header text-center border-b-2 border-stone-800 pb-2 space-y-0.5">
                   <h2 className="text-base font-black tracking-wider uppercase font-mono text-stone-900">
-                    PT. BUKIT KHATULISTIWA WAHANA
+                    PT. BATU KALI WELANG AMPUH (ETIKA09)
                   </h2>
                   <h3 className="text-xs font-bold font-mono text-amber-700">
                     LAPORAN MONITORING UNIT BREAKDOWN &amp; REALTIME DOWNTIME ALAT BERAT
@@ -1808,18 +2036,30 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                   </table>
                 </div>
 
-                {/* Tanda Tangan */}
-                <div className="signatures pt-4 grid grid-cols-2 gap-4 text-center text-xs font-mono">
+                {/* Tanda Tangan 3 Pihak Sesuai Setup Validasi */}
+                <div className="signatures pt-4 grid grid-cols-3 gap-3 text-center text-xs font-mono">
                   <div className="sign-box">
-                    <span className="text-stone-600 block mb-10 text-[10px]">Dibuat Oleh: Pengawas Maintenance</span>
-                    <div className="sign-line border-t border-stone-600 w-44 mx-auto pt-1 font-bold text-[10px]">
-                      ( {currentUser?.nama || 'Pengawas Lapangan'} )
+                    <span className="sign-title">Dibuat Oleh:</span>
+                    <span className="sign-job">{signatories.pembuatJabatan || 'Administrasi'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-36 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.pembuatName || '....................'} )
                     </div>
                   </div>
                   <div className="sign-box">
-                    <span className="text-stone-600 block mb-10 text-[10px]">Diketahui Oleh: Kepala Bengkel / Supervisor</span>
-                    <div className="sign-line border-t border-stone-600 w-44 mx-auto pt-1 font-bold text-[10px]">
-                      ( DODIK MARIYADI )
+                    <span className="sign-title">Diperiksa Oleh:</span>
+                    <span className="sign-job">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-36 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.diperiksaName || '....................'} )
+                    </div>
+                  </div>
+                  <div className="sign-box">
+                    <span className="sign-title">Disetujui Oleh:</span>
+                    <span className="sign-job">{signatories.disetujuiJabatan || 'Kabag Workshop'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-36 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.disetujuiName || 'DODIK MARIYADI'} )
                     </div>
                   </div>
                 </div>
@@ -1844,7 +2084,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                     SURAT PERINTAH KERJA (SPK) &amp; LOG PERBAIKAN UNIT
                   </h3>
                   <p className="text-[10px] text-stone-400 font-sans">
-                    No. MO: {singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi} • Unit: {singlePrintRecord.noUnit}
+                    PT BATU KALI WELANG AMPUH (ETIKA09) • No. MO: {singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi} • Unit: {singlePrintRecord.noUnit}
                   </p>
                 </div>
               </div>
@@ -1852,7 +2092,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleDirectPrintElement('printable-single-mo-area', `SPK_MO_${singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi}_Unit_${singlePrintRecord.noUnit}`)}
+                  onClick={() => handleDirectPrintElement('printable-single-mo-area', `SPK_MO_${singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi}_Unit_${singlePrintRecord.noUnit}_PT_BATU_KALI_WELANG_AMPUH_ETIKA09`)}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1871,14 +2111,17 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
             {/* Document Sheet */}
             <div className="p-4 sm:p-6 overflow-y-auto bg-stone-950 text-stone-200 font-sans space-y-4 printable-report-modal">
               <div id="printable-single-mo-area" className="space-y-4 bg-white text-stone-950 p-4 rounded-xl">
-                {/* Kop Surat */}
+                {/* Kop Surat PT BATU KALI WELANG AMPUH (ETIKA09) */}
                 <div className="header border-b-2 border-stone-800 pb-2 text-center space-y-0.5">
                   <h2 className="text-base font-black tracking-wider uppercase font-mono text-stone-900">
-                    PT. BUKIT KHATULISTIWA WAHANA - QUARRY PURWOSARI
+                    PT. BATU KALI WELANG AMPUH (ETIKA09)
                   </h2>
                   <h3 className="text-xs font-bold font-mono text-amber-700">
                     LEMBAR SPK &amp; HISTORI REPAIR PERBAIKAN ALAT BERAT
                   </h3>
+                  <p className="text-[9px] text-stone-600 font-mono">
+                    Quarry Purwosari, Pasuruan - Jawa Timur
+                  </p>
                 </div>
 
                 {/* Data Unit & Kerusakan */}
@@ -1959,24 +2202,30 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                   )}
                 </div>
 
-                {/* Tanda Tangan */}
+                {/* Tanda Tangan 3 Pihak Sesuai Setup Validasi */}
                 <div className="signatures pt-4 grid grid-cols-3 gap-3 text-center text-xs font-mono">
                   <div className="sign-box">
-                    <span className="text-stone-600 block mb-10 text-[10px]">Teknisi / Mekanik:</span>
-                    <div className="sign-line border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( ............................ )
+                    <span className="sign-title">Dibuat Oleh:</span>
+                    <span className="sign-job">{signatories.pembuatJabatan || 'Administrasi'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.pembuatName || '....................'} )
                     </div>
                   </div>
                   <div className="sign-box">
-                    <span className="text-stone-600 block mb-10 text-[10px]">Pengawas Lapangan:</span>
-                    <div className="sign-line border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( {currentUser?.nama || 'Pengawas'} )
+                    <span className="sign-title">Diperiksa Oleh:</span>
+                    <span className="sign-job">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.diperiksaName || '....................'} )
                     </div>
                   </div>
                   <div className="sign-box">
-                    <span className="text-stone-600 block mb-10 text-[10px]">Kabag Workshop:</span>
-                    <div className="sign-line border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( DODIK MARIYADI )
+                    <span className="sign-title">Disetujui Oleh:</span>
+                    <span className="sign-job">{signatories.disetujuiJabatan || 'Kabag Workshop'}</span>
+                    <div className="sign-space h-12" />
+                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                      ( {signatories.disetujuiName || 'DODIK MARIYADI'} )
                     </div>
                   </div>
                 </div>

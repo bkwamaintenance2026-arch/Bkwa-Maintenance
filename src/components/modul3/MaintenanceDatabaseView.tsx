@@ -122,7 +122,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
             </h1>
           </div>
           <p className="text-xs text-stone-400 mt-1">
-            Sistem Database Maintenance Quarry Purwosari: Input BD, Monitoring &amp; Update Bertingkat, History Breakdown, dan Analisis PA &amp; MTBF.
+            PT BATU KALI WELANG AMPUH (ETIKA09) • Database Maintenance: Input BD, Monitoring &amp; Update Bertingkat, History Breakdown, dan Analisis PA &amp; MTBF.
           </p>
         </div>
 
