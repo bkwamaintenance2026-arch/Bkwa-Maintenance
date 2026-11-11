@@ -528,7 +528,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             </span>
           </button>
 
-          {/* Sub-Modul 2: Catatan Harian Manpower */}
+          {/* Sub-Modul 2: Catatan Harian Manpower & Surat Perintah Lembur */}
           <button
             type="button"
             onClick={() => setActiveSubModule('catatan_harian')}
@@ -539,7 +539,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             }`}
           >
             <UserCheck className="w-4 h-4" />
-            <span>2. Catatan Harian Manpower</span>
+            <span>2. Catatan Harian &amp; Lembur</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
               activeSubModule === 'catatan_harian' ? 'bg-stone-950/20 text-stone-950 font-black' : 'bg-stone-900 text-amber-400'
             }`}>

@@ -31,9 +31,87 @@ import {
   UserCheck,
   ShieldCheck,
   CheckCheck,
-  Check
+  Check,
+  Coffee,
+  Sliders,
+  Award
 } from 'lucide-react';
 import { canUserEdit, canUserExportModule } from '../../utils/storage';
+
+// Helper hitung durasi lembur / jam kerja otomatis
+export const calculateOvertimeDuration = (
+  jamStart?: string,
+  jamStop?: string,
+  istirahatStr?: string
+): { minutes: number; formatted: string; totalHoursDecimal: number } => {
+  if (!jamStart || !jamStop) {
+    return { minutes: 0, formatted: '-', totalHoursDecimal: 0 };
+  }
+
+  const [startH, startM] = jamStart.split(':').map((v) => parseInt(v, 10) || 0);
+  const [stopH, stopM] = jamStop.split(':').map((v) => parseInt(v, 10) || 0);
+
+  let startMinutes = startH * 60 + startM;
+  let stopMinutes = stopH * 60 + stopM;
+
+  // Jika stop lebih kecil dari start, diasumsikan lembur lintas malam (misal 20:00 - 02:00)
+  if (stopMinutes < startMinutes) {
+    stopMinutes += 24 * 60;
+  }
+
+  const grossMinutes = stopMinutes - startMinutes;
+
+  // Parsing waktu istirahat
+  let breakMinutes = 0;
+  if (istirahatStr) {
+    const s = istirahatStr.toLowerCase().trim();
+    if (s === '-' || s === '' || s === '0' || s === 'tidak ada' || s === 'none') {
+      breakMinutes = 0;
+    } else if (s.includes('30') || s.includes('setengah')) {
+      breakMinutes = 30;
+    } else if (s.includes('1.5') || s.includes('1,5') || s.includes('90')) {
+      breakMinutes = 90;
+    } else if (s.includes('2') || s.includes('120')) {
+      breakMinutes = 120;
+    } else if (s.includes('1') || s.includes('60') || s.includes('satu')) {
+      breakMinutes = 60;
+    } else {
+      const num = parseInt(s.replace(/[^0-9]/g, ''), 10);
+      if (!isNaN(num)) {
+        breakMinutes = num <= 4 ? num * 60 : num;
+      }
+    }
+  }
+
+  const netMinutes = Math.max(0, grossMinutes - breakMinutes);
+  const hours = Math.floor(netMinutes / 60);
+  const mins = netMinutes % 60;
+
+  let formatted = '';
+  if (hours > 0 && mins > 0) {
+    formatted = `${hours} Jam ${mins} Mnt`;
+  } else if (hours > 0) {
+    formatted = `${hours} Jam`;
+  } else if (mins > 0) {
+    formatted = `${mins} Mnt`;
+  } else {
+    formatted = '0 Jam';
+  }
+
+  const totalHoursDecimal = parseFloat((netMinutes / 60).toFixed(1));
+  return { minutes: netMinutes, formatted, totalHoursDecimal };
+};
+
+interface LemburSignatories {
+  pembuatName: string;
+  pembuatJabatan: string;
+  diperiksaName: string;
+  diperiksaJabatan: string;
+  menyetujuiName: string;
+  menyetujuiJabatan: string;
+}
+
+const LEMBUR_SIGNATORIES_STORAGE_KEY = 'bkwa_saved_lembur_signatories_v1';
 
 interface CatatanHarianManpowerSubViewProps {
   logs: CatatanHarianManpowerRecord[];
@@ -99,10 +177,20 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const [isFullday, setIsFullday] = useState<boolean>(true);
   const [jamStart, setJamStart] = useState<string>('07:00');
   const [jamStop, setJamStop] = useState<string>('16:00');
+  const [istirahat, setIstirahat] = useState<string>('1 Jam');
   const [keterangan, setKeterangan] = useState<KeteranganCatatanManpower>('Hadir');
   const [catatan, setCatatan] = useState<string>('');
   const [dibuatOleh, setDibuatOleh] = useState<string>(defaultAdminName);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Perhitungan durasi aktif di form input secara realtime
+  const activeDuration = useMemo(() => {
+    return calculateOvertimeDuration(
+      isFullday ? '07:00' : jamStart,
+      isFullday ? '16:00' : jamStop,
+      istirahat
+    );
+  }, [isFullday, jamStart, jamStop, istirahat]);
 
   // Sync default admin name saat manpower list berubah
   useEffect(() => {
@@ -111,17 +199,51 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     }
   }, [defaultAdminName]);
 
-  // Print modal state - Default: Pembuat = Administrasi, Disetujui = Dodik Mariyadi
-  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
-  const [validatorKiri, setValidatorKiri] = useState<string>(defaultAdminName);
-  const [validatorKanan, setValidatorKanan] = useState<string>(kabagWorkshopName);
+  // =========================================================================
+  // SETUP VALIDASI 3 PIHAK: Dibuat Oleh, Diperiksa Oleh, Menyetujui (HRD)
+  // =========================================================================
+  const defaultSignatories = useMemo<LemburSignatories>(() => {
+    // Cari personil HRD / Management dari master manpower jika ada
+    const hrdPerson = manpowerList.find((m) =>
+      (m.jabatan || '').toLowerCase().includes('hrd') ||
+      (m.jabatan || '').toLowerCase().includes('personalia') ||
+      (m.jabatan || '').toLowerCase().includes('management')
+    );
 
-  // Update validatorKiri jika dibuatOleh berubah
-  useEffect(() => {
-    if (dibuatOleh) {
-      setValidatorKiri(dibuatOleh);
-    }
-  }, [dibuatOleh]);
+    return {
+      pembuatName: defaultAdminName,
+      pembuatJabatan: 'Administrasi Workshop',
+      diperiksaName: kabagWorkshopName,
+      diperiksaJabatan: 'Kabag Workshop',
+      menyetujuiName: hrdPerson?.nama || 'HRD / Management',
+      menyetujuiJabatan: hrdPerson?.jabatan || 'HRD & GA Dept.',
+    };
+  }, [defaultAdminName, manpowerList]);
+
+  const [signatories, setSignatories] = useState<LemburSignatories>(() => {
+    try {
+      const saved = localStorage.getItem(LEMBUR_SIGNATORIES_STORAGE_KEY);
+      if (saved) {
+        return { ...defaultSignatories, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return defaultSignatories;
+  });
+
+  const [showValidationSetup, setShowValidationSetup] = useState<boolean>(false);
+  const [validationSavedNotice, setValidationSavedNotice] = useState<boolean>(false);
+
+  const handleSaveSignatories = () => {
+    try {
+      localStorage.setItem(LEMBUR_SIGNATORIES_STORAGE_KEY, JSON.stringify(signatories));
+      setValidationSavedNotice(true);
+      setTimeout(() => setValidationSavedNotice(false), 2500);
+    } catch {}
+  };
+
+  // Print modal state
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [printFilterOnlyOvertime, setPrintFilterOnlyOvertime] = useState<boolean>(false);
 
   // Feedback alert
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -183,6 +305,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setIsFullday(true);
     setJamStart('07:00');
     setJamStop('16:00');
+    setIstirahat('1 Jam');
     setKeterangan('Hadir');
     setCatatan('');
     setDibuatOleh(defaultAdminName);
@@ -195,13 +318,13 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     if (enabled) {
       setJamStart('07:00');
       setJamStop('16:00');
+      setIstirahat('1 Jam');
     }
   };
 
   // Handle Pilih Jabatan
   const handleJabatanChange = (newJabatan: string) => {
     setSelectedJabatan(newJabatan);
-    // Jika nama yang terpilih saat ini tidak cocok dengan jabatan baru, reset nama
     if (selectedNama && newJabatan) {
       const match = manpowerList.find(
         (m) =>
@@ -219,7 +342,6 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setSelectedNama(newNama);
     if (!newNama) return;
 
-    // Otomatis isi Jabatan jika personil ditemukan di data Modul 2
     const person = manpowerList.find(
       (m) => (m.nama || '').toLowerCase().trim() === newNama.toLowerCase().trim()
     );
@@ -252,6 +374,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       (m) => (m.nama || '').toLowerCase().trim() === selectedNama.toLowerCase().trim()
     );
 
+    const actualStart = isFullday ? '07:00' : jamStart;
+    const actualStop = isFullday ? '16:00' : jamStop;
+    const calculated = calculateOvertimeDuration(actualStart, actualStop, istirahat);
+
     const payload = {
       tanggal: selectedDate,
       jabatan: selectedJabatan.trim() || (matchedPerson?.jabatan || 'UMUM'),
@@ -259,8 +385,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       manpowerId: matchedPerson?.id,
       nik: matchedPerson?.nik,
       isFullday,
-      jamStart: isFullday ? '07:00' : jamStart,
-      jamStop: isFullday ? '17:00' : jamStop,
+      jamStart: actualStart,
+      jamStop: actualStop,
+      istirahat: istirahat.trim() || '-',
+      durasiLembur: calculated.formatted,
       keterangan,
       catatan: catatan.trim(),
       dibuatOleh: dibuatOleh.trim() || defaultAdminName,
@@ -296,6 +424,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     setIsFullday(record.isFullday ?? true);
     setJamStart(record.jamStart || '07:00');
     setJamStop(record.jamStop || '16:00');
+    setIstirahat(record.istirahat || '1 Jam');
     setKeterangan((record.keterangan as KeteranganCatatanManpower) || 'Hadir');
     setCatatan(record.catatan || '');
     setDibuatOleh(record.dibuatOleh || defaultAdminName);
@@ -430,6 +559,15 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     });
   }, [logs, selectedDate, filterAllDates, filterKeterangan, filterJabatanTable, filterApprovalTable, searchTerm]);
 
+  // Data yang akan dicetak pada Modal Print Preview
+  const printItems = useMemo(() => {
+    const base = logs.filter((l) => l.tanggal === selectedDate);
+    if (printFilterOnlyOvertime) {
+      return base.filter((l) => (l.keterangan || '').toLowerCase() === 'lembur');
+    }
+    return base;
+  }, [logs, selectedDate, printFilterOnlyOvertime]);
+
   // Ringkasan KPI Harian pada tanggal yang dipilih
   const dailyStats = useMemo(() => {
     const listForDate = logs.filter((l) => l.tanggal === selectedDate);
@@ -444,7 +582,29 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     const disetujuiCount = listForDate.filter((l) => l.statusApproval === 'DISETUJUI').length;
     const pendingApprovalCount = listForDate.filter((l) => (l.statusApproval || 'MENUNGGU_APPROVAL') !== 'DISETUJUI').length;
 
-    return { total, hadir, sakit, ijin, cuti, dinasLuar, tukarJam, lembur, disetujuiCount, pendingApprovalCount };
+    // Total jam lembur kumulatif
+    let totalLemburMinutes = 0;
+    listForDate.forEach((item) => {
+      if (item.keterangan === 'Lembur') {
+        const dur = calculateOvertimeDuration(item.jamStart, item.jamStop, item.istirahat);
+        totalLemburMinutes += dur.minutes;
+      }
+    });
+    const totalLemburHoursDecimal = (totalLemburMinutes / 60).toFixed(1);
+
+    return { 
+      total, 
+      hadir, 
+      sakit, 
+      ijin, 
+      cuti, 
+      dinasLuar, 
+      tukarJam, 
+      lembur, 
+      disetujuiCount, 
+      pendingApprovalCount,
+      totalLemburHoursDecimal
+    };
   }, [logs, selectedDate]);
 
   // Helper Badge Keterangan
@@ -454,10 +614,85 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     );
     const badgeClass = opt ? opt.badgeClass : 'bg-stone-800 text-stone-300 border-stone-700';
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold border ${badgeClass}`}>
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono font-bold border ${badgeClass}`}>
         {ket || 'Hadir'}
       </span>
     );
+  };
+
+  // Helper Cetak Langsung melalui Hidden iFrame (100% Anti-Blank & Bebas Konflik CSS Media Print)
+  const handleDirectPrintElement = (containerId: string, docTitle: string) => {
+    const targetEl = document.getElementById(containerId);
+    if (!targetEl) {
+      window.print();
+      return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      window.print();
+      return;
+    }
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${docTitle}</title>
+          <style>
+            @page { size: landscape; margin: 8mm; }
+            * { box-sizing: border-box; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 10px; color: #111; margin: 0; padding: 10px; background: #fff; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+            th, td { border: 1px solid #333; padding: 4.5px 6px; text-align: left; vertical-align: middle; }
+            th { background-color: #f3f4f6; font-weight: bold; text-transform: uppercase; font-size: 9.5px; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            .font-mono { font-family: monospace; }
+            .header { text-align: center; border-bottom: 2px solid #222; padding-bottom: 6px; margin-bottom: 8px; }
+            .header h2 { margin: 0; font-size: 16px; font-weight: 900; letter-spacing: 0.5px; }
+            .header h3 { margin: 3px 0 0 0; font-size: 13px; font-weight: bold; }
+            .header p { margin: 2px 0 0 0; font-size: 9px; color: #555; }
+            .summary-box { display: flex; gap: 8px; margin-bottom: 8px; }
+            .summary-item { flex: 1; border: 1px solid #777; padding: 4px 6px; text-align: center; border-radius: 4px; background: #fafafa; }
+            .summary-label { font-size: 8px; color: #555; font-weight: bold; text-transform: uppercase; }
+            .summary-value { font-size: 11px; font-weight: bold; color: #111; }
+            .signatures { margin-top: 25px; display: flex; justify-content: space-around; text-align: center; page-break-inside: avoid; }
+            .sign-box { width: 220px; }
+            .sign-title { font-size: 9px; color: #444; display: block; }
+            .sign-job { font-size: 9.5px; font-weight: bold; color: #222; display: block; margin-top: 1px; }
+            .sign-space { height: 50px; }
+            .sign-name { border-top: 1px solid #333; padding-top: 3px; font-weight: bold; font-size: 10px; }
+            .sign-col-box { height: 36px; border: 1px dashed #aaa; border-radius: 3px; }
+          </style>
+        </head>
+        <body>
+          ${targetEl.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        try {
+          document.body.removeChild(iframe);
+        } catch {}
+      }, 2000);
+    }, 250);
   };
 
   // Export CSV
@@ -473,8 +708,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       'JABATAN',
       'NAMA PERSONIL',
       'NIK',
-      'JAM START',
-      'JAM STOP',
+      'JAM MULAI',
+      'JAM SELESAI',
+      'ISTIRAHAT',
+      'DURASI LEMBUR / KERJA',
       'STATUS FULLDAY',
       'KETERANGAN',
       'CATATAN',
@@ -484,26 +721,31 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       'TANGGAL APPROVAL'
     ];
 
-    const rows = filteredLogs.map((item, idx) => [
-      `"${idx + 1}"`,
-      `"${item.tanggal}"`,
-      `"${(item.jabatan || '').replace(/"/g, '""')}"`,
-      `"${(item.nama || '').replace(/"/g, '""')}"`,
-      `"${item.nik || ''}"`,
-      `"${item.jamStart || ''}"`,
-      `"${item.jamStop || ''}"`,
-      `"${item.isFullday ? 'YA (FULLDAY)' : 'TIDAK'}"`,
-      `"${item.keterangan || ''}"`,
-      `"${(item.catatan || '').replace(/"/g, '""')}"`,
-      `"${(item.dibuatOleh || 'Staf Administrasi').replace(/"/g, '""')}"`,
-      `"${(item.disetujuiOleh || kabagWorkshopLabel).replace(/"/g, '""')}"`,
-      `"${item.statusApproval === 'DISETUJUI' ? 'DISETUJUI' : 'MENUNGGU_APPROVAL'}"`,
-      `"${item.tglApproval || '-'}"`,
-    ]);
+    const rows = filteredLogs.map((item, idx) => {
+      const dur = calculateOvertimeDuration(item.jamStart, item.jamStop, item.istirahat);
+      return [
+        `"${idx + 1}"`,
+        `"${item.tanggal}"`,
+        `"${(item.jabatan || '').replace(/"/g, '""')}"`,
+        `"${(item.nama || '').replace(/"/g, '""')}"`,
+        `"${item.nik || ''}"`,
+        `"${item.jamStart || ''}"`,
+        `"${item.jamStop || ''}"`,
+        `"${item.istirahat || '-'}"`,
+        `"${dur.formatted}"`,
+        `"${item.isFullday ? 'YA (FULLDAY)' : 'TIDAK'}"`,
+        `"${item.keterangan || ''}"`,
+        `"${(item.catatan || '').replace(/"/g, '""')}"`,
+        `"${(item.dibuatOleh || 'Staf Administrasi').replace(/"/g, '""')}"`,
+        `"${(item.disetujuiOleh || kabagWorkshopLabel).replace(/"/g, '""')}"`,
+        `"${item.statusApproval === 'DISETUJUI' ? 'DISETUJUI' : 'MENUNGGU_APPROVAL'}"`,
+        `"${item.tglApproval || '-'}"`,
+      ];
+    });
 
     const csvContent =
       '\uFEFF' +
-      `"PT BATU KALI WELANG AMPUH (ETIKA) - LAPORAN CATATAN HARIAN MANPOWER"\r\n` +
+      `"PT. BATU KALI WELANG AMPUH (ETIKA09) - SURAT PERINTAH LEMBUR & CATATAN HARIAN"\r\n` +
       `"Tanggal Dipilih: ${selectedDate} | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID')} | Total Data: ${filteredLogs.length} Baris"\r\n\r\n` +
       [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
 
@@ -513,7 +755,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
     link.href = url;
     link.setAttribute(
       'download',
-      `Catatan_Harian_Manpower_PT_BKWA_${selectedDate}.csv`
+      `Surat_Perintah_Lembur_PT_BKWA_${selectedDate}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -563,11 +805,11 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               </span>
               <h2 className="text-base sm:text-lg font-black text-stone-100 font-mono tracking-wide flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-amber-500" />
-                <span>TANGGAL CATATAN HARIAN</span>
+                <span>TANGGAL CATATAN &amp; LEMBUR MANPOWER</span>
               </h2>
             </div>
             <p className="text-xs text-stone-400">
-              Pilih tanggal untuk melihat dan mencatat kehadiran, tukar jam, lembur, serta status dinas personil.
+              Pilih tanggal untuk melihat, mencatat penugasan lembur, shift kerja, dan mencetak <strong>Surat Perintah Lembur</strong>.
             </p>
           </div>
 
@@ -639,14 +881,16 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             <span className="text-stone-600">({selectedDate})</span>
           </div>
 
-          <span className="text-stone-400 hidden sm:inline">
-            Tercatat <strong className="text-stone-200">{dailyStats.total}</strong> personil pada tanggal ini
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-stone-400 hidden sm:inline">
+              Tercatat <strong className="text-stone-200">{dailyStats.total}</strong> personil ({dailyStats.lembur} Lembur)
+            </span>
+          </div>
         </div>
       </section>
 
       {/* ========================================================================= */}
-      {/* 2. KPI SUMMARY BAR KEHADIRAN HARIAN */}
+      {/* 2. KPI SUMMARY BAR KEHADIRAN & LEMBUR HARIAN */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2.5">
         <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
@@ -660,51 +904,25 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
         </div>
 
         <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-400 block mb-1 flex items-center gap-1">
+            <Clock className="w-3 h-3 text-orange-400" />
+            LEMBUR
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-orange-400">{dailyStats.lembur}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+          <span className="text-[10px] text-orange-300/80 font-mono block mt-0.5">
+            {dailyStats.totalLemburHoursDecimal} Jam
+          </span>
+        </div>
+
+        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 block mb-1">
             HADIR
           </span>
           <div className="flex items-baseline gap-1">
             <span className="text-xl font-black font-mono text-emerald-400">{dailyStats.hadir}</span>
-            <span className="text-[10px] font-mono text-stone-500">Org</span>
-          </div>
-        </div>
-
-        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-400 block mb-1">
-            SAKIT
-          </span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black font-mono text-rose-400">{dailyStats.sakit}</span>
-            <span className="text-[10px] font-mono text-stone-500">Org</span>
-          </div>
-        </div>
-
-        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 block mb-1">
-            IJIN
-          </span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black font-mono text-cyan-400">{dailyStats.ijin}</span>
-            <span className="text-[10px] font-mono text-stone-500">Org</span>
-          </div>
-        </div>
-
-        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-400 block mb-1">
-            CUTI
-          </span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black font-mono text-purple-400">{dailyStats.cuti}</span>
-            <span className="text-[10px] font-mono text-stone-500">Org</span>
-          </div>
-        </div>
-
-        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 block mb-1">
-            DINAS LUAR
-          </span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black font-mono text-blue-400">{dailyStats.dinasLuar}</span>
             <span className="text-[10px] font-mono text-stone-500">Org</span>
           </div>
         </div>
@@ -720,11 +938,41 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
         </div>
 
         <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-400 block mb-1">
-            LEMBUR
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 block mb-1">
+            DINAS LUAR
           </span>
           <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black font-mono text-orange-400">{dailyStats.lembur}</span>
+            <span className="text-xl font-black font-mono text-blue-400">{dailyStats.dinasLuar}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+        </div>
+
+        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 block mb-1">
+            IJIN
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-cyan-400">{dailyStats.ijin}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+        </div>
+
+        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-400 block mb-1">
+            SAKIT
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-rose-400">{dailyStats.sakit}</span>
+            <span className="text-[10px] font-mono text-stone-500">Org</span>
+          </div>
+        </div>
+
+        <div className="bg-stone-900/80 border border-stone-800 rounded-2xl p-3 shadow-md">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-400 block mb-1">
+            CUTI
+          </span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xl font-black font-mono text-purple-400">{dailyStats.cuti}</span>
             <span className="text-[10px] font-mono text-stone-500">Org</span>
           </div>
         </div>
@@ -754,7 +1002,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. FORM INPUT CATATAN HARIAN MANPOWER */}
+      {/* 3. FORM INPUT CATATAN HARIAN & SURAT PERINTAH LEMBUR */}
       {/* ========================================================================= */}
       <section
         id="form-catatan-harian-manpower"
@@ -764,15 +1012,15 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                FORM CATATAN
+                FORM CATATAN &amp; LEMBUR
               </span>
               <h3 className="text-sm sm:text-base font-black text-stone-100 font-mono tracking-wide flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-amber-500" />
-                <span>INPUT CATATAN HARIAN PERSONIL</span>
+                <span>INPUT CATATAN HARIAN / PENUGASAN LEMBUR</span>
               </h3>
             </div>
             <p className="text-xs text-stone-400 mt-1">
-              Dibuat oleh <strong>Administrasi</strong>, disetujui oleh <strong>Kabag Workshop (Dodik Mariyadi)</strong>. Atur jam kerja / Fullday, status kehadiran, dan catatan.
+              Dibuat oleh <strong>Administrasi</strong>, diperiksa oleh <strong>Kabag Workshop</strong>, disetujui oleh <strong>HRD</strong>. Durasi lembur dihitung otomatis.
             </p>
           </div>
 
@@ -795,7 +1043,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             {/* 1. TANGGAL CATATAN */}
             <div>
               <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
-                TANGGAL CATATAN
+                TANGGAL CATATAN / LEMBUR
               </label>
               <div className="relative">
                 <input
@@ -862,10 +1110,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
             {/* 4. JAM START - JAM STOP & FITUR FULLDAY */}
             <div className="sm:col-span-2 lg:col-span-2 bg-stone-950/70 border border-stone-800 p-3.5 rounded-2xl space-y-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <label className="text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-amber-400" />
-                  <span>JAM START — JAM STOP</span>
+                  <span>JAM MULAI — JAM SELESAI</span>
                 </label>
 
                 {/* FITUR TOGGLE / BUTTON FULLDAY */}
@@ -884,12 +1132,12 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-center">
                 <div>
-                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Start:</span>
+                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Mulai:</span>
                   <input
                     type="time"
-                    value={jamStart}
+                    value={isFullday ? '07:00' : jamStart}
                     disabled={isFullday}
                     onChange={(e) => setJamStart(e.target.value)}
                     className={`w-full bg-stone-800 border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 [color-scheme:dark] ${
@@ -899,11 +1147,12 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                     }`}
                   />
                 </div>
+
                 <div>
-                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Stop:</span>
+                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Selesai:</span>
                   <input
                     type="time"
-                    value={jamStop}
+                    value={isFullday ? '16:00' : jamStop}
                     disabled={isFullday}
                     onChange={(e) => setJamStop(e.target.value)}
                     className={`w-full bg-stone-800 border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 [color-scheme:dark] ${
@@ -913,13 +1162,42 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                     }`}
                   />
                 </div>
+
+                {/* ISTIRAHAT */}
+                <div>
+                  <span className="block text-[10px] font-mono text-stone-400 mb-1 flex items-center gap-1">
+                    <Coffee className="w-3 h-3 text-amber-400" />
+                    <span>Istirahat:</span>
+                  </span>
+                  <select
+                    value={istirahat}
+                    onChange={(e) => setIstirahat(e.target.value)}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-2.5 py-1.5 text-xs text-stone-100 font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="-">- (Tanpa Istirahat)</option>
+                    <option value="30 Menit">30 Menit</option>
+                    <option value="1 Jam">1 Jam (Standar)</option>
+                    <option value="1.5 Jam">1.5 Jam</option>
+                    <option value="2 Jam">2 Jam</option>
+                  </select>
+                </div>
+
+                {/* DURASI OTOMATIS */}
+                <div className="bg-stone-900 border border-amber-500/30 rounded-xl p-2 text-center">
+                  <span className="block text-[9px] font-mono text-amber-400 font-bold uppercase">
+                    DURASI DIHITUNG
+                  </span>
+                  <span className="text-sm font-black font-mono text-amber-300">
+                    {activeDuration.formatted}
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* 5. KETERANGAN (DROPDOWN: Hadir, Sakit, Ijin, Cuti, Dinas Luar, Tukar jam, Lembur) */}
             <div>
               <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400 mb-1">
-                KETERANGAN
+                KETERANGAN STATUS
               </label>
               <select
                 id="select-catatan-keterangan"
@@ -933,19 +1211,24 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                   </option>
                 ))}
               </select>
+              {keterangan === 'Lembur' && (
+                <span className="text-[10px] text-orange-400 font-mono mt-1 block font-bold">
+                  * Kategori Lembur: Otomatis masuk ke lembar Surat Perintah Lembur
+                </span>
+              )}
             </div>
 
-            {/* 6. CATATAN */}
+            {/* 6. CATATAN / URAIAN PEKERJAAN */}
             <div className="sm:col-span-2 lg:col-span-3">
               <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-stone-300 mb-1">
-                CATATAN
+                CATATAN / URAIAN PEKERJAAN LEMBUR
               </label>
               <input
                 id="field-catatan-teks"
                 type="text"
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
-                placeholder="Contoh: Tukar shift malam dengan Budi; Izin urusan keluarga; Dinas luar beli filter solar; Lembur perbaikan bucket loader..."
+                placeholder="Contoh: Lembur perbaikan sistem hidrolik Excavator PC200; Tukar shift malam dengan Budi; Penggantian seal cylinder..."
                 className="w-full bg-stone-800/90 border border-stone-700 rounded-xl px-3 py-2 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
@@ -984,7 +1267,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400 mb-1 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>APPROVAL: KABAG WORKSHOP</span>
+                  <span>DIPERIKSA: KABAG WORKSHOP</span>
                 </label>
                 <div className="flex items-center justify-between bg-stone-800/90 border border-emerald-500/30 rounded-xl px-3 py-2 text-xs">
                   <span className="font-bold text-emerald-200">
@@ -996,7 +1279,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                   </span>
                 </div>
                 <span className="text-[10px] text-stone-500 mt-1 block font-mono">
-                  * Otoritas pengesahan akhir laporan harian oleh Kabag Workshop
+                  * Otoritas pengesahan operasional workshop
                 </span>
               </div>
             </div>
@@ -1015,7 +1298,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 }`}
               >
                 <Save className="w-4 h-4" />
-                <span>{editingId ? 'Simpan Perubahan' : 'Simpan Catatan'}</span>
+                <span>{editingId ? 'Simpan Perubahan' : 'Simpan Catatan / Lembur'}</span>
               </button>
 
               {(editingId || selectedNama || selectedJabatan || catatan) && (
@@ -1040,7 +1323,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       </section>
 
       {/* ========================================================================= */}
-      {/* 4. TABEL CATATAN HARIAN MANPOWER */}
+      {/* 4. TABEL CATATAN HARIAN & LEMBUR MANPOWER */}
       {/* ========================================================================= */}
       <section className="bg-stone-900/90 border border-stone-800 rounded-2xl shadow-xl overflow-hidden">
         {/* Table Toolbar */}
@@ -1048,7 +1331,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm sm:text-base font-black text-stone-100 font-mono tracking-wide">
-                TABEL CATATAN HARIAN MANPOWER
+                TABEL CATATAN HARIAN &amp; LEMBUR MANPOWER
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 {filteredLogs.length} Data
@@ -1105,23 +1388,23 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
               <button
                 type="button"
                 onClick={handleBatchApproveCurrentDate}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap animate-pulse"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap"
                 title={`Setujui seluruh ${dailyStats.pendingApprovalCount} catatan tanggal ${selectedDate} sebagai Kabag Workshop`}
               >
                 <CheckCheck className="w-3.5 h-3.5" />
-                <span>Setujui Semua ({dailyStats.pendingApprovalCount} Menunggu)</span>
+                <span>Setujui Semua ({dailyStats.pendingApprovalCount})</span>
               </button>
             )}
 
-            {/* Tombol Cetak Dokumen */}
+            {/* Tombol Cetak Dokumen SURAT PERINTAH LEMBUR */}
             <button
               type="button"
               onClick={() => setShowPrintModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap"
-              title="Cetak lembar dokumen catatan harian manpower"
+              title="Cetak Surat Perintah Lembur & Catatan Harian Manpower"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Cetak Laporan</span>
+              <span>Cetak Surat Perintah Lembur</span>
             </button>
 
             {/* Tombol Export Excel */}
@@ -1162,11 +1445,13 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 <th className="py-3 px-3">TANGGAL</th>
                 <th className="py-3 px-3">JABATAN</th>
                 <th className="py-3 px-3">NAMA PERSONIL</th>
-                <th className="py-3 px-3">JAM START — STOP</th>
+                <th className="py-3 px-3">JAM MULAI — SELESAI</th>
+                <th className="py-3 px-3 text-center">ISTIRAHAT</th>
+                <th className="py-3 px-3 text-center">DURASI</th>
                 <th className="py-3 px-3">KETERANGAN</th>
-                <th className="py-3 px-3">CATATAN</th>
-                <th className="py-3 px-3">DIBUAT OLEH (ADMIN)</th>
-                <th className="py-3 px-3">APPROVAL KABAG WORKSHOP</th>
+                <th className="py-3 px-3">CATATAN / URAIAN</th>
+                <th className="py-3 px-3">DIBUAT OLEH</th>
+                <th className="py-3 px-3">APPROVAL KABAG</th>
                 <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                   AKSI
                 </th>
@@ -1177,6 +1462,8 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 filteredLogs.map((item, idx) => {
                   const isBeingEdited = editingId === item.id;
                   const isApproved = item.statusApproval === 'DISETUJUI';
+                  const durationObj = calculateOvertimeDuration(item.jamStart, item.jamStop, item.istirahat);
+
                   return (
                     <tr
                       key={item.id}
@@ -1215,11 +1502,11 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                         </div>
                       </td>
 
-                      {/* JAM START - JAM STOP & FULLDAY */}
+                      {/* JAM MULAI - SELESAI */}
                       <td className="py-3 px-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-stone-200 font-semibold">
-                            {item.jamStart || '07:00'} - {item.jamStop || '17:00'}
+                            {item.jamStart || '07:00'} - {item.jamStop || '16:00'}
                           </span>
                           {item.isFullday && (
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -1230,12 +1517,22 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                         </div>
                       </td>
 
+                      {/* ISTIRAHAT */}
+                      <td className="py-3 px-3 text-center font-mono text-stone-300 whitespace-nowrap">
+                        {item.istirahat || '-'}
+                      </td>
+
+                      {/* DURASI */}
+                      <td className="py-3 px-3 text-center font-mono font-bold text-amber-300 whitespace-nowrap">
+                        {item.durasiLembur || durationObj.formatted}
+                      </td>
+
                       {/* KETERANGAN */}
                       <td className="py-3 px-3 whitespace-nowrap">
                         {renderKeteranganBadge(item.keterangan)}
                       </td>
 
-                      {/* CATATAN */}
+                      {/* CATATAN / URAIAN */}
                       <td className="py-3 px-3 min-w-[180px]">
                         {item.catatan ? (
                           <p className="text-xs text-amber-200/90 bg-amber-950/20 border border-amber-900/30 rounded-lg px-2.5 py-1 whitespace-pre-wrap">
@@ -1251,9 +1548,6 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-sky-200 text-xs">
                             {item.dibuatOleh || 'Staf Administrasi'}
-                          </span>
-                          <span className="text-[10px] bg-sky-950/60 text-sky-300 border border-sky-800/60 px-1.5 py-0.5 rounded font-mono font-bold">
-                            Admin
                           </span>
                         </div>
                       </td>
@@ -1344,10 +1638,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-stone-400 text-xs">
+                  <td colSpan={12} className="py-12 text-center text-stone-400 text-xs">
                     <div className="space-y-1">
                       <p className="font-bold text-stone-300">
-                        Belum ada catatan harian manpower {filterAllDates ? '' : `untuk tanggal ${selectedDate}`}.
+                        Belum ada catatan harian / penugasan lembur {filterAllDates ? '' : `untuk tanggal ${selectedDate}`}.
                       </p>
                       <p className="text-stone-500">
                         Gunakan form di atas untuk mencatat kehadiran, jam kerja, atau status personil.
@@ -1362,234 +1656,427 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
       </section>
 
       {/* ========================================================================= */}
-      {/* 5. MODAL CETAK LEMBAR DOKUMEN CATATAN HARIAN MANPOWER */}
+      {/* 5. MODAL CETAK LEMBAR DOKUMEN: SURAT PERINTAH LEMBUR */}
       {/* ========================================================================= */}
       {showPrintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white text-stone-950 border border-stone-300 rounded-2xl w-full max-w-4xl shadow-2xl my-8 overflow-hidden font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-sm overflow-y-auto no-print-backdrop">
+          <div className="bg-white text-stone-950 border border-stone-300 rounded-2xl w-full max-w-5xl shadow-2xl my-6 overflow-hidden font-sans flex flex-col max-h-[92vh]">
             {/* Modal Header Bar */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-stone-200 bg-stone-100">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between px-6 py-3.5 border-b border-stone-200 bg-stone-100 shrink-0">
+              <div className="flex items-center gap-2.5">
                 <Printer className="w-5 h-5 text-amber-600" />
-                <h3 className="text-base font-bold text-stone-900 font-mono">
-                  PREVIEW CETAK: CATATAN HARIAN MANPOWER
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPrintModal(false)}
-                className="text-stone-500 hover:text-stone-800 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Input Form Validasi Label Manual sebelum Cetak */}
-            <div className="p-4 bg-stone-50 border-b border-stone-200 text-xs grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono">
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                  Dibuat Oleh (Administrasi):
-                </label>
-                <select
-                  value={validatorKiri}
-                  onChange={(e) => setValidatorKiri(e.target.value)}
-                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  {adminPersonnelList.map((a) => (
-                    <option key={a.id} value={a.nama}>
-                      {a.nama} ({a.jabatan || 'Administrasi'})
-                    </option>
-                  ))}
-                  {!adminPersonnelList.some((a) => a.nama.toLowerCase() === validatorKiri.toLowerCase()) && (
-                    <option value={validatorKiri}>{validatorKiri}</option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">
-                  Disetujui Oleh (Kabag Workshop):
-                </label>
-                <input
-                  type="text"
-                  value={validatorKanan}
-                  onChange={(e) => setValidatorKanan(e.target.value)}
-                  placeholder="Dodik Mariyadi"
-                  className="w-full bg-white border border-stone-300 rounded-lg px-3 py-1.5 text-xs text-stone-900 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            </div>
-
-            {/* Print Paper Content */}
-            <div id="print-area-catatan-harian" className="p-8 space-y-5 text-xs bg-white text-stone-900">
-              {/* Kop Resmi PT BATU KALI WELANG AMPUH (ETIKA) */}
-              <div className="border-b-2 border-stone-900 pb-3 flex justify-between items-center">
                 <div>
-                  <h1 className="text-base sm:text-lg font-black tracking-wider text-stone-900 uppercase">
-                    PT BATU KALI WELANG AMPUH (ETIKA)
-                  </h1>
-                  <p className="text-[11px] text-stone-600 font-medium">
-                    DIVISI OPERATION &amp; WORKSHOP — PENGAWASAN KEGIATAN &amp; TENAGA KERJA
-                  </p>
-                  <p className="text-[10px] text-stone-500 font-mono">
-                    Site Quarry: Ds. Welang, Kec. Kraton, Kab. Pasuruan, Jawa Timur
-                  </p>
-                </div>
-                <div className="text-right font-mono text-[11px]">
-                  <span className="px-2.5 py-1 bg-stone-100 border border-stone-400 font-bold rounded">
-                    FORM: MANPOWER-DAILY
+                  <h3 className="text-sm sm:text-base font-black text-stone-900 font-mono tracking-wide uppercase">
+                    PREVIEW CETAK: SURAT PERINTAH LEMBUR
+                  </h3>
+                  <span className="text-[11px] text-stone-600 font-mono">
+                    PT. BATU KALI WELANG AMPUH (ETIKA09) • Tanggal: {formatDisplayDateIndo(selectedDate)}
                   </span>
-                  <p className="text-[10px] text-stone-500 mt-1">
-                    Tgl Cetak: {new Date().toLocaleDateString('id-ID')}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Tombol Buka Setup Validasi */}
+                <button
+                  type="button"
+                  onClick={() => setShowValidationSetup(!showValidationSetup)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition border ${
+                    showValidationSetup
+                      ? 'bg-amber-500 text-stone-950 border-amber-600 shadow'
+                      : 'bg-stone-200 text-stone-800 hover:bg-stone-300 border-stone-300'
+                  }`}
+                  title="Atur penandatangan Dibuat Oleh, Diperiksa Oleh, dan Menyetujui (HRD)"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Setup Validasi 3 Pihak</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="text-stone-500 hover:text-stone-800 p-1.5 rounded-lg hover:bg-stone-200 transition"
+                  title="Tutup Preview"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Collapsible Setup Validasi 3 Pihak */}
+            {showValidationSetup && (
+              <div className="p-4 bg-stone-900 text-stone-100 border-b border-stone-800 shrink-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400">
+                    <Award className="w-4 h-4 text-amber-400" />
+                    <span>KONFIGURASI SETUP VALIDASI PENANDATANGAN SURAT PERINTAH LEMBUR</span>
+                  </div>
+                  {validationSavedNotice && (
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700">
+                      Tersimpan!
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+                  {/* 1. Dibuat Oleh */}
+                  <div className="p-2.5 bg-stone-950 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-bold text-sky-400 uppercase block">
+                      1. Dibuat Oleh (Administrasi Workshop)
+                    </span>
+                    <select
+                      value={signatories.pembuatName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          pembuatName: e.target.value,
+                          pembuatJabatan: chosen?.jabatan || prev.pembuatJabatan || 'Administrasi Workshop',
+                        }));
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1.5 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.pembuatJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, pembuatJabatan: e.target.value }))}
+                      placeholder="Jabatan Pembuat"
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1 text-[11px] text-stone-300 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* 2. Diperiksa Oleh */}
+                  <div className="p-2.5 bg-stone-950 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase block">
+                      2. Diperiksa Oleh (Kabag Workshop)
+                    </span>
+                    <select
+                      value={signatories.diperiksaName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          diperiksaName: e.target.value,
+                          diperiksaJabatan: chosen?.jabatan || prev.diperiksaJabatan || 'Kabag Workshop',
+                        }));
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1.5 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.diperiksaJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, diperiksaJabatan: e.target.value }))}
+                      placeholder="Jabatan Pemeriksa"
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1 text-[11px] text-stone-300 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* 3. Menyetujui (HRD) */}
+                  <div className="p-2.5 bg-stone-950 border border-stone-800 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-bold text-purple-400 uppercase block">
+                      3. Menyetujui (HRD / Management)
+                    </span>
+                    <select
+                      value={signatories.menyetujuiName}
+                      onChange={(e) => {
+                        const chosen = manpowerList.find((m) => m.nama === e.target.value);
+                        setSignatories((prev) => ({
+                          ...prev,
+                          menyetujuiName: e.target.value,
+                          menyetujuiJabatan: chosen?.jabatan || prev.menyetujuiJabatan || 'HRD / Management',
+                        }));
+                      }}
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1.5 text-xs text-stone-100 font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    >
+                      <option value="">-- Pilih dari Manpower --</option>
+                      {manpowerList.map((m) => (
+                        <option key={m.id} value={m.nama}>
+                          {m.nama} ({m.jabatan})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={signatories.menyetujuiJabatan}
+                      onChange={(e) => setSignatories((prev) => ({ ...prev, menyetujuiJabatan: e.target.value }))}
+                      placeholder="Jabatan Menyetujui (HRD)"
+                      className="w-full bg-stone-900 border border-stone-700 rounded px-2.5 py-1 text-[11px] text-stone-300 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSaveSignatories}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-lg text-xs transition shadow"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan Setup Validasi</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Secondary Toolbar: Filter Bar for Print Content */}
+            <div className="px-6 py-2.5 bg-stone-50 border-b border-stone-200 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-stone-600 font-semibold">Tampilkan di Dokumen:</span>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilterOnlyOvertime(false)}
+                  className={`px-3 py-1 rounded-lg font-mono font-bold transition text-xs border ${
+                    !printFilterOnlyOvertime
+                      ? 'bg-stone-900 text-white border-stone-900 shadow-sm'
+                      : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-100'
+                  }`}
+                >
+                  Semua Catatan ({dailyStats.total} Org)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintFilterOnlyOvertime(true)}
+                  className={`px-3 py-1 rounded-lg font-mono font-bold transition text-xs border ${
+                    printFilterOnlyOvertime
+                      ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                      : 'bg-white text-orange-700 border-orange-300 hover:bg-orange-50'
+                  }`}
+                >
+                  Hanya Karyawan Lembur ({dailyStats.lembur} Org)
+                </button>
+              </div>
+
+              <div className="font-mono text-stone-600 text-[11px]">
+                Total Jam Lembur Kumulatif: <strong className="text-orange-700">{dailyStats.totalLemburHoursDecimal} Jam</strong>
+              </div>
+            </div>
+
+            {/* Document Printable Sheet Scroll Container */}
+            <div className="p-6 overflow-y-auto bg-stone-200/70 font-sans printable-report-modal flex-1">
+              {/* Paper Element to be Printed */}
+              <div
+                id="printable-lembur-area"
+                className="bg-white text-stone-950 p-7 rounded-xl shadow-md border border-stone-300 space-y-4 max-w-4xl mx-auto"
+              >
+                {/* Kop Surat PT. BATU KALI WELANG AMPUH (ETIKA09) */}
+                <div className="header text-center border-b-2 border-stone-900 pb-3 space-y-0.5">
+                  <h2 className="text-base sm:text-lg font-black tracking-wider uppercase font-mono text-stone-950">
+                    PT. BATU KALI WELANG AMPUH (ETIKA09)
+                  </h2>
+                  <h3 className="text-sm font-black font-mono text-stone-900 uppercase tracking-wide">
+                    SURAT PERINTAH LEMBUR
+                  </h3>
+                  <p className="text-[10px] text-stone-600 font-mono">
+                    DIVISI OPERATION &amp; WORKSHOP — QUARRY PURWOSARI, PASURUAN • Tanggal: {formatDisplayDateIndo(selectedDate)} ({selectedDate})
                   </p>
                 </div>
-              </div>
 
-              {/* Judul Dokumen */}
-              <div className="text-center py-1">
-                <h2 className="text-sm sm:text-base font-black uppercase tracking-wide text-stone-950 underline decoration-2">
-                  LAPORAN CATATAN HARIAN MANPOWER
-                </h2>
-                <p className="text-xs text-stone-600 font-mono mt-0.5">
-                  Tanggal: {formatDisplayDateIndo(selectedDate)} ({selectedDate})
-                </p>
-              </div>
+                {/* Ringkasan Informasi Dokumen Lembur */}
+                <div className="summary-box grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
+                  <div className="summary-item p-2 rounded border border-stone-300 bg-stone-50">
+                    <span className="summary-label text-[9px] text-stone-600 block">TANGGAL PENUGASAN</span>
+                    <span className="summary-value font-bold text-stone-900">{selectedDate}</span>
+                  </div>
+                  <div className="summary-item p-2 rounded border border-stone-300 bg-stone-50">
+                    <span className="summary-label text-[9px] text-stone-600 block">TOTAL PERSONIL</span>
+                    <span className="summary-value font-bold text-stone-900">{printItems.length} Orang</span>
+                  </div>
+                  <div className="summary-item p-2 rounded border border-orange-300 bg-orange-50">
+                    <span className="summary-label text-[9px] text-orange-800 block">PERSONIL LEMBUR</span>
+                    <span className="summary-value font-bold text-orange-900">{dailyStats.lembur} Orang</span>
+                  </div>
+                  <div className="summary-item p-2 rounded border border-orange-300 bg-orange-50">
+                    <span className="summary-label text-[9px] text-orange-800 block">TOTAL JAM LEMBUR</span>
+                    <span className="summary-value font-bold text-orange-900">{dailyStats.totalLemburHoursDecimal} Jam</span>
+                  </div>
+                </div>
 
-              {/* Ringkasan Kehadiran */}
-              <div className="grid grid-cols-3 sm:grid-cols-9 gap-2 text-center text-[10px] font-mono">
-                <div className="p-1.5 bg-stone-50 border border-stone-300 rounded">
-                  <span className="text-stone-500 block">Total</span>
-                  <strong className="text-stone-900 text-xs">{dailyStats.total}</strong>
-                </div>
-                <div className="p-1.5 bg-emerald-50 border border-emerald-300 rounded">
-                  <span className="text-emerald-800 block">Hadir</span>
-                  <strong className="text-emerald-700 text-xs">{dailyStats.hadir}</strong>
-                </div>
-                <div className="p-1.5 bg-rose-50 border border-rose-300 rounded">
-                  <span className="text-rose-800 block">Sakit</span>
-                  <strong className="text-rose-700 text-xs">{dailyStats.sakit}</strong>
-                </div>
-                <div className="p-1.5 bg-cyan-50 border border-cyan-300 rounded">
-                  <span className="text-cyan-800 block">Ijin</span>
-                  <strong className="text-cyan-700 text-xs">{dailyStats.ijin}</strong>
-                </div>
-                <div className="p-1.5 bg-purple-50 border border-purple-300 rounded">
-                  <span className="text-purple-800 block">Cuti</span>
-                  <strong className="text-purple-700 text-xs">{dailyStats.cuti}</strong>
-                </div>
-                <div className="p-1.5 bg-blue-50 border border-blue-300 rounded">
-                  <span className="text-blue-800 block">Dinas</span>
-                  <strong className="text-blue-700 text-xs">{dailyStats.dinasLuar}</strong>
-                </div>
-                <div className="p-1.5 bg-amber-50 border border-amber-300 rounded">
-                  <span className="text-amber-800 block">Tukar/Lembur</span>
-                  <strong className="text-amber-700 text-xs">{dailyStats.tukarJam + dailyStats.lembur}</strong>
-                </div>
-                <div className="p-1.5 bg-emerald-100 border border-emerald-400 rounded">
-                  <span className="text-emerald-900 block font-bold">Disetujui</span>
-                  <strong className="text-emerald-800 text-xs">{dailyStats.disetujuiCount}</strong>
-                </div>
-                <div className="p-1.5 bg-amber-100 border border-amber-400 rounded">
-                  <span className="text-amber-900 block font-bold">Pending</span>
-                  <strong className="text-amber-800 text-xs">{dailyStats.pendingApprovalCount}</strong>
-                </div>
-              </div>
-
-              {/* Tabel Cetak */}
-              <div className="border border-stone-400 rounded overflow-hidden">
-                <table className="w-full text-left text-[11px] divide-y divide-stone-300">
-                  <thead className="bg-stone-100 text-stone-800 font-mono font-bold uppercase text-[10px]">
-                    <tr>
-                      <th className="py-2 px-2 text-center w-8">No</th>
-                      <th className="py-2 px-2">Jabatan</th>
-                      <th className="py-2 px-2">Nama Personil</th>
-                      <th className="py-2 px-2">Jam Kerja</th>
-                      <th className="py-2 px-2">Keterangan</th>
-                      <th className="py-2 px-2">Catatan Khusus</th>
-                      <th className="py-2 px-2">Dibuat Oleh</th>
-                      <th className="py-2 px-2">Approval</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-200">
-                    {filteredLogs.map((item, idx) => (
-                      <tr key={item.id} className={idx % 2 === 1 ? 'bg-stone-50' : 'bg-white'}>
-                        <td className="py-2 px-2 text-center font-mono text-stone-600">{idx + 1}</td>
-                        <td className="py-2 px-2 font-semibold text-stone-800">{item.jabatan || '-'}</td>
-                        <td className="py-2 px-2 font-bold text-stone-900">{item.nama}</td>
-                        <td className="py-2 px-2 font-mono text-stone-700 whitespace-nowrap">
-                          {item.jamStart} - {item.jamStop} {item.isFullday ? '(Fullday)' : ''}
-                        </td>
-                        <td className="py-2 px-2 font-bold text-stone-800">{item.keterangan || 'Hadir'}</td>
-                        <td className="py-2 px-2 text-stone-700">{item.catatan || '-'}</td>
-                        <td className="py-2 px-2 font-semibold text-sky-900 whitespace-nowrap">
-                          {item.dibuatOleh || 'Administrasi'}
-                        </td>
-                        <td className="py-2 px-2 font-mono whitespace-nowrap">
-                          {item.statusApproval === 'DISETUJUI' ? (
-                            <span className="text-emerald-700 font-bold">
-                              Disetujui ({kabagWorkshopName})
-                            </span>
-                          ) : (
-                            <span className="text-amber-700 font-medium">
-                              Menunggu
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredLogs.length === 0 && (
+                {/* Tabel Rapih Kolom: No, Nama Karyawan, Jam Mulai, Jam Selesai, Istirahat, Durasi, Keterangan, Tandatangan */}
+                <div className="border border-stone-400 rounded overflow-hidden">
+                  <table className="w-full text-left text-[10.5px] border-collapse">
+                    <thead className="bg-stone-100 text-stone-900 font-mono font-bold uppercase text-[9.5px] border-b border-stone-400">
                       <tr>
-                        <td colSpan={8} className="py-6 text-center text-stone-500 italic">
-                          Tidak ada catatan manpower untuk tanggal ini.
-                        </td>
+                        <th className="py-2 px-2 text-center w-8">NO</th>
+                        <th className="py-2 px-3">NAMA KARYAWAN</th>
+                        <th className="py-2 px-2 text-center w-20">JAM MULAI</th>
+                        <th className="py-2 px-2 text-center w-20">JAM SELESAI</th>
+                        <th className="py-2 px-2 text-center w-16">ISTIRAHAT</th>
+                        <th className="py-2 px-2 text-center w-24">DURASI</th>
+                        <th className="py-2 px-3">KETERANGAN / PEKERJAAN</th>
+                        <th className="py-2 px-3 text-center w-28">TANDATANGAN</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-stone-300 text-[10px]">
+                      {printItems.map((item, idx) => {
+                        const dur = calculateOvertimeDuration(item.jamStart, item.jamStop, item.istirahat);
+                        const isLembur = (item.keterangan || '').toLowerCase() === 'lembur';
 
-              {/* Dua Kolom Validasi Tanda Tangan: Dibuat Oleh Administrasi & Disetujui Oleh Kabag Workshop */}
-              <div className="pt-8 grid grid-cols-2 gap-12 text-center font-mono text-xs">
-                <div>
-                  <p className="text-stone-600 mb-1">Dibuat Oleh:</p>
-                  <p className="font-bold text-stone-900">Administrasi Workshop</p>
-                  <div className="h-16 flex items-end justify-center">
-                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan )</span>
-                  </div>
-                  <p className="font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
-                    {validatorKiri || '( Administrasi )'}
-                  </p>
+                        return (
+                          <tr
+                            key={item.id}
+                            className={idx % 2 === 1 ? 'bg-stone-50' : 'bg-white'}
+                          >
+                            {/* NO */}
+                            <td className="py-2 px-2 text-center font-mono text-stone-600 font-bold">
+                              {idx + 1}
+                            </td>
+
+                            {/* NAMA KARYAWAN */}
+                            <td className="py-2 px-3">
+                              <span className="font-bold text-stone-950 block text-[11px]">{item.nama}</span>
+                              <span className="text-[9px] text-stone-600 font-mono block">
+                                {item.jabatan || 'Workshop'} {item.nik ? `• NIK: ${item.nik}` : ''}
+                              </span>
+                            </td>
+
+                            {/* JAM MULAI */}
+                            <td className="py-2 px-2 text-center font-mono text-stone-900 whitespace-nowrap">
+                              {item.jamStart || '07:00'}
+                            </td>
+
+                            {/* JAM SELESAI */}
+                            <td className="py-2 px-2 text-center font-mono text-stone-900 whitespace-nowrap">
+                              {item.jamStop || '16:00'}
+                            </td>
+
+                            {/* ISTIRAHAT */}
+                            <td className="py-2 px-2 text-center font-mono text-stone-700 whitespace-nowrap">
+                              {item.istirahat || '-'}
+                            </td>
+
+                            {/* DURASI (OTOMATIS HITUNG) */}
+                            <td className="py-2 px-2 text-center font-mono font-bold text-stone-950 whitespace-nowrap bg-stone-50">
+                              {item.durasiLembur || dur.formatted}
+                            </td>
+
+                            {/* KETERANGAN */}
+                            <td className="py-2 px-3">
+                              <div className="space-y-0.5">
+                                <span className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
+                                  isLembur ? 'bg-orange-100 text-orange-900 border border-orange-300' : 'bg-stone-100 text-stone-700'
+                                }`}>
+                                  {item.keterangan || 'Lembur'}
+                                </span>
+                                {item.catatan ? (
+                                  <p className="text-[9.5px] text-stone-800 whitespace-pre-wrap leading-tight mt-0.5">
+                                    {item.catatan}
+                                  </p>
+                                ) : (
+                                  <span className="text-stone-400 italic text-[9px] block">-</span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* TANDATANGAN (KOLOM TTD KARYAWAN) */}
+                            <td className="py-2 px-2 text-center align-middle">
+                              <div className="sign-col-box flex items-center justify-center border border-dashed border-stone-300 rounded h-9 bg-white">
+                                <span className="text-[8px] text-stone-400 font-mono italic">Paraf ({idx + 1})</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {printItems.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-stone-500 italic">
+                            Tidak ada personil catatan harian / lembur untuk tanggal {selectedDate}.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
-                <div>
-                  <p className="text-stone-600 mb-1">Disetujui Oleh:</p>
-                  <p className="font-bold text-stone-900">Kabag Workshop</p>
-                  <div className="h-16 flex items-end justify-center">
-                    <span className="text-[10px] text-stone-400 italic">( Tanda Tangan &amp; Cap )</span>
+                {/* Tiga Kolom Validasi Pengesahan: Dibuat Oleh, Diperiksa Oleh, Menyetujui (HRD) */}
+                <div className="signatures pt-6 grid grid-cols-3 gap-6 text-center font-mono text-xs">
+                  {/* Dibuat Oleh */}
+                  <div className="sign-box">
+                    <span className="sign-title text-stone-600">Dibuat Oleh:</span>
+                    <span className="sign-job font-bold text-stone-900">
+                      {signatories.pembuatJabatan || 'Administrasi Workshop'}
+                    </span>
+                    <div className="sign-space h-14 flex items-end justify-center">
+                      <span className="text-[9px] text-stone-400 italic">( Tanda Tangan )</span>
+                    </div>
+                    <p className="sign-name font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
+                      {signatories.pembuatName || defaultAdminName}
+                    </p>
                   </div>
-                  <p className="font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
-                    {validatorKanan || kabagWorkshopName}
-                  </p>
+
+                  {/* Diperiksa Oleh */}
+                  <div className="sign-box">
+                    <span className="sign-title text-stone-600">Diperiksa Oleh:</span>
+                    <span className="sign-job font-bold text-stone-900">
+                      {signatories.diperiksaJabatan || 'Kabag Workshop'}
+                    </span>
+                    <div className="sign-space h-14 flex items-end justify-center">
+                      <span className="text-[9px] text-stone-400 italic">( Tanda Tangan )</span>
+                    </div>
+                    <p className="sign-name font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
+                      {signatories.diperiksaName || kabagWorkshopName}
+                    </p>
+                  </div>
+
+                  {/* Menyetujui (HRD) */}
+                  <div className="sign-box">
+                    <span className="sign-title text-stone-600">Menyetujui:</span>
+                    <span className="sign-job font-bold text-stone-900">
+                      {signatories.menyetujuiJabatan || 'HRD / Management'}
+                    </span>
+                    <div className="sign-space h-14 flex items-end justify-center">
+                      <span className="text-[9px] text-stone-400 italic">( Tanda Tangan &amp; Cap HRD )</span>
+                    </div>
+                    <p className="sign-name font-bold text-stone-900 border-t border-stone-800 pt-1 mt-1">
+                      {signatories.menyetujuiName || 'HRD & GA'}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-stone-200 bg-stone-100">
-              <button
-                type="button"
-                onClick={() => setShowPrintModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 bg-stone-200 hover:bg-stone-300 transition"
-              >
-                Tutup
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Lembar Dokumen</span>
-              </button>
+            {/* Modal Bottom Actions */}
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-stone-200 bg-stone-100 shrink-0">
+              <span className="text-xs text-stone-600 font-mono hidden sm:inline">
+                * Dokumen akan dicetak dalam format lanskap resmi PT. BATU KALI WELANG AMPUH (ETIKA09)
+              </span>
+
+              <div className="flex items-center gap-2.5 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-700 bg-stone-200 hover:bg-stone-300 transition"
+                >
+                  Tutup
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleDirectPrintElement(
+                      'printable-lembur-area',
+                      `Surat_Perintah_Lembur_PT_BATU_KALI_WELANG_AMPUH_ETIKA09_${selectedDate}`
+                    )
+                  }
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Cetak Surat Perintah Lembur</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

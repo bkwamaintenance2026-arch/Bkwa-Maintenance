@@ -155,7 +155,7 @@ export interface AssetUnit {
 // --- MODUL 2: DATA MANPOWER ---
 export type ManpowerJabatan = 
   | 'OWNER'
-  | 'DIREKTUR / MANAGEMENT'
+  | 'MANAGEMENT'
   | 'KABAG WORKSHOP'
   | 'ADMINISTRASI'
   | 'MEKANIK'
@@ -170,7 +170,7 @@ export type ManpowerJabatan =
 
 export const MANPOWER_JABATAN_OPTIONS: ManpowerJabatan[] = [
   'OWNER',
-  'DIREKTUR / MANAGEMENT',
+  'MANAGEMENT',
   'KABAG WORKSHOP',
   'ADMINISTRASI',
   'MEKANIK',
@@ -277,6 +277,8 @@ export interface CatatanHarianManpowerRecord {
   isFullday: boolean;           // Fitur Fullday (true/false)
   jamStart: string;             // Jam Start (HH:mm)
   jamStop: string;              // Jam Stop (HH:mm)
+  istirahat?: string;           // Istirahat (cth: "1 Jam", "30 Menit", "-")
+  durasiLembur?: string;        // Durasi lembur otomatis (cth: "4 Jam")
   keterangan: KeteranganCatatanManpower | string; // Hadir, Sakit, Ijin, Cuti, Dinas Luar, Tukar jam, Lembur
   catatan: string;              // Catatan
   dibuatOleh?: string;          // Personil Administrasi yang membuat catatan (Modul 2 Manpower)
