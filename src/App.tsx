@@ -324,6 +324,7 @@ export default function App() {
       startJob?: string;
       jamStart?: string;
       jamFinish?: string;
+      endDate?: string;
       detailKerusakan?: string;
       progress?: import('./types').BreakdownProgressOption | string;
       statusUnit?: import('./types').BreakdownStatusUnitOption | string;

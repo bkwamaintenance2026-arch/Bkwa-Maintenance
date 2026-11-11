@@ -36,7 +36,8 @@
 
   /* Hilangkan tombol, input manual header, dan scrollbars pada lembar print */
   .no-print,
-  .no-print * {
+  .no-print *,
+  .no-print-backdrop {
     display: none !important;
     visibility: hidden !important;
   }

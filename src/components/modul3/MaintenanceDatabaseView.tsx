@@ -31,6 +31,7 @@ interface MaintenanceDatabaseViewProps {
       startJob?: string;
       jamStart?: string;
       jamFinish?: string;
+      endDate?: string;
       detailKerusakan?: string;
       progress?: BreakdownProgressOption | string;
       statusUnit?: BreakdownStatusUnitOption | string;

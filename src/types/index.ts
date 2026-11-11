@@ -436,6 +436,7 @@ export interface BreakdownUpdateEntry {
   jamStart?: string; // Jam mulai pekerjaan (format 24 jam HH:mm, cth: 08:00, 14:30)
   jamFinish?: string; // Jam selesai pekerjaan (format 24 jam HH:mm, cth: 17:00, 22:15)
   finishJob?: string; // Jam/tanggal selesai (alias kompatibel)
+  endDate?: string; // Tanggal selesai pekerjaan (YYYY-MM-DD)
   jamPekerjaan?: string; // Rentang jam kerja (alias teks)
   detailKerusakan: string; // Detail kerusakan perbaikan
   detailPekerjaan?: string; // Detail tindakan / perbaikan (alias kompatibel)
@@ -455,6 +456,7 @@ export interface BreakdownRecord {
   id: string;
   noNotifikasi: string; // Format otomatis nomor laporan (Contoh: 260001)
   noMaintenanceOrder?: string; // Format: 2 digit th + 4 digit no urut (Contoh: 260001)
+  endDate?: string; // Tanggal selesai breakdown
   
   // Sub Modul 1 Fields
   tanggal: string;      // Tanggal Unit mulai Breakdown

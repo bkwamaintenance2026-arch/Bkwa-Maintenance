@@ -1678,6 +1678,7 @@ export function updateBreakdownActivity(
     startJob?: string;
     jamStart?: string;
     jamFinish?: string;
+    endDate?: string;
     detailKerusakan?: string;
     progress?: BreakdownProgressOption | string;
     statusUnit?: BreakdownStatusUnitOption | string;
@@ -1726,6 +1727,8 @@ export function updateBreakdownActivity(
     startJob: today,
     jamStart: updateData.jamStart || target.jamStart || '',
     jamFinish: updateData.jamFinish || target.jamFinish || '',
+    finishJob: updateData.endDate || today,
+    endDate: updateData.endDate || today,
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan || target.detailProblem || '',
     detailPekerjaan: updateData.detailKerusakan || target.detailKerusakan || target.detailProblem || '',
     progress: updateData.progress || target.progress || 'On Progress',
@@ -1744,6 +1747,7 @@ export function updateBreakdownActivity(
     startJob: updateData.startJob || target.startJob,
     jamStart: updateData.jamStart !== undefined ? updateData.jamStart : target.jamStart,
     jamFinish: updateData.jamFinish !== undefined ? updateData.jamFinish : target.jamFinish,
+    endDate: updateData.endDate || target.endDate,
     detailKerusakan: updateData.detailKerusakan || target.detailKerusakan,
     component: updateData.component !== undefined ? (updateData.component as BreakdownComponentOption) : target.component,
     progress: updateData.progress || target.progress,
