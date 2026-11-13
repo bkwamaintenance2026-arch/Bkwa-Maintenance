@@ -26,7 +26,13 @@ import {
   DollarSign,
   FileDown
 } from 'lucide-react';
-import { canUserEdit } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 interface FuelTransferSubViewProps {
   fuelTransfers: FuelTransferRecord[];
@@ -54,11 +60,16 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   onSave,
   onDelete,
 }) => {
-  const canEdit = canUserEdit(currentUser, 4);
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 4);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -105,7 +116,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   const stokSolarTankiTruck = saldoFTLalu + totalTransferFuel - totalDistribusiFuel;
 
   const handleOpenAdd = () => {
-    if (!canEdit) return;
+    if (!canInsert) return;
     setEditingId(null);
     const now = new Date();
     setTanggal(now.toISOString().split('T')[0]);
@@ -172,8 +183,8 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) {
-      setErrorMsg('Akses Ditolak: Akun Anda dalam mode "Hanya View". Penambahan/perubahan transfer fuel tidak diizinkan.');
+    if (!canSubmitForm) {
+      setErrorMsg('Akses Ditolak: Anda tidak memiliki izin untuk menyimpan atau mengubah transfer fuel.');
       return;
     }
     if (!namaDriverFt) {
@@ -213,7 +224,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   };
 
   const handleDelete = (id: string) => {
-    if (!canEdit) return;
+    if (!canDelete) return;
     onDelete(id);
     setDeleteConfirmId(null);
   };
@@ -261,7 +272,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
             />
           </div>
 
-          {onOpenExportPDF && (
+          {canExport && onOpenExportPDF && (
             <button
               id="btn-export-pdf-fuel-transfer"
               type="button"
@@ -274,7 +285,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
             </button>
           )}
 
-          {canEdit ? (
+          {canInsert ? (
             <button
               id="btn-add-fuel-transfer"
               type="button"
@@ -290,7 +301,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
               type="button"
               disabled
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 text-stone-500 border border-stone-700 font-bold text-xs cursor-not-allowed opacity-75"
-              title="Akun Anda dalam mode Hanya View. Hubungi Developer untuk izin pengisian data."
+              title="Akun Anda tidak memiliki izin menambah data di Modul 4."
             >
               <Lock className="w-4 h-4 text-stone-500" />
               <span>+ Catat Transfer (Terkunci)</span>
@@ -441,16 +452,16 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        disabled={!canEdit}
-                        onClick={() => setDeleteConfirmId(item.id)}
+                        disabled={!canDelete}
+                        onClick={() => canDelete && setDeleteConfirmId(item.id)}
                         className={`p-1.5 rounded-lg transition border ${
-                          canEdit
+                          canDelete
                             ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
                             : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
                         }`}
-                        title={canEdit ? 'Hapus Record' : 'Akun Anda dalam mode Hanya View'}
+                        title={canDelete ? 'Hapus Record' : 'Tidak ada izin Hapus'}
                       >
-                        {canEdit ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                        {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
                       </button>
                     </div>
                   </td>

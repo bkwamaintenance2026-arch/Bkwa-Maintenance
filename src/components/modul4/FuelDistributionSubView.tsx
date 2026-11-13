@@ -28,9 +28,17 @@ import {
   Sparkles,
   RotateCcw,
   Download,
-  FileDown
+  FileDown,
+  Lock
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 interface FuelDistributionSubViewProps {
   fuelDistributions: FuelDistributionRecord[];
@@ -59,12 +67,19 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   onSave,
   onDelete,
 }) => {
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 4);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'DEFAULT' | 'UNIT' | 'DATE'>('DEFAULT');
   const [filterUnit, setFilterUnit] = useState<string>('ALL');
   const [filterDate, setFilterDate] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -213,6 +228,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   };
 
   const handleOpenAdd = () => {
+    if (!canInsert) return;
     setEditingId(null);
     // 1. No Bon dibuat Manual: dikosongkan agar pengguna mengetik no bon manual
     setNoBon('');
@@ -276,6 +292,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   };
 
   const handleOpenEdit = (item: FuelDistributionRecord) => {
+    if (!canEdit) return;
     setEditingId(item.id);
     setNoBon(item.noBon);
     setCnAlat(item.cnAlat);
@@ -310,6 +327,10 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmitForm) {
+      setErrorMsg('Akses Ditolak: Anda tidak memiliki izin untuk menyimpan atau mengubah data distribusi fuel.');
+      return;
+    }
     if (!noBon.trim()) {
       setErrorMsg('1. No Bon (Manual) wajib diisi!');
       return;
@@ -370,6 +391,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   };
 
   const handleDelete = (id: string) => {
+    if (!canDelete) return;
     onDelete(id);
     setDeleteConfirmId(null);
   };
@@ -425,8 +447,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
-    if (filteredList.length === 0) {
-      alert('Tidak ada data distribusi fuel untuk diexport.');
+    if (!canExport || filteredList.length === 0) {
       return;
     }
     const headers = ['NO BON', 'TANGGAL', 'JAM', 'JENIS ALAT', 'CN ALAT', 'NAMA ALAT', 'HM/KM', 'QTY SOLAR', 'SATUAN', 'LOKASI', 'OPERATOR', 'JABATAN OPERATOR', 'FLOWMETER AWAL', 'FLOWMETER AKHIR', 'STATUS'];
@@ -495,17 +516,19 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             />
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
-            title="Export CSV Distribusi Solar (PT BATU KALI WELANG AMPUH)"
-          >
-            <Download className="w-4 h-4 text-orange-400" />
-            <span>Export CSV</span>
-          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+              title="Export CSV Distribusi Solar (PT BATU KALI WELANG AMPUH)"
+            >
+              <Download className="w-4 h-4 text-orange-400" />
+              <span>Export CSV</span>
+            </button>
+          )}
 
-          {onOpenExportPDF && (
+          {canExport && onOpenExportPDF && (
             <button
               id="btn-export-pdf-fuel-distribution"
               type="button"
@@ -525,15 +548,28 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             </button>
           )}
 
-          <button
-            id="btn-add-fuel-distribution"
-            type="button"
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-stone-950 font-bold text-xs shadow-lg shadow-orange-500/20 transition active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Catat Bon Pengisian Fuel</span>
-          </button>
+          {canInsert ? (
+            <button
+              id="btn-add-fuel-distribution"
+              type="button"
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-stone-950 font-bold text-xs shadow-lg shadow-orange-500/20 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Catat Bon Pengisian Fuel</span>
+            </button>
+          ) : (
+            <button
+              id="btn-add-fuel-distribution"
+              type="button"
+              disabled
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 text-stone-500 border border-stone-700 font-bold text-xs cursor-not-allowed opacity-75"
+              title="Akun Anda tidak memiliki izin menambah data di Modul 4"
+            >
+              <Lock className="w-4 h-4 text-stone-500" />
+              <span>+ Catat Bon (Terkunci)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -769,19 +805,29 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
+                              disabled={!canEdit}
                               onClick={() => handleOpenEdit(item)}
-                              className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
-                              title="Edit Data Bon"
+                              className={`p-1.5 rounded-lg transition border ${
+                                canEdit
+                                  ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canEdit ? 'Edit Data Bon' : 'Tidak ada izin Edit'}
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                             </button>
                             <button
                               type="button"
-                              onClick={() => setDeleteConfirmId(item.id)}
-                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
-                              title="Hapus Data Bon"
+                              disabled={!canDelete}
+                              onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canDelete
+                                  ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canDelete ? 'Hapus Data Bon' : 'Tidak ada izin Hapus'}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                             </button>
                           </div>
                         </td>
@@ -856,19 +902,29 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleOpenEdit(item)}
-                          className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
-                          title="Edit Data Bon"
+                          className={`p-1.5 rounded-lg transition border ${
+                            canEdit
+                              ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                              : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                          }`}
+                          title={canEdit ? 'Edit Data Bon' : 'Tidak ada izin Edit'}
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
+                          {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                         </button>
                         <button
                           type="button"
-                          onClick={() => setDeleteConfirmId(item.id)}
-                          className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
-                          title="Hapus Data Bon"
+                          disabled={!canDelete}
+                          onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                          className={`p-1.5 rounded-lg transition border ${
+                            canDelete
+                              ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                              : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                          }`}
+                          title={canDelete ? 'Hapus Data Bon' : 'Tidak ada izin Hapus'}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                     </td>

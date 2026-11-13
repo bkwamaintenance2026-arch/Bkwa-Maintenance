@@ -39,7 +39,8 @@ import {
   Wrench, 
   FileSpreadsheet, 
   Copy,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 
 interface MasterPartViewProps {
@@ -215,6 +216,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     e.preventDefault();
     setFeedback(null);
 
+    if (!canInsert) {
+      setFeedback({ type: 'error', message: 'Akses ditolak: Anda tidak memiliki izin Tambah Data (Insert) pada Modul 8.' });
+      return;
+    }
+
     if (!selectedJenis) {
       setFeedback({ type: 'error', message: 'Silakan pilih Jenis Alat terlebih dahulu!' });
       return;
@@ -375,15 +381,19 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   // --- MODAL EDIT STATE ---
   const [editingPart, setEditingPart] = useState<MasterPartItem | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<MasterPartItem>>({});
+  const [editError, setEditError] = useState<string | null>(null);
 
   const handleOpenEdit = (part: MasterPartItem) => {
+    if (!canEdit) return;
+    setEditError(null);
     setEditingPart(part);
     setEditFormData({ ...part });
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingPart) return;
+    if (!canEdit || !editingPart) return;
+    setEditError(null);
 
     const res = addOrUpdateMasterPart(
       {
@@ -408,29 +418,39 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
     if (res.success) {
       setEditingPart(null);
+      setEditError(null);
+      setFeedback({ type: 'success', message: `Data part "${editFormData.namaPart || editingPart.namaPart}" berhasil diperbarui.` });
       loadParts();
     } else {
-      alert(res.message);
+      setEditError(res.message);
     }
   };
 
   // --- DELETE ACTION ---
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingPart, setDeletingPart] = useState<{ id: string; nama: string } | null>(null);
 
-  const handleDelete = (id: string, nama: string) => {
-    if (!window.confirm(`Yakin ingin menghapus master part: "${nama}"?`)) return;
-    const res = deleteMasterPart(id);
+  const handleRequestDelete = (id: string, nama: string) => {
+    if (!canDelete) return;
+    setDeletingPart({ id, nama });
+  };
+
+  const handleConfirmDelete = () => {
+    if (!canDelete || !deletingPart) return;
+    const res = deleteMasterPart(deletingPart.id);
     if (res.success) {
+      setFeedback({ type: 'success', message: `Master part "${deletingPart.nama}" berhasil dihapus.` });
       loadParts();
     } else {
-      alert(res.message);
+      setFeedback({ type: 'error', message: res.message });
     }
+    setDeletingPart(null);
   };
 
   // --- EXPORT TO CSV ---
   const handleExportCSV = () => {
+    if (!canExport) return;
     if (filteredMasterParts.length === 0) {
-      alert('Tidak ada data yang dapat diekspor!');
+      setFeedback({ type: 'error', message: 'Tidak ada data yang dapat diekspor!' });
       return;
     }
 
@@ -486,6 +506,10 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const [importNotice, setImportNotice] = useState<string | null>(null);
 
   const handleProcessImport = () => {
+    if (!canInsert) {
+      setImportNotice('Akses ditolak: Anda tidak memiliki izin Tambah Data (Insert) pada Modul 8.');
+      return;
+    }
     if (!csvText.trim()) {
       setImportNotice('Silakan tempel (paste) data teks CSV atau format tabel terlebih dahulu.');
       return;
@@ -598,7 +622,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         setShowImportModal(false);
         setCsvText('');
         setImportNotice(null);
-        alert(`Sukses mengimpor ${res.count} item Master Part!`);
+        setFeedback({ type: 'success', message: `Sukses mengimpor ${res.count} item Master Part!` });
         loadParts();
       } else {
         setImportNotice(`Gagal impor: ${res.message}`);
@@ -655,6 +679,33 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         </div>
       </div>
 
+      {/* Global feedback message banner */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-lg flex items-center justify-between text-sm ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
+              : 'bg-red-950/60 border border-red-800 text-red-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="text-stone-400 hover:text-stone-200"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* SECTION 1: FORM INPUT BREAKDOWN-STYLE UNIT SELECTOR & MULTI-ROW PART ENTRY */}
       <div className="bg-stone-900 border border-stone-800 rounded-xl shadow-lg overflow-hidden">
         <div className="p-4 border-b border-stone-800 bg-stone-900/80 flex flex-wrap items-center justify-between gap-3">
@@ -667,19 +718,31 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowImportModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-300 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition-colors"
-              title="Import banyak data dari teks CSV / Excel"
-            >
-              <Upload className="w-3.5 h-3.5 text-amber-400" />
-              <span>Import CSV / Teks</span>
-            </button>
+            {canInsert ? (
+              <button
+                type="button"
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-300 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition-colors"
+                title="Import banyak data dari teks CSV / Excel"
+              >
+                <Upload className="w-3.5 h-3.5 text-amber-400" />
+                <span>Import CSV / Teks</span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono text-stone-500 bg-stone-950 border border-stone-800 rounded-lg">
+                <Lock className="w-3.5 h-3.5" />
+                <span>View Only (Insert Terkunci)</span>
+              </span>
+            )}
           </div>
         </div>
 
-        <form onSubmit={handleSaveDraftParts} className="p-5 space-y-5">
+        {!canInsert ? (
+          <div className="p-6 text-center text-xs text-stone-400 font-mono">
+            Mode View Only: Anda tidak memiliki hak akses Tambah Data (Insert) pada Modul 8 untuk mendaftarkan atau mengimpor Master Part baru.
+          </div>
+        ) : (
+          <form onSubmit={handleSaveDraftParts} className="p-5 space-y-5">
           {/* Unit Selection Card (Mirip Input Breakdown Modul 3) */}
           <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -775,32 +838,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             </div>
           </div>
 
-          {/* Feedback message banner */}
-          {feedback && (
-            <div
-              className={`p-3.5 rounded-lg flex items-center justify-between text-sm ${
-                feedback.type === 'success'
-                  ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
-                  : 'bg-red-950/60 border border-red-800 text-red-300'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {feedback.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFeedback(null)}
-                className="text-stone-400 hover:text-stone-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+          {/* Feedback moved to global top banner above */}
 
           {/* Tabel Input Baris Part (Multi-Row Builder) */}
           <div className="space-y-2">
@@ -1047,6 +1085,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             </div>
           </div>
         </form>
+        )}
       </div>
 
       {/* SECTION 2: TABEL MASTER MATERIAL & PART LENGKAP DENGAN FILTER & SEARCH */}
@@ -1300,6 +1339,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                         <div className="flex items-center justify-center gap-1.5">
                           {canEdit && (
                             <button
+                              type="button"
                               onClick={() => handleOpenEdit(item)}
                               className="p-1.5 text-stone-400 hover:text-amber-400 hover:bg-stone-800 rounded transition-colors"
                               title="Edit Part"
@@ -1309,12 +1349,16 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                           )}
                           {canDelete && (
                             <button
-                              onClick={() => handleDelete(item.id, item.namaPart)}
+                              type="button"
+                              onClick={() => handleRequestDelete(item.id, item.namaPart)}
                               className="p-1.5 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded transition-colors"
                               title="Hapus Part"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
+                          )}
+                          {!canEdit && !canDelete && (
+                            <span className="text-[10px] font-mono text-stone-600">-</span>
                           )}
                         </div>
                       </td>
@@ -1346,6 +1390,13 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {editError && (
+              <div className="p-3 bg-red-950/60 border border-red-800 text-red-300 rounded-lg text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -1597,6 +1648,36 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   Proses & Simpan ke Master
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL KONFIRMASI HAPUS MASTER PART */}
+      {deletingPart && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <AlertTriangle className="w-10 h-10 text-red-500 mx-auto" />
+            <div>
+              <h4 className="text-sm font-bold text-stone-100">Hapus Master Part?</h4>
+              <p className="text-xs text-stone-400 mt-1">
+                Yakin ingin menghapus master part <strong className="text-stone-200">&ldquo;{deletingPart.nama}&rdquo;</strong>?
+              </p>
+            </div>
+            <div className="flex justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingPart(null)}
+                className="px-4 py-2 text-xs text-stone-300 bg-stone-800 hover:bg-stone-700 rounded-lg"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-lg shadow"
+              >
+                Hapus
+              </button>
             </div>
           </div>
         </div>

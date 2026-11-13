@@ -6,7 +6,7 @@ import {
   UserAccount,
   ManpowerData 
 } from '../../types';
-import { getAllP2HRecords, getAllManpower } from '../../utils/storage';
+import { getAllP2HRecords, getAllManpower, isDeveloper, canUserExportModule } from '../../utils/storage';
 import { 
   Calendar, 
   Search, 
@@ -196,13 +196,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     });
   }, [resolvedSig]);
 
-  // Cek otorisasi export
+  // Cek otorisasi export (Strict RBAC Modul 3)
   const canExport = useMemo(() => {
     if (!currentUser) return false;
-    if (currentUser.accountTier === 'DEVELOPER' || currentUser.accountTier === 'ADMIN' || currentUser.accountTier === 'KHUSUS') return true;
-    if (currentUser.role === 'ADMIN') return true;
-    if (currentUser.modulePermissions?.canExportModul3 || currentUser.modulePermissions?.modul3Maintenance) return true;
-    return false;
+    return isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
   }, [currentUser]);
 
   // Daftar Pilihan Jenis Alat unik

@@ -44,7 +44,10 @@ import {
 interface MonitoringSupplySubViewProps {
   breakdowns: BreakdownRecord[];
   currentUser: UserAccount;
+  canInsert: boolean;
   canEdit: boolean;
+  canDelete: boolean;
+  canExport: boolean;
   manpowerList?: ManpowerData[];
   onRefreshData?: () => void;
 }
@@ -52,7 +55,10 @@ interface MonitoringSupplySubViewProps {
 export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = ({
   breakdowns,
   currentUser,
+  canInsert,
   canEdit,
+  canDelete,
+  canExport,
   manpowerList = [],
   onRefreshData,
 }) => {
@@ -109,7 +115,8 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
   // Handler: Checklist Cepat (1-Klik toggle Belum Supply <-> Terpenuhi)
   const handleQuickChecklist = (item: PartSupplyItemTracking) => {
     if (!canEdit) {
-      alert('Anda tidak memiliki izin edit untuk memverifikasi supply barang!');
+      setFeedback({ type: 'error', message: 'Anda tidak memiliki izin edit untuk memverifikasi supply barang!' });
+      setTimeout(() => setFeedback(null), 3500);
       return;
     }
     const res = quickTogglePartSupplyStatus(item.id, currentUser.fullName || currentUser.username);
@@ -125,6 +132,11 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
 
   // Handler: Buka Form Catat Kedatangan Malang
   const handleOpenUpdateModal = (item: PartSupplyItemTracking) => {
+    if (!canEdit) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengedit status supply.' });
+      setTimeout(() => setFeedback(null), 3500);
+      return;
+    }
     setSelectedTrackingForUpdate(item);
     setUpdateFormData({
       status: item.status === 'PENDING' ? 'TERPENUHI' : item.status,
@@ -138,6 +150,11 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
   // Handler: Simpan Detail Kedatangan Malang
   const handleSaveSupplyDetails = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin menyimpan perubahan supply.' });
+      setSelectedTrackingForUpdate(null);
+      return;
+    }
     if (!selectedTrackingForUpdate) return;
 
     const res = updatePartSupplyStatus(selectedTrackingForUpdate.id, updateFormData.status, {
@@ -161,6 +178,12 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
 
   // Handler: Buat SPB Non-Unit
   const handleCreateNonUnitPR = (data: any) => {
+    if (!canInsert) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki izin membuat SPB Non-Unit.',
+      };
+    }
     const res = createNonUnitPurchaseRequest(data);
     if (res.success) {
       loadAndSyncData();
@@ -171,6 +194,11 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
 
   // Handler: Hapus SPB Non-Unit
   const handleDeleteNonUnitPR = (id: string) => {
+    if (!canDelete) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin menghapus SPB Non-Unit.' });
+      setTimeout(() => setFeedback(null), 3500);
+      return;
+    }
     if (!window.confirm('Apakah Anda yakin ingin menghapus SPB Non-Unit ini?')) return;
     const res = deleteNonUnitPurchaseRequest(id);
     if (res.success) {
@@ -267,7 +295,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
               <span>{isSyncing ? 'Sinkronisasi...' : 'Sinkronkan Data'}</span>
             </button>
 
-            {canEdit && (
+            {canInsert && (
               <button
                 type="button"
                 onClick={() => setShowNonUnitModal(true)}
@@ -429,15 +457,17 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold border border-stone-700 transition"
-              title="Cetak ringkasan"
-            >
-              <Printer className="w-3.5 h-3.5 text-amber-400" />
-              <span>Cetak</span>
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-bold border border-stone-700 transition"
+                title="Cetak ringkasan"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-400" />
+                <span>Cetak</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -581,31 +611,35 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
 
                       {/* Aksi */}
                       <td className="px-3.5 py-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {/* 1-Click Quick Toggle Checklist */}
-                          <button
-                            type="button"
-                            onClick={() => handleQuickChecklist(item)}
-                            className={`p-1.5 rounded-lg border transition ${
-                              isCompleted
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
-                                : 'bg-stone-800 text-stone-400 border-stone-700 hover:text-emerald-400 hover:border-emerald-500/50'
-                            }`}
-                            title={isCompleted ? 'Tandai Belum Terpenuhi' : 'Tandai Terpenuhi Penuh (1-Klik)'}
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
+                        {canEdit ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            {/* 1-Click Quick Toggle Checklist */}
+                            <button
+                              type="button"
+                              onClick={() => handleQuickChecklist(item)}
+                              className={`p-1.5 rounded-lg border transition ${
+                                isCompleted
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
+                                  : 'bg-stone-800 text-stone-400 border-stone-700 hover:text-emerald-400 hover:border-emerald-500/50'
+                              }`}
+                              title={isCompleted ? 'Tandai Belum Terpenuhi' : 'Tandai Terpenuhi Penuh (1-Klik)'}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
 
-                          {/* Catat Detail / Parsial Modal */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenUpdateModal(item)}
-                            className="p-1.5 rounded-lg bg-stone-800 text-stone-300 border border-stone-700 hover:bg-stone-700 hover:text-amber-400 transition"
-                            title="Update Detail Supply (Parsial / Surat Jalan Malang)"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            {/* Catat Detail / Parsial Modal */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUpdateModal(item)}
+                              className="p-1.5 rounded-lg bg-stone-800 text-stone-300 border border-stone-700 hover:bg-stone-700 hover:text-amber-400 transition"
+                              title="Update Detail Supply (Parsial / Surat Jalan Malang)"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-stone-500">View Only</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -673,7 +707,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
                   <span className="text-[10px] text-stone-500">
                     {req.noSuratJalanMalang ? `DO: ${req.noSuratJalanMalang}` : 'Belum ada DO'}
                   </span>
-                  {canEdit && (
+                  {canDelete && (
                     <button
                       type="button"
                       onClick={() => handleDeleteNonUnitPR(req.id)}
@@ -846,6 +880,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
         isOpen={showNonUnitModal}
         onClose={() => setShowNonUnitModal(false)}
         currentUser={currentUser}
+        canExport={canExport}
         manpowerList={manpowerList}
         onSubmitPR={handleCreateNonUnitPR}
       />

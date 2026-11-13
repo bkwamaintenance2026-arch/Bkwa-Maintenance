@@ -31,6 +31,7 @@ interface NonUnitRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserAccount;
+  canExport?: boolean;
   manpowerList?: ManpowerData[];
   onSubmitPR: (data: Omit<NonUnitPurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'updatedAt' | 'statusSupply' | 'statusPengajuan'>) => {
     success: boolean;
@@ -43,6 +44,7 @@ export const NonUnitRequestModal: React.FC<NonUnitRequestModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  canExport = true,
   manpowerList: propManpowerList,
   onSubmitPR,
 }) => {
@@ -196,7 +198,7 @@ export const NonUnitRequestModal: React.FC<NonUnitRequestModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {createdPR && (
+            {createdPR && canExport && (
               <button
                 type="button"
                 onClick={handlePrint}

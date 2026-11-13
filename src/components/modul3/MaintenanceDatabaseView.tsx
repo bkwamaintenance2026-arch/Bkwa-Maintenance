@@ -43,6 +43,13 @@ interface MaintenanceDatabaseViewProps {
       component?: BreakdownComponentOption | string;
     }
   ) => { success: boolean; message: string; record?: BreakdownRecord };
+  onUpdateHistoryEntry?: (
+    breakdownId: string,
+    entryIdOrCreatedAt: string,
+    updatedEntry: Partial<import('../../types').BreakdownUpdateEntry> & {
+      component?: BreakdownComponentOption | string;
+    }
+  ) => { success: boolean; message: string; record?: BreakdownRecord };
   onDeleteBreakdown: (id: string) => { success: boolean; message: string };
   onBackToMainMenu?: () => void;
   onNavigateToP2H?: () => void;
@@ -56,6 +63,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
   currentUser,
   onSaveBreakdown,
   onUpdateActivity,
+  onUpdateHistoryEntry,
   onDeleteBreakdown,
   onBackToMainMenu,
   onNavigateToP2H,
@@ -221,6 +229,7 @@ export const MaintenanceDatabaseView: React.FC<MaintenanceDatabaseViewProps> = (
           currentUser={currentUser}
           manpowerList={manpowerList}
           onUpdateActivity={onUpdateActivity}
+          onUpdateHistoryEntry={onUpdateHistoryEntry}
           onDeleteBreakdown={onDeleteBreakdown}
           onNavigateToHistory={() => setActiveSubModule(3)}
           initialExpandedId={selectedBreakdownIdForUpdate}

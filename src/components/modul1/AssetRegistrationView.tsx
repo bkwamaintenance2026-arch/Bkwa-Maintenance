@@ -24,10 +24,21 @@ import {
   ShieldCheck,
   Truck,
   UserCheck,
-  QrCode
+  QrCode,
+  Printer,
+  Filter
 } from 'lucide-react';
-import { canAccessRegistrationForm, canUserExportModule, updateUnitOperatorSetting } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+  updateUnitOperatorSetting
+} from '../../utils/storage';
 import { OperatorSettingSubView } from './OperatorSettingSubView';
+import { generateAssetListPDF, exportAssetListToPDF } from '../../utils/pdfGenerator';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
 interface AssetRegistrationViewProps {
   units: AssetUnit[];
@@ -81,12 +92,12 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   // Sub Menu Tab State (Sub Menu 1: Registrasi Asset, Sub Menu 2: Setting Operator)
   const [activeSubMenu, setActiveSubMenu] = useState<'REGISTRASI' | 'SETTING_OPERATOR'>('REGISTRASI');
 
-  // Cek otorisasi hak akses user untuk Modul 1:
-  // Form Registrasi hanya untuk Developer.
-  // Export Daftar Aset Unit untuk Akun Khusus & Developer.
-  const canAccessForm = canAccessRegistrationForm(currentUser);
-  const canExport = canUserExportModule(currentUser, 1);
-  const canEdit = canAccessForm;
+  // Cek otorisasi hak akses granular user untuk Modul 1
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 1);
+  const canEdit = isDev || canUserEditModule(currentUser, 1);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 1);
+  const canExport = isDev || canUserExportModule(currentUser, 1);
 
   // Sorting state untuk header kolom tabel Daftar Aset Unit
   const [sortField, setSortField] = useState<keyof AssetUnit>('cnNew');
@@ -104,6 +115,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   // Form state
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
+  const canSubmitForm = editingUnitId ? canEdit : canInsert;
 
   // View modal state
   const [viewingUnit, setViewingUnit] = useState<AssetUnit | null>(null);
@@ -111,8 +123,48 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   // Status feedback message
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Search filter
+  // Search & Per-Column Header Filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [colFilters, setColFilters] = useState({
+    cnNew: '',
+    namaAlat: '',
+    jenis: '',
+    classUnit: '',
+    loc: '',
+    status: 'ALL',
+    brandMerk: '',
+    snUnit: '',
+    modelUnit: '',
+    engineModel: '',
+    snEngine: '',
+    merkEngine: '',
+  });
+
+  const hasActiveColFilters = useMemo(() => {
+    return Object.entries(colFilters).some(([k, v]) => (k === 'status' ? v !== 'ALL' : String(v).trim() !== ''));
+  }, [colFilters]);
+
+  const handleResetColFilters = () => {
+    setColFilters({
+      cnNew: '',
+      namaAlat: '',
+      jenis: '',
+      classUnit: '',
+      loc: '',
+      status: 'ALL',
+      brandMerk: '',
+      snUnit: '',
+      modelUnit: '',
+      engineModel: '',
+      snEngine: '',
+      merkEngine: '',
+    });
+  };
+
+  // PDF Preview Modal state
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
 
   // Auto dismiss feedback after 4 seconds
   useEffect(() => {
@@ -131,10 +183,12 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    if (!canEdit) {
+    if (!canSubmitForm) {
       setFeedback({ 
         type: 'error', 
-        message: 'Akses Ditolak: Akun Anda diatur sebagai "Hanya View". Hubungi Developer untuk mendapatkan hak akses pengisian data.' 
+        message: editingUnitId
+          ? 'Akses Ditolak: Akun Anda tidak memiliki izin Edit data di Modul 1.'
+          : 'Akses Ditolak: Akun Anda tidak memiliki izin Input data baru di Modul 1.'
       });
       return;
     }
@@ -219,10 +273,10 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
 
   // 4. DELETED ACTION
   const handleDelete = (unit: AssetUnit) => {
-    if (!canEdit) {
+    if (!canDelete) {
       setFeedback({ 
         type: 'error', 
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Penghapusan data dinonaktifkan.' 
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Hapus data di Modul 1.' 
       });
       return;
     }
@@ -291,18 +345,72 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
     document.body.removeChild(link);
   };
 
+  // Print Preview PDF handler
+  const handleOpenPdfPreview = () => {
+    if (!canExport) return;
+    if (sortedUnits.length === 0) {
+      setFeedback({ type: 'error', message: 'Tidak ada data asset unit untuk ditampilkan di Print Preview.' });
+      return;
+    }
+    try {
+      const res = generateAssetListPDF({
+        units: sortedUnits,
+        allUnits: units,
+        currentUser,
+      });
+      setPreviewPdfUrl(res.blobUrl);
+      setPreviewFilename(res.filename);
+      setShowPdfPreview(true);
+    } catch (e) {
+      console.error('Error generating Asset List PDF preview', e);
+      setFeedback({ type: 'error', message: 'Gagal membuat pratinjau PDF Daftar Asset Unit.' });
+    }
+  };
+
+  const handleDownloadAssetPdf = () => {
+    if (!canExport || sortedUnits.length === 0) return;
+    exportAssetListToPDF({
+      units: sortedUnits,
+      allUnits: units,
+      currentUser,
+    });
+  };
+
   // Filtered & Sorted list
   const sortedUnits = useMemo(() => {
     const filtered = units.filter((u) => {
-      const q = searchTerm.toLowerCase();
-      return (
-        (u.cnNew && u.cnNew.toLowerCase().includes(q)) ||
-        (u.namaAlat && u.namaAlat.toLowerCase().includes(q)) ||
-        (u.jenis && u.jenis.toLowerCase().includes(q)) ||
-        (u.brandMerk && u.brandMerk.toLowerCase().includes(q)) ||
-        (u.loc && u.loc.toLowerCase().includes(q)) ||
-        (u.status && u.status.toLowerCase().includes(q))
-      );
+      const q = searchTerm.toLowerCase().trim();
+      if (q) {
+        const matchSearch =
+          (u.cnNew && u.cnNew.toLowerCase().includes(q)) ||
+          (u.namaAlat && u.namaAlat.toLowerCase().includes(q)) ||
+          (u.jenis && u.jenis.toLowerCase().includes(q)) ||
+          (u.classUnit && u.classUnit.toLowerCase().includes(q)) ||
+          (u.brandMerk && u.brandMerk.toLowerCase().includes(q)) ||
+          (u.snUnit && u.snUnit.toLowerCase().includes(q)) ||
+          (u.modelUnit && u.modelUnit.toLowerCase().includes(q)) ||
+          (u.engineModel && u.engineModel.toLowerCase().includes(q)) ||
+          (u.snEngine && u.snEngine.toLowerCase().includes(q)) ||
+          (u.merkEngine && u.merkEngine.toLowerCase().includes(q)) ||
+          (u.loc && u.loc.toLowerCase().includes(q)) ||
+          (u.status && u.status.toLowerCase().includes(q));
+        if (!matchSearch) return false;
+      }
+
+      if (colFilters.cnNew && !(u.cnNew || '').toLowerCase().includes(colFilters.cnNew.toLowerCase().trim())) return false;
+      if (colFilters.namaAlat && !(u.namaAlat || '').toLowerCase().includes(colFilters.namaAlat.toLowerCase().trim())) return false;
+      if (colFilters.jenis && !(u.jenis || '').toLowerCase().includes(colFilters.jenis.toLowerCase().trim())) return false;
+      if (colFilters.classUnit && !(u.classUnit || '').toLowerCase().includes(colFilters.classUnit.toLowerCase().trim())) return false;
+      if (colFilters.loc && !(u.loc || '').toLowerCase().includes(colFilters.loc.toLowerCase().trim())) return false;
+      if (colFilters.status !== 'ALL' && (u.status || '') !== colFilters.status) return false;
+      if (colFilters.brandMerk && !(u.brandMerk || '').toLowerCase().includes(colFilters.brandMerk.toLowerCase().trim())) return false;
+      if (colFilters.snUnit && !(u.snUnit || '').toLowerCase().includes(colFilters.snUnit.toLowerCase().trim())) return false;
+      if (colFilters.modelUnit && !(u.modelUnit || '').toLowerCase().includes(colFilters.modelUnit.toLowerCase().trim())) return false;
+      if (colFilters.engineModel && !(u.engineModel || '').toLowerCase().includes(colFilters.engineModel.toLowerCase().trim())) return false;
+      if (colFilters.snEngine && !(u.snEngine || '').toLowerCase().includes(colFilters.snEngine.toLowerCase().trim())) return false;
+      if (colFilters.merkEngine && !(u.merkEngine || '').toLowerCase().includes(colFilters.merkEngine.toLowerCase().trim())) return false;
+
+      return true;
     });
 
     return [...filtered].sort((a, b) => {
@@ -315,7 +423,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [units, searchTerm, sortField, sortOrder]);
+  }, [units, searchTerm, colFilters, sortField, sortOrder]);
 
   const renderSortHeader = (label: string, field: keyof AssetUnit, align: 'left' | 'center' = 'left') => {
     const isSorted = sortField === field;
@@ -464,7 +572,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
             id="form-registrasi-asset"
             className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl relative"
           >
-        {!canEdit && (
+        {!canInsert && !canEdit && (
           <div className="mb-4 p-3.5 rounded-xl bg-sky-950/40 border border-sky-800/70 text-sky-200 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <Eye className="w-4 h-4 text-sky-400 shrink-0" />
@@ -714,14 +822,14 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
           {/* HANYA TOMBOL "SIMPAN" DI BAWAH MENU FORM INPUT */}
           <div className="pt-4 border-t border-stone-800/80 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {canEdit ? (
+              {canSubmitForm ? (
                 <button
                   id="btn-action-simpan"
                   type="submit"
                   className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-lg shadow-amber-500/20 active:scale-95"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Simpan</span>
+                  <span>{editingUnitId ? 'Simpan Perubahan' : 'Simpan'}</span>
                 </button>
               ) : (
                 <button
@@ -729,7 +837,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
                   type="button"
                   disabled
                   className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-stone-400 bg-stone-800 border border-stone-700 cursor-not-allowed opacity-80"
-                  title="Akun Anda dalam mode Hanya View. Hubungi Developer untuk izin pengisian data."
+                  title="Akun Anda tidak memiliki hak akses pengisian/edit di Modul 1."
                 >
                   <Lock className="w-4 h-4 text-stone-400" />
                   <span>Pengisian Dikunci (Hanya View)</span>
@@ -737,7 +845,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
               )}
 
               {/* Reset form jika ada yang sedang diisi/diedit */}
-              {canEdit && (editingUnitId || formData.cnNew || formData.namaAlat) && (
+              {(canInsert || canEdit) && (editingUnitId || formData.cnNew || formData.namaAlat) && (
                 <button
                   type="button"
                   onClick={handleResetForm}
@@ -778,18 +886,43 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
           </div>
 
           {/* Fast Search & Export */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {canExport && (
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {hasActiveColFilters && (
               <button
-                id="btn-export-modul1-csv"
                 type="button"
-                onClick={handleExportCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
-                title="Export seluruh daftar aset ke format CSV / Excel"
+                onClick={handleResetColFilters}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500 hover:text-white text-rose-300 border border-rose-500/30 rounded-xl text-xs font-mono font-bold transition whitespace-nowrap"
+                title="Reset semua filter kolom header"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Export Excel</span>
+                <X className="w-3.5 h-3.5" />
+                <span>Reset Filter</span>
               </button>
+            )}
+
+            {canExport && (
+              <>
+                <button
+                  id="btn-print-preview-modul1"
+                  type="button"
+                  onClick={handleOpenPdfPreview}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-mono font-black transition shadow-md whitespace-nowrap cursor-pointer"
+                  title="Buka Print Preview PDF Daftar Asset Unit"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Preview</span>
+                </button>
+
+                <button
+                  id="btn-export-modul1-csv"
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap cursor-pointer"
+                  title="Export seluruh daftar aset ke format CSV / Excel"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Export Excel</span>
+                </button>
+              </>
             )}
 
             <div className="w-full sm:w-64">
@@ -823,6 +956,138 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
                 {renderSortHeader('MERK ENGINE', 'merkEngine')}
                 <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                   AKSI
+                </th>
+              </tr>
+              {/* BARIS FILTER PER KOLOM HEADER */}
+              <tr className="bg-stone-900/90 border-b border-stone-800/80 text-[10px] font-mono normal-case">
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.cnNew}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, cnNew: e.target.value }))}
+                    placeholder="Filter CN..."
+                    className="w-full min-w-[85px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-amber-300 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.namaAlat}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, namaAlat: e.target.value }))}
+                    placeholder="Filter nama..."
+                    className="w-full min-w-[110px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.jenis}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, jenis: e.target.value }))}
+                    placeholder="Jenis..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.classUnit}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, classUnit: e.target.value }))}
+                    placeholder="Class..."
+                    className="w-full min-w-[70px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.loc}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, loc: e.target.value }))}
+                    placeholder="Lokasi..."
+                    className="w-full min-w-[75px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <select
+                    value={colFilters.status}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, status: e.target.value }))}
+                    className="w-full min-w-[100px] bg-stone-950 border border-stone-700/80 rounded px-1 py-1 text-[11px] text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="ALL">Semua</option>
+                    <option value="Operasi Etika 05">Operasi Etika 05</option>
+                    <option value="Operasi Etika 09">Operasi Etika 09</option>
+                    <option value="Breakdown">Breakdown</option>
+                    <option value="Stanby">Stanby</option>
+                  </select>
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.brandMerk}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, brandMerk: e.target.value }))}
+                    placeholder="Merk..."
+                    className="w-full min-w-[75px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.snUnit}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, snUnit: e.target.value }))}
+                    placeholder="SN Unit..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.modelUnit}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, modelUnit: e.target.value }))}
+                    placeholder="Model..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.engineModel}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, engineModel: e.target.value }))}
+                    placeholder="Engine..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.snEngine}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, snEngine: e.target.value }))}
+                    placeholder="SN Eng..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5">
+                  <input
+                    type="text"
+                    value={colFilters.merkEngine}
+                    onChange={(e) => setColFilters((prev) => ({ ...prev, merkEngine: e.target.value }))}
+                    placeholder="Merk Eng..."
+                    className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-[11px] text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </th>
+                <th className="p-1.5 text-center sticky right-0 bg-stone-900/95">
+                  {hasActiveColFilters ? (
+                    <button
+                      type="button"
+                      onClick={handleResetColFilters}
+                      className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white text-[10px] transition cursor-pointer"
+                      title="Reset Filter"
+                    >
+                      Reset
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-stone-500 flex items-center justify-center gap-1">
+                      <Filter className="w-3 h-3" />
+                      <span>Filter</span>
+                    </span>
+                  )}
                 </th>
               </tr>
             </thead>
@@ -941,16 +1206,16 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
                           <button
                             id={`btn-delete-${u.cnNew}`}
                             type="button"
-                            disabled={!canEdit}
+                            disabled={!canDelete}
                             onClick={() => handleDelete(u)}
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
-                              canEdit
+                              canDelete
                                 ? 'text-rose-300 bg-rose-950/40 hover:bg-rose-900/50 border-rose-800/60'
                                 : 'text-stone-500 bg-stone-900/60 border-stone-800 cursor-not-allowed opacity-60'
                             }`}
-                            title={canEdit ? `Hapus data ${u.cnNew}` : 'Akun Anda dalam mode Hanya View (Hapus dinonaktifkan)'}
+                            title={canDelete ? `Hapus data ${u.cnNew}` : 'Akun Anda tidak memiliki izin Hapus di Modul 1'}
                           >
-                            {canEdit ? <Trash2 className="w-3.5 h-3.5 text-rose-400" /> : <Lock className="w-3 h-3 text-stone-500" />}
+                            {canDelete ? <Trash2 className="w-3.5 h-3.5 text-rose-400" /> : <Lock className="w-3 h-3 text-stone-500" />}
                             <span>Deleted</span>
                           </button>
                         </div>
@@ -1137,22 +1402,35 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
               >
                 Tutup
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const unitToEdit = viewingUnit;
-                  setViewingUnit(null);
-                  handleEdit(unitToEdit);
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition"
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>Edit Unit Ini</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const unitToEdit = viewingUnit;
+                    setViewingUnit(null);
+                    handleEdit(unitToEdit);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Unit Ini</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL PRATINJAU PDF DAFTAR ASSET UNIT */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="PRATINJAU DOKUMEN - DAFTAR REGISTRASI ASSET UNIT"
+        subtitle={`PT BATU KALI WELANG AMPUH (ETIKA09) • Total ${sortedUnits.length} Unit Armada`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={handleDownloadAssetPdf}
+      />
     </div>
   );
 };

@@ -7,14 +7,17 @@ import {
   ClipboardCheck,
   Boxes,
   Disc,
-  ArrowRight
+  ArrowRight,
+  Lock
 } from 'lucide-react';
-import { ModuleInfo } from '../types';
+import { ModuleInfo, UserAccount } from '../types';
+import { canUserViewModule, isDeveloper } from '../utils/storage';
 
 interface ModuleTabsProps {
   activeModuleId: number;
   onSelectModule: (id: number) => void;
   modules: ModuleInfo[];
+  currentUser?: UserAccount | null;
   totalAssetCount?: number;
   totalManpowerCount?: number;
   totalBreakdownCount?: number;
@@ -25,6 +28,7 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
   activeModuleId,
   onSelectModule,
   modules,
+  currentUser,
   totalAssetCount = 0,
   totalManpowerCount = 0,
   totalBreakdownCount = 0,
@@ -113,6 +117,8 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 xl:grid-cols-8 gap-2.5 sm:gap-3">
           {modules.map((m) => {
             const isActive = m.id === activeModuleId;
+            const isDev = isDeveloper(currentUser);
+            const isAccessible = isDev || (currentUser ? canUserViewModule(currentUser, m.id) : true);
             const isModul1 = m.id === 1;
             const isModul2 = m.id === 2;
             const isModul3 = m.id === 3;
@@ -126,11 +132,19 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
                 key={m.id}
                 id={`btn-modul-besar-${m.id}`}
                 type="button"
-                onClick={() => onSelectModule(m.id)}
+                onClick={() => {
+                  if (!isAccessible) {
+                    alert(`Akses Dibatasi: Akun Anda tidak memiliki izin untuk membuka ${meta.label}. Hubungi Administrator untuk penyesuaian hak akses.`);
+                    return;
+                  }
+                  onSelectModule(m.id);
+                }}
                 className={`group relative text-left p-3.5 sm:p-4 rounded-2xl transition-all duration-200 border flex flex-col justify-between ${
-                  isActive
-                    ? 'bg-amber-500/10 border-amber-500 shadow-xl shadow-amber-500/10 ring-2 ring-amber-500/40'
-                    : 'bg-stone-900/90 border-stone-800 hover:border-amber-500/40 hover:bg-stone-850'
+                  !isAccessible
+                    ? 'opacity-50 cursor-not-allowed bg-stone-950/70 border-stone-850 hover:border-stone-800'
+                    : isActive
+                    ? 'bg-amber-500/10 border-amber-500 shadow-xl shadow-amber-500/10 ring-2 ring-amber-500/40 cursor-pointer'
+                    : 'bg-stone-900/90 border-stone-800 hover:border-amber-500/40 hover:bg-stone-850 cursor-pointer'
                 }`}
               >
                 <div>
@@ -138,7 +152,9 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
                   <div className="flex items-center justify-between gap-2 mb-2.5">
                     <div
                       className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                        isActive
+                        !isAccessible
+                          ? 'bg-stone-900 text-stone-600'
+                          : isActive
                           ? 'bg-amber-500 text-stone-950 font-black shadow-lg shadow-amber-500/30'
                           : 'bg-stone-800 text-amber-400 group-hover:bg-stone-700'
                       }`}
@@ -146,12 +162,15 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
                       {getIcon(m.id)}
                     </div>
                     <span
-                      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                        isActive
+                      className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-1 ${
+                        !isAccessible
+                          ? 'bg-stone-900 text-rose-400/80 border border-stone-800'
+                          : isActive
                           ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                           : 'bg-stone-800 text-stone-400 border border-stone-700'
                       }`}
                     >
+                      {!isAccessible && <Lock className="w-2.5 h-2.5 text-rose-400" />}
                       MODUL {m.id}
                     </span>
                   </div>
@@ -159,20 +178,25 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
                   {/* Title & Sub */}
                   <h3
                     className={`font-black text-xs sm:text-sm font-mono tracking-wide leading-tight ${
-                      isActive ? 'text-amber-300' : 'text-stone-100 group-hover:text-amber-200'
+                      !isAccessible ? 'text-stone-500' : isActive ? 'text-amber-300' : 'text-stone-100 group-hover:text-amber-200'
                     }`}
                   >
                     {meta.label}
                   </h3>
                   <p className="text-[11px] text-stone-400 mt-1 line-clamp-1">
-                    {meta.sub}
+                    {!isAccessible ? 'Akses dibatasi untuk akun Anda' : meta.sub}
                   </p>
                 </div>
 
                 {/* Card Bottom Indicator */}
                 <div className="mt-3 pt-2.5 border-t border-stone-800/80 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-1.5">
-                    {isModul1 ? (
+                    {!isAccessible ? (
+                      <span className="text-[10px] font-bold text-rose-400/70 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        Terkunci
+                      </span>
+                    ) : isModul1 ? (
                       <span className="text-[10px] font-bold text-emerald-400">
                         {totalAssetCount > 0 ? `${totalAssetCount} Unit` : 'Siap Input'}
                       </span>
@@ -201,10 +225,14 @@ export const ModuleTabs: React.FC<ModuleTabsProps> = ({
 
                   <span
                     className={`text-[10px] font-bold flex items-center gap-1 transition ${
-                      isActive ? 'text-amber-400' : 'text-stone-400 group-hover:text-stone-200'
+                      !isAccessible
+                        ? 'text-stone-600'
+                        : isActive
+                        ? 'text-amber-400'
+                        : 'text-stone-400 group-hover:text-stone-200'
                     }`}
                   >
-                    <span>{isActive ? 'Buka' : 'Pilih'}</span>
+                    <span>{!isAccessible ? 'Terkunci' : isActive ? 'Buka' : 'Pilih'}</span>
                     <ArrowRight className="w-3 h-3" />
                   </span>
                 </div>

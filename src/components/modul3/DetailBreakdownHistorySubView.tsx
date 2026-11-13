@@ -45,7 +45,9 @@ import {
   getAllSparePartTransactions, 
   isDeveloper, 
   getAllManpower, 
+  canUserEditModule,
   canUserDeleteModule,
+  canUserExportModule,
   updateBreakdownHistoryEntry,
   deleteBreakdownHistoryEntry
 } from '../../utils/storage';
@@ -81,7 +83,9 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   onDeleteBreakdown,
 }) => {
   const isDev = isDeveloper(currentUser);
-  const canDelete = isDev || canUserDeleteModule(currentUser, 3) || currentUser.role === 'ADMIN' || currentUser.accountTier === 'ADMIN';
+  const canEdit = isDev || canUserEditModule(currentUser, 3);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 3);
+  const canExport = isDev || canUserExportModule(currentUser, 3);
 
   // State tampilan: 'CARDS' (Kartu No MO dengan rincian harian) vs 'TABLE' (Tabel ringkas)
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
@@ -490,7 +494,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
   // Handler Pratinjau PDF Sebelum Download
   const handlePreviewPDF = () => {
-    if (filteredBreakdowns.length === 0) return;
+    if (!canExport || filteredBreakdowns.length === 0) return;
     try {
       const result = generateDetailHistoryPDF(filteredBreakdowns, selectedUnit, currentUser, signatories);
       setPreviewPdfUrl(result.blobUrl);
@@ -504,6 +508,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
   // Handler Pratinjau PDF Khusus 1 No MO Saja
   const handlePreviewSingleMO = (b: BreakdownRecord) => {
+    if (!canExport) return;
     try {
       const result = generateDetailHistoryPDF([b], b.noUnit, currentUser, signatories);
       setPreviewPdfUrl(result.blobUrl);
@@ -516,6 +521,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
   // Handler Pratinjau Dokumen Rangkuman Riwayat Unit Terpadu (Seluruh MO Unit Terpilih)
   const handlePreviewUnitHistory = (targetUnitNo: string) => {
+    if (!canExport) return;
     if (!targetUnitNo) {
       alert('Silakan pilih nomor unit terlebih dahulu.');
       return;
@@ -533,6 +539,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
   // Handler Inline Edit Riwayat Harian
   const handleStartInlineEdit = (b: BreakdownRecord, u: any, uIdx: number) => {
+    if (!canEdit) return;
     setEditingRowKey(`${b.id}_${uIdx}`);
     setInlineEditForm({
       tanggal: u.tanggal || b.tanggal || new Date().toISOString().split('T')[0],
@@ -635,41 +642,43 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
-            {/* Tombol Pratinjau PDF Sebelum Download */}
-            <button
-              id="btn-preview-pdf-detail-breakdown"
-              type="button"
-              onClick={handlePreviewPDF}
-              disabled={filteredBreakdowns.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
-              title="Buka Pratinjau (Preview) PDF untuk cek riwayat breakdown sebelum download"
-            >
-              <Eye className="w-4 h-4 text-amber-400" />
-              <span>Pratinjau PDF (Preview)</span>
-            </button>
+          {canExport && (
+            <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
+              {/* Tombol Pratinjau PDF Sebelum Download */}
+              <button
+                id="btn-preview-pdf-detail-breakdown"
+                type="button"
+                onClick={handlePreviewPDF}
+                disabled={filteredBreakdowns.length === 0}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                title="Buka Pratinjau (Preview) PDF untuk cek riwayat breakdown sebelum download"
+              >
+                <Eye className="w-4 h-4 text-amber-400" />
+                <span>Pratinjau PDF (Preview)</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleExportPDF}
-              disabled={filteredBreakdowns.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold transition shadow-lg shadow-rose-600/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
-              title="Download Laporan Detail Riwayat Breakdown ke Format PDF Resmi"
-            >
-              <FileText className="w-4 h-4 text-white" />
-              <span>Export PDF (Head Office)</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              disabled={filteredBreakdowns.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title="Download Data ke Format CSV Excel"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span>Export CSV</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                disabled={filteredBreakdowns.length === 0}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold transition shadow-lg shadow-rose-600/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                title="Download Laporan Detail Riwayat Breakdown ke Format PDF Resmi"
+              >
+                <FileText className="w-4 h-4 text-white" />
+                <span>Export PDF (Head Office)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                disabled={filteredBreakdowns.length === 0}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Download Data ke Format CSV Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span>Export CSV</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1135,15 +1144,17 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               )}
 
               {/* Tombol Print Unit Rangkuman Lengkap Semua MO */}
-              <button
-                type="button"
-                onClick={() => handlePreviewUnitHistory(selectedUnit)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono font-bold text-xs shadow-lg shadow-blue-600/20 active:scale-95 transition cursor-pointer shrink-0"
-                title={`Pratinjau & Cetak Dokumen Rangkuman Lengkap Seluruh Riwayat MO Unit ${selectedUnit}`}
-              >
-                <Printer className="w-4 h-4 text-white" />
-                <span>Print Riwayat Unit ({selectedUnit})</span>
-              </button>
+              {canExport && (
+                <button
+                  type="button"
+                  onClick={() => handlePreviewUnitHistory(selectedUnit)}
+                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-mono font-bold text-xs shadow-lg shadow-blue-600/20 active:scale-95 transition cursor-pointer shrink-0"
+                  title={`Pratinjau & Cetak Dokumen Rangkuman Lengkap Seluruh Riwayat MO Unit ${selectedUnit}`}
+                >
+                  <Printer className="w-4 h-4 text-white" />
+                  <span>Print Riwayat Unit ({selectedUnit})</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1332,26 +1343,30 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       {/* Tombol Aksi per Kartu */}
                       <div className="flex items-center gap-1.5 ml-auto flex-wrap">
                         {/* 1. Print MO Spesifik */}
-                        <button
-                          type="button"
-                          onClick={() => handlePreviewSingleMO(b)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
-                          title="Pratinjau / Print PDF Khusus Dokumen MO Ini"
-                        >
-                          <Printer className="w-3 h-3 text-amber-400" />
-                          <span>Print MO</span>
-                        </button>
+                        {canExport && (
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewSingleMO(b)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
+                            title="Pratinjau / Print PDF Khusus Dokumen MO Ini"
+                          >
+                            <Printer className="w-3 h-3 text-amber-400" />
+                            <span>Print MO</span>
+                          </button>
+                        )}
 
                         {/* 2. Print Unit (Rangkuman Seluruh Kejadian MO Unit Ini) */}
-                        <button
-                          type="button"
-                          onClick={() => handlePreviewUnitHistory(b.noUnit)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500 hover:text-stone-950 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
-                          title={`Pratinjau / Print Riwayat Terpadu Seluruh MO Unit ${b.noUnit}`}
-                        >
-                          <Truck className="w-3 h-3 text-blue-400" />
-                          <span>Print Unit</span>
-                        </button>
+                        {canExport && (
+                          <button
+                            type="button"
+                            onClick={() => handlePreviewUnitHistory(b.noUnit)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500 hover:text-stone-950 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-semibold transition cursor-pointer shadow-sm active:scale-95"
+                            title={`Pratinjau / Print Riwayat Terpadu Seluruh MO Unit ${b.noUnit}`}
+                          >
+                            <Truck className="w-3 h-3 text-blue-400" />
+                            <span>Print Unit</span>
+                          </button>
+                        )}
 
                         {/* 3. Permintaan Part ke Malang */}
                         <button
@@ -1368,7 +1383,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         </button>
 
                         {/* 4. Update Pekerjaan di Sub Modul 2 */}
-                        {onNavigateToUpdate && !isReady && (
+                        {canEdit && onNavigateToUpdate && !isReady && (
                           <button
                             type="button"
                             onClick={() => onNavigateToUpdate(b)}
@@ -1635,14 +1650,16 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                                 <td className="p-2 text-stone-400 text-[10px]">{u.remark || '-'}</td>
                                 <td className="p-2 text-center whitespace-nowrap">
                                   <div className="flex items-center justify-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStartInlineEdit(b, u, uIdx)}
-                                      className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 hover:text-stone-950 text-amber-300 border border-amber-500/30 transition cursor-pointer"
-                                      title="Edit Baris Riwayat Ini (Inline Edit)"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                    </button>
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartInlineEdit(b, u, uIdx)}
+                                        className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 hover:text-stone-950 text-amber-300 border border-amber-500/30 transition cursor-pointer"
+                                        title="Edit Baris Riwayat Ini (Inline Edit)"
+                                      >
+                                        <Pencil className="w-3 h-3" />
+                                      </button>
+                                    )}
                                     {canDelete && updates.length > 1 && (
                                       <button
                                         type="button"
@@ -1894,25 +1911,29 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       <td className="px-3.5 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           {/* Print Dokumen MO */}
-                          <button
-                            type="button"
-                            onClick={() => handlePreviewSingleMO(b)}
-                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
-                            title="Pratinjau / Print PDF untuk MO Ini"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-amber-400" />
-                          </button>
+                          {canExport && (
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewSingleMO(b)}
+                              className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
+                              title="Pratinjau / Print PDF untuk MO Ini"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-amber-400" />
+                            </button>
+                          )}
 
                           {/* Print Dokumen Riwayat Unit Lengkap */}
-                          <button
-                            type="button"
-                            onClick={() => handlePreviewUnitHistory(b.noUnit)}
-                            className="px-2 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900 text-blue-300 border border-blue-800/40 text-[10.5px] font-bold font-mono transition flex items-center gap-1 cursor-pointer"
-                            title={`Pratinjau / Print Riwayat Semua MO Unit ${b.noUnit}`}
-                          >
-                            <Truck className="w-3.5 h-3.5 text-blue-400" />
-                            <span>Unit</span>
-                          </button>
+                          {canExport && (
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewUnitHistory(b.noUnit)}
+                              className="px-2 py-1.5 rounded-lg bg-blue-950/60 hover:bg-blue-900 text-blue-300 border border-blue-800/40 text-[10.5px] font-bold font-mono transition flex items-center gap-1 cursor-pointer"
+                              title={`Pratinjau / Print Riwayat Semua MO Unit ${b.noUnit}`}
+                            >
+                              <Truck className="w-3.5 h-3.5 text-blue-400" />
+                              <span>Unit</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -1993,14 +2014,16 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handlePrintModal}
-                  className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
-                  title="Cetak Laporan MO Ini"
-                >
-                  <Printer className="w-4 h-4" />
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={handlePrintModal}
+                    className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                    title="Cetak Laporan MO Ini"
+                  >
+                    <Printer className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setActiveModalRecord(null)}
@@ -2368,20 +2391,22 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedBreakdownForPartReq(activeModalRecord);
-                    setShowPartReqModal(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95"
-                  title="Export PDF Kebutuhan Spare Part untuk Dikirim ke Malang"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Export PDF Part (Malang)</span>
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBreakdownForPartReq(activeModalRecord);
+                      setShowPartReqModal(true);
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95"
+                    title="Export PDF Kebutuhan Spare Part untuk Dikirim ke Malang"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Export PDF Part (Malang)</span>
+                  </button>
+                )}
 
-                {onNavigateToUpdate && (activeModalRecord.statusUnit || '').toUpperCase().trim() !== 'READY' && (
+                {canEdit && onNavigateToUpdate && (activeModalRecord.statusUnit || '').toUpperCase().trim() !== 'READY' && (
                   <button
                     type="button"
                     onClick={() => {

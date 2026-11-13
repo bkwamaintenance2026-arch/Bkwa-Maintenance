@@ -12,7 +12,8 @@ import {
   OutFieldFuelRecord,
   OilDistributionRecord,
   OilStockInputRecord,
-  InventoryPeriodBalance
+  InventoryPeriodBalance,
+  ManpowerData
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
 
@@ -3798,5 +3799,495 @@ export const exportOperatorSettingToPDF = (params: GenerateOperatorSettingPdfPar
   result.download();
   return result;
 };
+
+export interface GenerateAssetListPdfParams {
+  units: AssetUnit[];
+  allUnits?: AssetUnit[];
+  currentUser?: UserAccount | null;
+  signatories?: {
+    pembuatName?: string;
+    pembuatJabatan?: string;
+    diperiksaName?: string;
+    diperiksaJabatan?: string;
+    disetujuiName?: string;
+    disetujuiJabatan?: string;
+  };
+}
+
+/**
+ * Generate PDF Resmi Daftar Registrasi Asset Unit (Modul 1)
+ */
+export const generateAssetListPDF = ({
+  units,
+  allUnits,
+  currentUser,
+  signatories,
+}: GenerateAssetListPdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const now = new Date();
+  const nowStr = now.toLocaleString('id-ID');
+  const dateStr = now.toISOString().split('T')[0];
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / Workshop';
+
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & OPERASI ALAT BERAT • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text('DOKUMEN INVENTARIS ASSET RESMI', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH (ETIKA09)', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text('LAPORAN DAFTAR REGISTRASI ASSET UNIT ALAT BERAT', 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Total Tampil: ${units.length} Unit   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  const metricSource = allUnits && allUnits.length > 0 ? allUnits : units;
+  const opCount = metricSource.filter((u) => (u.status || '').toLowerCase().includes('operasi')).length;
+  const standbyCount = metricSource.filter((u) => (u.status || '').toLowerCase().includes('stan')).length;
+  const bdCount = metricSource.filter((u) => (u.status || '').toLowerCase().includes('break')).length;
+
+  const cardWidth = 62;
+  const cardHeight = 11;
+  const startY = 33;
+
+  const cards = [
+    { label: 'TOTAL UNIT ARMADA', val: `${metricSource.length} Unit`, color: [30, 41, 59] as [number, number, number] },
+    { label: 'UNIT OPERASI', val: `${opCount} Unit`, color: [16, 185, 129] as [number, number, number] },
+    { label: 'UNIT STANDBY', val: `${standbyCount} Unit`, color: [217, 119, 6] as [number, number, number] },
+    { label: 'UNIT BREAKDOWN', val: `${bdCount} Unit`, color: [244, 63, 94] as [number, number, number] },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 3.8);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 3, startY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...c.color);
+    doc.text(c.val, x + 3, startY + 8.8);
+  });
+
+  const tableData = units.map((u, i) => [
+    (i + 1).toString(),
+    u.cnNew || '-',
+    u.namaAlat || '-',
+    u.jenis || '-',
+    u.classUnit || '-',
+    u.loc || '-',
+    u.status || '-',
+    u.brandMerk || '-',
+    u.snUnit || '-',
+    u.modelUnit || '-',
+    u.engineModel || '-',
+    u.snEngine || '-',
+    u.merkEngine || '-',
+  ]);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [[
+      'No',
+      'CN_NEW',
+      'Nama Alat',
+      'Jenis',
+      'Class',
+      'Lokasi',
+      'Status',
+      'Brand/Merk',
+      'SN Unit',
+      'Model Unit',
+      'Engine Model',
+      'SN Engine',
+      'Merk Engine',
+    ]],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 1.8,
+    },
+    bodyStyles: {
+      fontSize: 6.8,
+      cellPadding: 1.6,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 8 },
+      1: { halign: 'center', fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 20 },
+      2: { fontStyle: 'bold', cellWidth: 32 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 17 },
+      5: { cellWidth: 20 },
+      6: { halign: 'center', fontStyle: 'bold', cellWidth: 22 },
+      7: { cellWidth: 20 },
+      8: { cellWidth: 22 },
+      9: { cellWidth: 22 },
+      10: { cellWidth: 22 },
+      11: { cellWidth: 24 },
+      12: { cellWidth: 20 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 160;
+  if (finalY > 148) {
+    doc.addPage();
+    renderHeader();
+    finalY = 38;
+  } else {
+    finalY += 8;
+  }
+
+  const sigY = finalY;
+  const colWidth = 75;
+  const pembuatNama = signatories?.pembuatName || exporterName;
+  const pembuatJabatan = signatories?.pembuatJabatan || 'Admin / Staff Asset';
+  const diperiksaNama = signatories?.diperiksaName || 'Dodik Mariyadi';
+  const diperiksaJabatan = signatories?.diperiksaJabatan || 'Kabag Workshop';
+  const disetujuiNama = signatories?.disetujuiName || 'KTT / Management';
+  const disetujuiJabatan = signatories?.disetujuiJabatan || 'Management';
+
+  const sigCols = [
+    { title: 'Dibuat Oleh :', name: pembuatNama, role: pembuatJabatan, x: 14 },
+    { title: 'Diperiksa Oleh :', name: diperiksaNama, role: diperiksaJabatan, x: 14 + colWidth + 20 },
+    { title: 'Disetujui Oleh :', name: disetujuiNama, role: disetujuiJabatan, x: 14 + (colWidth + 20) * 2 },
+  ];
+
+  sigCols.forEach((sc) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sc.title, sc.x + colWidth / 2, sigY, { align: 'center' });
+    doc.line(sc.x + 10, sigY + 18, sc.x + colWidth - 10, sigY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sc.name, sc.x + colWidth / 2, sigY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sc.role, sc.x + colWidth / 2, sigY + 26, { align: 'center' });
+  });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(14, 200, 283, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH (ETIKA09) • Daftar Registrasi Asset Unit • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  const cleanDate = dateStr.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Daftar_Asset_Unit_PT_BKWA_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+export const exportAssetListToPDF = (params: GenerateAssetListPdfParams): GeneratedPDFResult => {
+  const result = generateAssetListPDF(params);
+  result.download();
+  return result;
+};
+
+export interface GenerateManpowerListPdfParams {
+  manpowerList: ManpowerData[];
+  allManpower?: ManpowerData[];
+  currentUser?: UserAccount | null;
+  signatories?: {
+    pembuatName?: string;
+    pembuatJabatan?: string;
+    diperiksaName?: string;
+    diperiksaJabatan?: string;
+    disetujuiName?: string;
+    disetujuiJabatan?: string;
+  };
+}
+
+/**
+ * Generate PDF Resmi Master Data Manpower & Personil (Modul 2)
+ */
+export const generateManpowerListPDF = ({
+  manpowerList,
+  allManpower,
+  currentUser,
+  signatories,
+}: GenerateManpowerListPdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const now = new Date();
+  const nowStr = now.toLocaleString('id-ID');
+  const dateStr = now.toISOString().split('T')[0];
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / HRD';
+
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & HRD WORKSHOP • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text('DOKUMEN MASTER MANPOWER RESMI', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH (ETIKA09)', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text('LAPORAN DATABASE MASTER MANPOWER & PERSONIL WORKSHOP', 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Total Tampil: ${manpowerList.length} Personil   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  const metricSource = allManpower && allManpower.length > 0 ? allManpower : manpowerList;
+  const tetapCount = metricSource.filter((m) => m.statusKaryawan === 'TETAP').length;
+  const kontrakHarianCount = metricSource.filter((m) =>
+    ['KONTRAK', 'HARIAN LEPAS'].includes(String(m.statusKaryawan || ''))
+  ).length;
+  const otherCount = metricSource.length - tetapCount - kontrakHarianCount;
+
+  const cardWidth = 62;
+  const cardHeight = 11;
+  const startY = 33;
+
+  const cards = [
+    { label: 'TOTAL PERSONIL', val: `${metricSource.length} Orang`, color: [30, 41, 59] as [number, number, number] },
+    { label: 'KARYAWAN TETAP', val: `${tetapCount} Orang`, color: [16, 185, 129] as [number, number, number] },
+    { label: 'KONTRAK / HARIAN LEPAS', val: `${kontrakHarianCount} Orang`, color: [59, 130, 246] as [number, number, number] },
+    { label: 'ETIKA 05 / MITRA / MAGANG', val: `${Math.max(0, otherCount)} Orang`, color: [217, 119, 6] as [number, number, number] },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 3.8);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 3, startY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...c.color);
+    doc.text(c.val, x + 3, startY + 8.8);
+  });
+
+  const tableData = manpowerList.map((m, i) => [
+    (i + 1).toString(),
+    m.nik || '-',
+    m.nama || '-',
+    m.jabatan || '-',
+    m.noWa || '-',
+    m.statusKaryawan || '-',
+    m.tglMasukKerja || '-',
+    m.keterangan || '-',
+  ]);
+
+  autoTable(doc, {
+    startY: 47,
+    head: [[
+      'No',
+      'NIK',
+      'Nama Lengkap',
+      'Jabatan',
+      'No. WhatsApp',
+      'Status Karyawan',
+      'Tgl. Masuk Kerja',
+      'Keterangan',
+    ]],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'center', fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 34 },
+      2: { fontStyle: 'bold', cellWidth: 50 },
+      3: { cellWidth: 36 },
+      4: { halign: 'center', cellWidth: 32 },
+      5: { halign: 'center', fontStyle: 'bold', cellWidth: 30 },
+      6: { halign: 'center', cellWidth: 26 },
+      7: { cellWidth: 51 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 160;
+  if (finalY > 148) {
+    doc.addPage();
+    renderHeader();
+    finalY = 38;
+  } else {
+    finalY += 8;
+  }
+
+  const sigY = finalY;
+  const colWidth = 75;
+  const pembuatNama = signatories?.pembuatName || exporterName;
+  const pembuatJabatan = signatories?.pembuatJabatan || 'Administrasi Workshop';
+  const diperiksaNama = signatories?.diperiksaName || 'Dodik Mariyadi';
+  const diperiksaJabatan = signatories?.diperiksaJabatan || 'Kabag Workshop';
+  const disetujuiNama = signatories?.disetujuiName || 'HRD / Management';
+  const disetujuiJabatan = signatories?.disetujuiJabatan || 'Management';
+
+  const sigCols = [
+    { title: 'Dibuat Oleh :', name: pembuatNama, role: pembuatJabatan, x: 14 },
+    { title: 'Diperiksa Oleh :', name: diperiksaNama, role: diperiksaJabatan, x: 14 + colWidth + 20 },
+    { title: 'Disetujui Oleh :', name: disetujuiNama, role: disetujuiJabatan, x: 14 + (colWidth + 20) * 2 },
+  ];
+
+  sigCols.forEach((sc) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sc.title, sc.x + colWidth / 2, sigY, { align: 'center' });
+    doc.line(sc.x + 10, sigY + 18, sc.x + colWidth - 10, sigY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sc.name, sc.x + colWidth / 2, sigY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sc.role, sc.x + colWidth / 2, sigY + 26, { align: 'center' });
+  });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(14, 200, 283, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH (ETIKA09) • Database Master Manpower • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  const cleanDate = dateStr.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Data_Manpower_PT_BKWA_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+export const exportManpowerListToPDF = (params: GenerateManpowerListPdfParams): GeneratedPDFResult => {
+  const result = generateManpowerListPDF(params);
+  result.download();
+  return result;
+};
+
 
 

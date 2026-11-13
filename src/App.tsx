@@ -33,6 +33,7 @@ import {
   getAllBreakdowns,
   registerBreakdown,
   updateBreakdownActivity,
+  updateBreakdownHistoryEntryById,
   deleteBreakdown,
   getAllSuppliers,
   addOrUpdateSupplier,
@@ -159,10 +160,30 @@ export default function App() {
       refreshAllData();
     });
 
+    // Listener untuk sinkronisasi live session akun (perubahan permission/hak akses)
+    const handleSessionUpdated = () => {
+      const refreshedUser = getCurrentUser();
+      setLocalCurrentUser(refreshedUser);
+      setUsersList(getAllUsers());
+    };
+
+    window.addEventListener('bkwa-user-session-updated', handleSessionUpdated);
+    window.addEventListener('bkwa-users-updated', handleSessionUpdated);
+
     return () => {
       unsubFirestore();
+      window.removeEventListener('bkwa-user-session-updated', handleSessionUpdated);
+      window.removeEventListener('bkwa-users-updated', handleSessionUpdated);
     };
   }, []);
+
+  // Guard otomatis: jika hak akses modul dicabut/dikunci saat user sedang berada di modul tsb, arahkan ke Menu Utama
+  useEffect(() => {
+    if (currentUser && activeModuleId !== 0 && !canUserViewModule(currentUser, activeModuleId)) {
+      setActiveModuleId(0);
+      showToast('Akses ke modul ini telah dibatasi atau dikunci untuk akun Anda.', 'error');
+    }
+  }, [currentUser, activeModuleId]);
 
   const refreshAllData = () => {
     setUnits(getAllUnits());
@@ -182,6 +203,10 @@ export default function App() {
     setAvailableOilTypes(getAvailableOilTypes());
     setP2HRecords(getAllP2HRecords());
     setUsersList(getAllUsers());
+    const liveUser = getCurrentUser();
+    if (liveUser) {
+      setLocalCurrentUser(liveUser);
+    }
   };
 
   const handleLoginSuccess = (user: UserAccount) => {
@@ -337,6 +362,23 @@ export default function App() {
     }
   ) => {
     const res = updateBreakdownActivity(id, updateData);
+    if (res.success) {
+      refreshAllData();
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message, 'error');
+    }
+    return res;
+  };
+
+  const handleUpdateBreakdownHistoryEntry = (
+    breakdownId: string,
+    entryIdOrCreatedAt: string,
+    updatedEntry: Partial<import('./types').BreakdownUpdateEntry> & {
+      component?: import('./types').BreakdownComponentOption | string;
+    }
+  ) => {
+    const res = updateBreakdownHistoryEntryById(breakdownId, entryIdOrCreatedAt, updatedEntry);
     if (res.success) {
       refreshAllData();
       showToast(res.message, 'success');
@@ -684,6 +726,7 @@ export default function App() {
         activeModuleId={activeModuleId}
         onSelectModule={handleSelectModule}
         modules={modules}
+        currentUser={currentUser}
         totalAssetCount={units.length}
         totalManpowerCount={manpowerList.length}
         totalBreakdownCount={breakdowns.filter((b) => b.statusUnit !== 'COMPLETED').length}
@@ -735,6 +778,7 @@ export default function App() {
             currentUser={currentUser}
             onSaveBreakdown={handleSaveBreakdown}
             onUpdateActivity={handleUpdateBreakdownActivity}
+            onUpdateHistoryEntry={handleUpdateBreakdownHistoryEntry}
             onDeleteBreakdown={handleDeleteBreakdown}
             onBackToMainMenu={handleGoHome}
             onNavigateToP2H={() => setActiveModuleId(5)}

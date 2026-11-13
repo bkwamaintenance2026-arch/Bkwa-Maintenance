@@ -15,7 +15,12 @@ import {
   deleteFleetSetting, 
   syncFleetFromP2H,
   getAllP2HRecords,
-  updateFleetRitaseCounter
+  updateFleetRitaseCounter,
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule
 } from '../../utils/storage';
 import { 
   Truck, 
@@ -74,6 +79,12 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 }) => {
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 5);
+  const canEdit = isDev || canUserEditModule(currentUser, 5);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 5);
+  const canExport = isDev || canUserExportModule(currentUser, 5);
+
   // State Fleet
   const [fleetList, setFleetList] = useState<FleetSettingRecord[]>(() => getAllFleetSettings());
 
@@ -111,8 +122,11 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   const [checkerOnlyDumpTruck, setCheckerOnlyDumpTruck] = useState<boolean>(true);
 
   // Opsi Mode Pengisian Penugasan Fleet (MANUAL | SYNC | COLLAPSED)
-  const [activeEntryMode, setActiveEntryMode] = useState<'MANUAL' | 'SYNC' | 'COLLAPSED'>('MANUAL');
+  const [activeEntryMode, setActiveEntryMode] = useState<'MANUAL' | 'SYNC' | 'COLLAPSED'>(
+    canInsert ? 'MANUAL' : 'COLLAPSED'
+  );
   const [inlineFeedback, setInlineFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const canSubmitForm = editingFleetId ? canEdit : canInsert;
 
   // Mode View: 'FLEET' (Alokasi Penugasan Fleet) vs 'CHECKER' (Tally Checker Tambang & Rekap Ritase)
   const [activeViewTab, setActiveViewTab] = useState<'FLEET' | 'CHECKER'>('FLEET');
@@ -235,6 +249,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Open Add Manual Modal
   const handleOpenAddManual = () => {
+    if (!canInsert) {
+      setInlineFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki izin menambah penugasan fleet baru.',
+      });
+      return;
+    }
     setEditingFleetId(null);
     setFormData({
       tanggal: filterDate || todayStr,
@@ -264,6 +285,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Open Edit Modal
   const handleOpenEdit = (rec: FleetSettingRecord) => {
+    if (!canEdit) {
+      setInlineFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki izin mengedit data setting fleet.',
+      });
+      return;
+    }
     setEditingFleetId(rec.id);
     setFormData({
       tanggal: rec.tanggal,
@@ -294,8 +322,21 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   // Submit Manual Form (Modal)
   const handleSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(editingFleetId ? canEdit : canInsert)) {
+      setInlineFeedback({
+        type: 'error',
+        message: editingFleetId
+          ? 'Akses Ditolak: Anda tidak memiliki izin mengedit setting fleet.'
+          : 'Akses Ditolak: Anda tidak memiliki izin menambah setting fleet.',
+      });
+      setShowManualModal(false);
+      return;
+    }
     if (!formData.noUnit.trim() || !formData.namaOperator.trim()) {
-      alert('Harap lengkapi No Unit dan Nama Operator!');
+      setInlineFeedback({
+        type: 'error',
+        message: 'Harap lengkapi No Unit dan Nama Operator!',
+      });
       return;
     }
 
@@ -340,18 +381,25 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
       refreshFleetData();
       setShowManualModal(false);
     } else {
-      alert(res.message);
+      setInlineFeedback({ type: 'error', message: res.message });
     }
   };
 
   // Delete fleet item
   const handleDelete = (id: string, noUnit: string) => {
+    if (!canDelete) {
+      setInlineFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki izin menghapus data setting fleet.',
+      });
+      return;
+    }
     if (window.confirm(`Yakin ingin menghapus setting fleet untuk unit ${noUnit}?`)) {
       const res = deleteFleetSetting(id);
       if (res.success) {
         refreshFleetData();
       } else {
-        alert(res.message);
+        setInlineFeedback({ type: 'error', message: res.message });
       }
     }
   };
@@ -359,6 +407,15 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   // Submit Inline Manual Form (Opsi 1)
   const handleInlineSubmitManual = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmitForm) {
+      setInlineFeedback({
+        type: 'error',
+        message: editingFleetId
+          ? 'Akses Ditolak: Anda tidak memiliki izin mengedit setting fleet.'
+          : 'Akses Ditolak: Anda tidak memiliki izin menambah setting fleet.',
+      });
+      return;
+    }
     if (!formData.noUnit.trim() || !formData.namaOperator.trim()) {
       setInlineFeedback({
         type: 'error',
@@ -440,6 +497,13 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
     kategoriKey: 'ritaseBatuBaik' | 'ritaseBatuPecelan' | 'ritaseImbalPlant' | 'ritaseImbalTanah' | 'ritaseLokasian',
     delta: number = 1
   ) => {
+    if (!canEdit) {
+      setInlineFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Anda tidak memiliki izin mengubah hitungan ritase.',
+      });
+      return;
+    }
     const checkerName = currentUser.fullName || currentUser.username || 'Checker Tambang';
     const res = updateFleetRitaseCounter(fleetId, kategoriKey, delta, false, checkerName);
     if (res.success) {
@@ -498,7 +562,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
         <button
           type="button"
           onClick={() => onChange(Math.max(0, (value || 0) - 1))}
-          disabled={(value || 0) <= 0}
+          disabled={!canSubmitForm || (value || 0) <= 0}
           className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 transition active:scale-95"
           title="Kurangi 1 Rit (-)"
         >
@@ -509,20 +573,22 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
         <input
           type="number"
           min={0}
+          disabled={!canSubmitForm}
           value={value === 0 ? '' : value}
           placeholder="0"
           onChange={(e) => {
             const parsed = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value) || 0);
             onChange(parsed);
           }}
-          className="w-full text-center px-2 py-1.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-amber-500"
+          className="w-full text-center px-2 py-1.5 bg-stone-950 border border-stone-800 rounded-xl text-stone-100 font-mono font-bold text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
         />
 
         {/* Tombol [+] besar sesuai permintaan user */}
         <button
           type="button"
+          disabled={!canSubmitForm}
           onClick={() => onChange((value || 0) + 1)}
-          className="flex items-center justify-center p-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black transition active:scale-95 shadow-md shadow-amber-500/20"
+          className="flex items-center justify-center p-2 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black transition active:scale-95 shadow-md shadow-amber-500/20"
           title="Tambah 1 Rit (+)"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
@@ -531,8 +597,9 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
         {/* Tombol [+5] quick add */}
         <button
           type="button"
+          disabled={!canSubmitForm}
           onClick={() => onChange((value || 0) + 5)}
-          className="px-2 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-mono font-bold transition active:scale-95"
+          className="px-2 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-30 disabled:cursor-not-allowed text-stone-300 text-[10px] font-mono font-bold transition active:scale-95"
           title="Tambah 5 Rit (+5)"
         >
           +5
@@ -543,6 +610,10 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Sync P2H Execution
   const handleExecuteSync = () => {
+    if (!canInsert) {
+      setSyncResultMsg({ type: 'error', text: 'Akses Ditolak: Anda tidak memiliki izin menyinkronkan data fleet baru.' });
+      return;
+    }
     setSyncResultMsg(null);
     const res = syncFleetFromP2H(syncTargetDate, syncTargetShift, syncDefaultLokasi);
     if (res.success) {
@@ -647,8 +718,12 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Export CSV Setting Fleet & Ritase
   const handleExportCSV = () => {
+    if (!canExport) {
+      setInlineFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengexport data CSV.' });
+      return;
+    }
     if (filteredFleetList.length === 0) {
-      alert('Tidak ada data setting fleet untuk diexport.');
+      setInlineFeedback({ type: 'error', message: 'Tidak ada data setting fleet untuk diexport.' });
       return;
     }
 
@@ -722,6 +797,10 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Open Print Preview & sinkronkan nama validasi manual dari data form atau record fleet
   const handleOpenPrintModal = () => {
+    if (!canExport) {
+      setInlineFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak laporan.' });
+      return;
+    }
     const foundChecker = formData.namaChecker.trim() || filteredFleetList.find((f) => f.namaChecker?.trim())?.namaChecker;
     const foundKTT = formData.namaKTT.trim() || filteredFleetList.find((f) => f.namaKTT?.trim())?.namaKTT;
     if (foundChecker) setValidatorChecker(foundChecker);
@@ -730,6 +809,10 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   };
 
   const handleOpenCheckerPrintModal = () => {
+    if (!canExport) {
+      setInlineFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak rekap checker.' });
+      return;
+    }
     const foundChecker = formData.namaChecker.trim() || filteredFleetList.find((f) => f.namaChecker?.trim())?.namaChecker;
     const foundKTT = formData.namaKTT.trim() || filteredFleetList.find((f) => f.namaKTT?.trim())?.namaKTT;
     if (foundChecker) setValidatorChecker(foundChecker);
@@ -768,46 +851,54 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
           {/* Action Buttons: Manual + Sync P2H + Export */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOpenAddManual}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono shadow-lg shadow-amber-500/20 transition active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Input Manual Fleet</span>
-            </button>
+            {canInsert && (
+              <button
+                type="button"
+                onClick={handleOpenAddManual}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono shadow-lg shadow-amber-500/20 transition active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Input Manual Fleet</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setSyncTargetDate(filterDate || todayStr);
-                setSyncResultMsg(null);
-                setShowSyncModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
-              title="Tarik & Sinkronkan data otomatis dari pengisian checklist P2H unit"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Sinkronkan dari Data P2H</span>
-            </button>
+            {canInsert && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSyncTargetDate(filterDate || todayStr);
+                  setSyncResultMsg(null);
+                  setShowSyncModal(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
+                title="Tarik & Sinkronkan data otomatis dari pengisian checklist P2H unit"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Sinkronkan dari Data P2H</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold shadow transition active:scale-95"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Export CSV</span>
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold shadow transition active:scale-95"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Export CSV</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleOpenPrintModal}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold shadow transition active:scale-95"
-            >
-              <Printer className="w-3.5 h-3.5 text-blue-400" />
-              <span>Cetak Laporan</span>
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleOpenPrintModal}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold shadow transition active:scale-95"
+              >
+                <Printer className="w-3.5 h-3.5 text-blue-400" />
+                <span>Cetak Laporan</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -919,50 +1010,56 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
           </div>
 
           {/* Mode Switcher Buttons */}
-          <div className="flex flex-wrap items-center gap-2 bg-stone-950 p-1.5 rounded-2xl border border-stone-800">
-            <button
-              id="btn-opt-manual-fleet"
-              type="button"
-              onClick={() => {
-                setActiveEntryMode('MANUAL');
-                setInlineFeedback(null);
-              }}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
-                activeEntryMode === 'MANUAL'
-                  ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20 font-black'
-                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
-              }`}
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>Opsi 1: Form Input Manual</span>
-            </button>
+          {canInsert ? (
+            <div className="flex flex-wrap items-center gap-2 bg-stone-950 p-1.5 rounded-2xl border border-stone-800">
+              <button
+                id="btn-opt-manual-fleet"
+                type="button"
+                onClick={() => {
+                  setActiveEntryMode('MANUAL');
+                  setInlineFeedback(null);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                  activeEntryMode === 'MANUAL'
+                    ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20 font-black'
+                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Opsi 1: Form Input Manual</span>
+              </button>
 
-            <button
-              id="btn-opt-sync-fleet"
-              type="button"
-              onClick={() => {
-                setActiveEntryMode('SYNC');
-                setSyncResultMsg(null);
-              }}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
-                activeEntryMode === 'SYNC'
-                  ? 'bg-teal-500 text-stone-950 shadow-md shadow-teal-500/20 font-black'
-                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
-              }`}
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Opsi 2: Sinkronkan Data P2H</span>
-            </button>
+              <button
+                id="btn-opt-sync-fleet"
+                type="button"
+                onClick={() => {
+                  setActiveEntryMode('SYNC');
+                  setSyncResultMsg(null);
+                }}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                  activeEntryMode === 'SYNC'
+                    ? 'bg-teal-500 text-stone-950 shadow-md shadow-teal-500/20 font-black'
+                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+                }`}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Opsi 2: Sinkronkan Data P2H</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveEntryMode(activeEntryMode === 'COLLAPSED' ? 'MANUAL' : 'COLLAPSED')}
-              className="px-2.5 py-2 rounded-xl text-stone-500 hover:text-stone-300 hover:bg-stone-900 text-xs font-mono transition"
-              title={activeEntryMode === 'COLLAPSED' ? 'Buka Panel Form' : 'Sembunyikan Panel Form'}
-            >
-              {activeEntryMode === 'COLLAPSED' ? 'Buka Form ↓' : 'Sembunyikan ↑'}
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setActiveEntryMode(activeEntryMode === 'COLLAPSED' ? 'MANUAL' : 'COLLAPSED')}
+                className="px-2.5 py-2 rounded-xl text-stone-500 hover:text-stone-300 hover:bg-stone-900 text-xs font-mono transition"
+                title={activeEntryMode === 'COLLAPSED' ? 'Buka Panel Form' : 'Sembunyikan Panel Form'}
+              >
+                {activeEntryMode === 'COLLAPSED' ? 'Buka Form ↓' : 'Sembunyikan ↑'}
+              </button>
+            </div>
+          ) : (
+            <span className="px-3 py-1.5 rounded-xl bg-stone-950 border border-stone-800 text-[11px] font-mono text-stone-400">
+              Mode Lihat Saja (Tidak ada izin Tambah Fleet)
+            </span>
+          )}
         </div>
 
         {/* FEEDBACK BANNER */}
@@ -1399,14 +1496,16 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 >
                   Reset Form
                 </button>
-                <button
-                  id="btn-simpan-fleet-manual"
-                  type="submit"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Simpan Setting Fleet</span>
-                </button>
+                {canSubmitForm && (
+                  <button
+                    id="btn-simpan-fleet-manual"
+                    type="submit"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Simpan Setting Fleet</span>
+                  </button>
+                )}
               </div>
             </div>
           </form>
@@ -1537,15 +1636,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               <span className="text-[11px] text-stone-500 italic">
                 * Sumber data hasil sinkronisasi akan diberi tanda "SINKRONISASI P2H"
               </span>
-              <button
-                id="btn-jalankan-sync-p2h"
-                type="button"
-                onClick={handleExecuteSync}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black text-xs shadow-lg shadow-teal-500/20 transition active:scale-95"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>⚡ Jalankan Sinkronisasi dari Data P2H Sekarang</span>
-              </button>
+              {canInsert && (
+                <button
+                  id="btn-jalankan-sync-p2h"
+                  type="button"
+                  onClick={handleExecuteSync}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black text-xs shadow-lg shadow-teal-500/20 transition active:scale-95"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>⚡ Jalankan Sinkronisasi dari Data P2H Sekarang</span>
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1553,14 +1654,20 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
         {/* 3. KONTEN COLLAPSED */}
         {activeEntryMode === 'COLLAPSED' && (
           <div className="flex items-center justify-between text-xs text-stone-400 bg-stone-950/60 p-3.5 rounded-2xl border border-stone-800">
-            <span>Panel pengisian form penugasan disembunyikan. Anda dapat fokus melihat dan mengelola tabel di bawah.</span>
-            <button
-              type="button"
-              onClick={() => setActiveEntryMode('MANUAL')}
-              className="text-amber-400 hover:text-amber-300 font-bold underline decoration-dotted"
-            >
-              Buka Form Input Manual →
-            </button>
+            <span>
+              {canInsert
+                ? 'Panel pengisian form penugasan disembunyikan. Anda dapat fokus melihat dan mengelola tabel di bawah.'
+                : 'Mode Lihat Saja: Anda dapat memantau penempatan armada dan ritase pada tabel di bawah.'}
+            </span>
+            {canInsert && (
+              <button
+                type="button"
+                onClick={() => setActiveEntryMode('MANUAL')}
+                className="text-amber-400 hover:text-amber-300 font-bold underline decoration-dotted"
+              >
+                Buka Form Input Manual →
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1714,25 +1821,27 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Truck className="w-8 h-8 text-stone-600 stroke-[1.5]" />
                       <span>Belum ada data Setting Fleet untuk kriteria tanggal / filter ini.</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <button
-                          type="button"
-                          onClick={handleOpenAddManual}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs hover:bg-amber-400 transition"
-                        >
-                          + Tambah Manual
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSyncTargetDate(filterDate || todayStr);
-                            setShowSyncModal(true);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-teal-600 text-stone-100 font-bold text-xs hover:bg-teal-500 transition"
-                        >
-                          Sinkronkan dari P2H
-                        </button>
-                      </div>
+                      {canInsert && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={handleOpenAddManual}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs hover:bg-amber-400 transition"
+                          >
+                            + Tambah Manual
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSyncTargetDate(filterDate || todayStr);
+                              setShowSyncModal(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-teal-600 text-stone-100 font-bold text-xs hover:bg-teal-500 transition"
+                          >
+                            Sinkronkan dari P2H
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1809,15 +1918,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                               >
                                 {totalRit} Rit
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => setQuickTallyTarget(item)}
-                                className="px-2 py-0.5 rounded-md bg-stone-800 hover:bg-stone-700 text-teal-400 hover:text-teal-300 font-mono text-[10.5px] font-bold border border-stone-700 transition active:scale-95 flex items-center gap-1 shadow-sm"
-                                title="Tally Ritase Cepat (+)"
-                              >
-                                <Plus className="w-3 h-3 stroke-[3]" />
-                                <span>Rit</span>
-                              </button>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => setQuickTallyTarget(item)}
+                                  className="px-2 py-0.5 rounded-md bg-stone-800 hover:bg-stone-700 text-teal-400 hover:text-teal-300 font-mono text-[10.5px] font-bold border border-stone-700 transition active:scale-95 flex items-center gap-1 shadow-sm"
+                                  title="Tally Ritase Cepat (+)"
+                                >
+                                  <Plus className="w-3 h-3 stroke-[3]" />
+                                  <span>Rit</span>
+                                </button>
+                              )}
                             </div>
                             {totalRit > 0 && (
                               <div className="text-[9.5px] font-mono text-stone-400 flex flex-wrap gap-1 max-w-[200px]">
@@ -1859,22 +1970,29 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                       {/* Aksi */}
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(item)}
-                            className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
-                            title="Edit Setting Fleet"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item.id, item.noUnit)}
-                            className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-700 transition"
-                            title="Hapus Setting Fleet"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
+                              title="Edit Setting Fleet"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(item.id, item.noUnit)}
+                              className="p-1.5 rounded-lg bg-stone-800 text-stone-400 hover:text-rose-400 hover:bg-stone-700 transition"
+                              title="Hapus Setting Fleet"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!canEdit && !canDelete && (
+                            <span className="text-[10px] text-stone-500 font-mono">View</span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1922,23 +2040,27 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
           {/* Action buttons checker */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOpenCheckerPrintModal}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Cetak Rekap Ritase Checker</span>
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleOpenCheckerPrintModal}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 text-xs font-bold font-mono shadow-lg shadow-teal-600/20 transition active:scale-95 border border-teal-400/40"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak Rekap Ritase Checker</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleOpenAddManual}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono shadow-lg shadow-amber-500/20 transition active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Setting DT Baru</span>
-            </button>
+            {canInsert && (
+              <button
+                type="button"
+                onClick={handleOpenAddManual}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono shadow-lg shadow-amber-500/20 transition active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Setting DT Baru</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -2098,13 +2220,15 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
           <div className="bg-stone-900 border border-stone-800 rounded-3xl p-8 text-center text-stone-500 space-y-3">
             <Truck className="w-10 h-10 mx-auto text-stone-600" />
             <p className="text-sm font-medium">Belum ada unit Dump Truck yang terdaftar untuk filter ini.</p>
-            <button
-              type="button"
-              onClick={handleOpenAddManual}
-              className="px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
-            >
-              + Input Manual Setting Fleet Unit
-            </button>
+            {canInsert && (
+              <button
+                type="button"
+                onClick={handleOpenAddManual}
+                className="px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
+              >
+                + Input Manual Setting Fleet Unit
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2179,16 +2303,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuBaik', -1)}
-                          disabled={(dt.ritaseBatuBaik || 0) <= 0}
-                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          disabled={!canEdit || (dt.ritaseBatuBaik || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:cursor-not-allowed text-stone-400 flex items-center justify-center font-bold text-xs"
                           title="Kurangi 1 rit"
                         >
                           -
                         </button>
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuBaik', 1)}
-                          className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-amber-500/20 active:scale-95 transition"
+                          className="h-7 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-amber-500/20 active:scale-95 transition"
                           title="Tambah 1 rit Batu Baik"
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2210,16 +2335,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuPecelan', -1)}
-                          disabled={(dt.ritaseBatuPecelan || 0) <= 0}
-                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          disabled={!canEdit || (dt.ritaseBatuPecelan || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:cursor-not-allowed text-stone-400 flex items-center justify-center font-bold text-xs"
                           title="Kurangi 1 rit"
                         >
                           -
                         </button>
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseBatuPecelan', 1)}
-                          className="h-7 px-2.5 rounded-lg bg-orange-500 hover:bg-orange-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-orange-500/20 active:scale-95 transition"
+                          className="h-7 px-2.5 rounded-lg bg-orange-500 hover:bg-orange-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-orange-500/20 active:scale-95 transition"
                           title="Tambah 1 rit Pecelan"
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2241,16 +2367,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalPlant', -1)}
-                          disabled={(dt.ritaseImbalPlant || 0) <= 0}
-                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          disabled={!canEdit || (dt.ritaseImbalPlant || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:cursor-not-allowed text-stone-400 flex items-center justify-center font-bold text-xs"
                           title="Kurangi 1 rit"
                         >
                           -
                         </button>
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalPlant', 1)}
-                          className="h-7 px-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-teal-500/20 active:scale-95 transition"
+                          className="h-7 px-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-teal-500/20 active:scale-95 transition"
                           title="Tambah 1 rit Imbal Plant"
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2272,16 +2399,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalTanah', -1)}
-                          disabled={(dt.ritaseImbalTanah || 0) <= 0}
-                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          disabled={!canEdit || (dt.ritaseImbalTanah || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:cursor-not-allowed text-stone-400 flex items-center justify-center font-bold text-xs"
                           title="Kurangi 1 rit"
                         >
                           -
                         </button>
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseImbalTanah', 1)}
-                          className="h-7 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-emerald-500/20 active:scale-95 transition"
+                          className="h-7 px-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-emerald-500/20 active:scale-95 transition"
                           title="Tambah 1 rit Imbal Tanah"
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2303,16 +2431,17 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseLokasian', -1)}
-                          disabled={(dt.ritaseLokasian || 0) <= 0}
-                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 text-stone-400 flex items-center justify-center font-bold text-xs"
+                          disabled={!canEdit || (dt.ritaseLokasian || 0) <= 0}
+                          className="w-7 h-7 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-20 disabled:cursor-not-allowed text-stone-400 flex items-center justify-center font-bold text-xs"
                           title="Kurangi 1 rit"
                         >
                           -
                         </button>
                         <button
                           type="button"
+                          disabled={!canEdit}
                           onClick={() => handleQuickIncrementRitase(dt.id, 'ritaseLokasian', 1)}
-                          className="h-7 px-2.5 rounded-lg bg-purple-500 hover:bg-purple-400 text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-purple-500/20 active:scale-95 transition"
+                          className="h-7 px-2.5 rounded-lg bg-purple-500 hover:bg-purple-400 disabled:opacity-30 disabled:cursor-not-allowed text-stone-950 font-black font-mono text-xs flex items-center gap-1 shadow-md shadow-purple-500/20 active:scale-95 transition"
                           title="Tambah 1 rit Lokasian"
                         >
                           <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -2327,13 +2456,15 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                     <span className="text-[10px] text-stone-400 truncate max-w-[170px]" title={dt.catatanChecker || dt.catatan || ''}>
                       {dt.catatanChecker ? `📝 ${dt.catatanChecker}` : (dt.catatan || 'Tanpa catatan')}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEdit(dt)}
-                      className="text-[10.5px] font-mono font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2 shrink-0"
-                    >
-                      Edit Form Lengkap &rarr;
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(dt)}
+                        className="text-[10.5px] font-mono font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2 shrink-0"
+                      >
+                        Edit Form Lengkap &rarr;
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -2412,15 +2543,19 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                         {dt.catatanChecker || dt.catatan || '-'}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setQuickTallyTarget(dt)}
-                          className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-stone-100 font-mono text-[11px] font-bold shadow transition active:scale-95 inline-flex items-center gap-1"
-                          title="Buka Popup Tally Cepat (+)"
-                        >
-                          <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                          <span>Tally (+)</span>
-                        </button>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => setQuickTallyTarget(dt)}
+                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-stone-100 font-mono text-[11px] font-bold shadow transition active:scale-95 inline-flex items-center gap-1"
+                            title="Buka Popup Tally Cepat (+)"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>Tally (+)</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-stone-500 font-mono">View</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -3189,14 +3324,16 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               >
                 Tutup
               </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-stone-100 font-bold text-xs shadow-lg shadow-blue-600/20 transition active:scale-95"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Lembar Dokumen</span>
-              </button>
+              {canExport && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-stone-100 font-bold text-xs shadow-lg shadow-blue-600/20 transition active:scale-95"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Lembar Dokumen</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -3576,14 +3713,16 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               >
                 Tutup
               </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 font-bold text-xs shadow-lg shadow-teal-600/20 transition active:scale-95"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Cetak Lembar Dokumen</span>
-              </button>
+              {canExport && (
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-stone-100 font-bold text-xs shadow-lg shadow-teal-600/20 transition active:scale-95"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Lembar Dokumen</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -36,7 +36,7 @@ import {
   History,
   Sparkles
 } from 'lucide-react';
-import { isDeveloper, canUserDeleteModule } from '../../utils/storage';
+import { isDeveloper, canUserInsertModule, canUserEditModule, canUserDeleteModule } from '../../utils/storage';
 
 interface InputBreakdownSubViewProps {
   units: AssetUnit[];
@@ -60,7 +60,9 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   onDeleteBreakdown,
 }) => {
   const isDev = isDeveloper(currentUser);
-  const canDelete = isDev || canUserDeleteModule(currentUser, 3) || currentUser.role === 'ADMIN' || currentUser.accountTier === 'ADMIN';
+  const canInsert = isDev || canUserInsertModule(currentUser, 3);
+  const canEdit = isDev || canUserEditModule(currentUser, 3);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 3);
   // Ambil daftar unik jenis unit dari Modul 1
   const availableJenisList = Array.from(
     new Set(units.map((u) => u.jenis).filter((j) => Boolean(j && j.trim())))
@@ -256,6 +258,14 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!canInsert) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Pengisian laporan breakdown baru dinonaktifkan.',
+      });
+      return;
+    }
+
     if (!formData.noUnit.trim()) {
       setFeedback({ type: 'error', message: 'NO UNIT wajib dipilih!' });
       return;
@@ -369,6 +379,15 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
             <span>Reset Form</span>
           </button>
         </div>
+
+        {!canInsert && (
+          <div className="mb-4 p-3.5 bg-sky-950/40 border border-sky-800/60 rounded-xl flex items-center gap-2.5 text-xs text-sky-200 font-mono">
+            <Lock className="w-4 h-4 text-sky-400 shrink-0" />
+            <span>
+              <strong>Mode Hanya View Aktif:</strong> Akun Anda berstatus viewer untuk Modul 3. Anda dapat memantau data breakdown tetapi tidak memiliki hak akses untuk menginput laporan baru.
+            </span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* GRID 1: Tanggal, HM, Jenis, No Unit, No Lama, Lokasi */}
@@ -581,15 +600,17 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                           </p>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onNavigateToUpdate(activeBreakdownForSelectedUnit)}
-                        className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-bold transition shadow"
-                        title="Buka di Sub Modul 2 untuk update penugasan mekanik atau penambahan part/jasa"
-                      >
-                        <span>Ke Sub Modul 2</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToUpdate(activeBreakdownForSelectedUnit)}
+                          className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-bold transition shadow"
+                          title="Buka di Sub Modul 2 untuk update penugasan mekanik atau penambahan part/jasa"
+                        >
+                          <span>Ke Sub Modul 2</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -823,13 +844,20 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
             <button
               id="btn-simpan-breakdown"
               type="submit"
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-500 text-stone-950 font-mono font-black text-xs uppercase tracking-wider hover:bg-amber-400 shadow-lg shadow-amber-500/20 active:scale-95 transition"
+              disabled={!canInsert}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-mono font-black text-xs uppercase tracking-wider transition ${
+                canInsert
+                  ? 'bg-amber-500 text-stone-950 hover:bg-amber-400 shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer'
+                  : 'bg-stone-800 text-stone-500 border border-stone-700 cursor-not-allowed opacity-60'
+              }`}
             >
-              <Save className="w-4 h-4" />
+              {canInsert ? <Save className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
               <span>
-                {activeBreakdownForSelectedUnit
-                  ? `SIMPAN UPDATE PEKERJAAN (REFF MO: ${activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})`
-                  : 'SIMPAN LAPORAN BREAKDOWN BARU'}
+                {canInsert
+                  ? (activeBreakdownForSelectedUnit
+                      ? `SIMPAN UPDATE PEKERJAAN (REFF MO: ${activeBreakdownForSelectedUnit.noMaintenanceOrder || activeBreakdownForSelectedUnit.noNotifikasi})`
+                      : 'SIMPAN LAPORAN BREAKDOWN BARU')
+                  : 'AKSES HANYA VIEW (PENGISIAN DINONAKTIFKAN)'}
               </span>
             </button>
           </div>
@@ -1101,15 +1129,17 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                       <td className="px-3 py-3 whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-1.5 font-sans">
                           {/* Tombol UPDATE -> langsung mengarahkan ke Sub Modul 2 */}
-                          <button
-                            type="button"
-                            onClick={() => onNavigateToUpdate(b)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer"
-                            title="Update breakdown unit ini di Sub Modul 2"
-                          >
-                            <Edit className="w-3 h-3" />
-                            <span>Update</span>
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => onNavigateToUpdate(b)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/30 text-[11px] font-bold transition cursor-pointer"
+                              title="Update breakdown unit ini di Sub Modul 2"
+                            >
+                              <Edit className="w-3 h-3" />
+                              <span>Update</span>
+                            </button>
+                          )}
 
                           {/* Tombol VIEW -> Modal Detail Lengkap */}
                           <button
@@ -1384,18 +1414,20 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = viewingRecord;
-                    setViewingRecord(null);
-                    onNavigateToUpdate(target);
-                  }}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                  <span>Buka Form Update</span>
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = viewingRecord;
+                      setViewingRecord(null);
+                      onNavigateToUpdate(target);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-stone-950 font-bold text-xs"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>Buka Form Update</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setViewingRecord(null)}

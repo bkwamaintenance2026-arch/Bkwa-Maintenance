@@ -61,7 +61,13 @@ import {
   INITIAL_KARYAWAN_USERS,
   INITIAL_MANPOWER_LIST,
 } from '../data/mockUnits';
-import { syncItemToFirestore, deleteItemFromFirestore } from '../services/firestoreSync';
+import {
+  syncItemToFirestore,
+  deleteItemFromFirestore,
+  getDeterministicDocId,
+  deleteStaleFirestoreDoc,
+  batchSyncToFirestore,
+} from '../services/firestoreSync';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'bkwa_current_user',
@@ -138,7 +144,20 @@ export function getCurrentUser(): UserAccount | null {
   try {
     const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     if (!data) return null;
-    return JSON.parse(data);
+    const sessionUser: UserAccount = JSON.parse(data);
+
+    // Sinkronkan selalu dengan akun terbaru di database/users list agar perubahan hak akses langsung berefek
+    const users = getAllUsers();
+    const liveUser = users.find(
+      (u) =>
+        u.id === sessionUser.id ||
+        (u.username && u.username.toLowerCase().trim() === (sessionUser.username || '').toLowerCase().trim()) ||
+        (u.phone && sessionUser.phone && u.phone.replace(/[^0-9]/g, '') === sessionUser.phone.replace(/[^0-9]/g, ''))
+    );
+    if (liveUser) {
+      return liveUser;
+    }
+    return sessionUser;
   } catch (e) {
     console.error('Error reading current user', e);
     return null;
@@ -151,6 +170,7 @@ export function setCurrentUser(user: UserAccount | null): void {
   } else {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
   }
+  window.dispatchEvent(new CustomEvent('bkwa-user-session-updated', { detail: { user } }));
 }
 
 // --- USER ACCOUNTS MANAGEMENT ---
@@ -168,11 +188,15 @@ export function getAllUsers(): UserAccount[] {
     }
 
     // Pastikan akun Developer selalu ada dengan username Admin BKWA, password Etika09, tier DEVELOPER
-    const devIdx = parsed.findIndex(
-      (u) =>
+    const devIdx = parsed.findIndex((u) => {
+      const uname = (u.username || '').toLowerCase().trim();
+      return (
         u.accountTier === 'DEVELOPER' ||
-        (u.username && u.username.toLowerCase().includes('admin'))
-    );
+        uname === 'admin bkwa' ||
+        uname === 'adminbkwa' ||
+        uname === 'adminbkwa09'
+      );
+    });
     if (devIdx !== -1) {
       parsed[devIdx].accountTier = 'DEVELOPER';
       parsed[devIdx].username = 'Admin BKWA';
@@ -223,17 +247,34 @@ export function getAllUsers(): UserAccount[] {
 
           if (existingIdx !== -1) {
             // Pertahankan password dan izin yang telah diatur oleh Developer atau diubah oleh user!
-            const currentPassword = parsed[existingIdx].password || cleanNik || 'bkwa123';
-            parsed[existingIdx].username = loginUsername;
-            parsed[existingIdx].phone = cleanWa;
-            parsed[existingIdx].password = currentPassword;
-            parsed[existingIdx].fullName = mp.nama || parsed[existingIdx].fullName || cleanWa;
-            parsed[existingIdx].manpowerId = mp.id;
-            parsed[existingIdx].department = mp.jabatan || parsed[existingIdx].department || 'Operasional';
-            parsed[existingIdx].jabatan = mp.jabatan || parsed[existingIdx].jabatan;
-            parsed[existingIdx].role = 'KARYAWAN';
-            parsed[existingIdx].status = parsed[existingIdx].status || 'AKTIF';
-            modified = true;
+            if (parsed[existingIdx].accountTier !== 'DEVELOPER') {
+              const currentPassword = parsed[existingIdx].password || cleanNik || 'bkwa123';
+              if (parsed[existingIdx].username !== loginUsername) {
+                parsed[existingIdx].username = loginUsername;
+                modified = true;
+              }
+              if (parsed[existingIdx].phone !== cleanWa) {
+                parsed[existingIdx].phone = cleanWa;
+                modified = true;
+              }
+              if (parsed[existingIdx].password !== currentPassword) {
+                parsed[existingIdx].password = currentPassword;
+                modified = true;
+              }
+              if (mp.nama && parsed[existingIdx].fullName !== mp.nama) {
+                parsed[existingIdx].fullName = mp.nama;
+                modified = true;
+              }
+              if (parsed[existingIdx].manpowerId !== mp.id) {
+                parsed[existingIdx].manpowerId = mp.id;
+                modified = true;
+              }
+              if (mp.jabatan && parsed[existingIdx].jabatan !== mp.jabatan) {
+                parsed[existingIdx].jabatan = mp.jabatan;
+                parsed[existingIdx].department = mp.jabatan;
+                modified = true;
+              }
+            }
           } else {
             // Default Hak Akses Seluruh Karyawan: Viewer Dulu Secara Default
             parsed.push({
@@ -257,6 +298,7 @@ export function getAllUsers(): UserAccount[] {
                 modul5P2H: false,
                 modul6SparePart: false,
                 modul7Tyre: false,
+                modul8MasterPart: false,
               },
               permissions: {
                 modul1: { viewer: true, input: false, edit: false, delete: false, export: false },
@@ -266,6 +308,7 @@ export function getAllUsers(): UserAccount[] {
                 modul5: { viewer: true, input: false, edit: false, delete: false, export: false },
                 modul6: { viewer: true, input: false, edit: false, delete: false, export: false },
                 modul7: { viewer: true, input: false, edit: false, delete: false, export: false },
+                modul8: { viewer: true, input: false, edit: false, delete: false, export: false },
               },
               createdAt: mp.createdAt || new Date().toISOString(),
             });
@@ -276,6 +319,30 @@ export function getAllUsers(): UserAccount[] {
     } catch (e) {
       console.error('Error syncing manpower accounts', e);
     }
+
+    // Pastikan seluruh user yang ada memiliki objek permissions lengkap (Modul 1 s/d 8)
+    parsed.forEach((u) => {
+      if (!u.permissions) {
+        const isFill = u.accessLevel === 'BISA_MENGISI' || u.role === 'ADMIN';
+        u.permissions = {
+          modul1: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul2: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul3: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul4: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul5: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul6: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul7: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+          modul8: { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill },
+        };
+        modified = true;
+      } else {
+        if (!u.permissions.modul8) {
+          const isFill = u.accessLevel === 'BISA_MENGISI' || u.role === 'ADMIN';
+          u.permissions.modul8 = { viewer: true, input: isFill, edit: isFill, delete: false, export: isFill };
+          modified = true;
+        }
+      }
+    });
 
     if (modified) {
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(parsed));
@@ -296,14 +363,34 @@ export async function saveAccessControlSettings(
   users: UserAccount[]
 ): Promise<{ success: boolean; message: string }> {
   try {
-    saveUsers(users);
-    // Sinkronkan seluruh data user ke Cloud Firestore secara realtime
-    for (const u of users) {
-      if (u.id) {
-        await syncItemToFirestore('users', u.id, u);
-      }
+    const nowIso = new Date().toISOString();
+    const stampedUsers = users.map((u) => ({
+      ...u,
+      updatedAt: nowIso,
+    }));
+
+    saveUsers(stampedUsers);
+
+    // Update session aktif jika user yang sedang login atau sedang disimulasikan termasuk dalam list yang diubah
+    const currentSessionRaw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (currentSessionRaw) {
+      try {
+        const sessionUser: UserAccount = JSON.parse(currentSessionRaw);
+        const match = stampedUsers.find(
+          (u) =>
+            u.id === sessionUser.id ||
+            (u.username && u.username.toLowerCase().trim() === (sessionUser.username || '').toLowerCase().trim())
+        );
+        if (match) {
+          localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(match));
+        }
+      } catch {}
     }
+
+    // Sinkronkan seluruh data user ke Cloud Firestore secara atomik (writeBatch) agar tidak ter-timpa onSnapshot
+    await batchSyncToFirestore('users', stampedUsers);
     window.dispatchEvent(new CustomEvent('bkwa-users-updated'));
+    window.dispatchEvent(new CustomEvent('bkwa-user-session-updated'));
     return {
       success: true,
       message: 'Pengaturan hak akses berhasil disimpan dan langsung aktif secara realtime!',
@@ -340,7 +427,7 @@ export function isDeveloper(user: UserAccount | null | undefined): boolean {
   );
 }
 
-// Poin 9: Cek apakah user boleh mengakses Form Registrasi Unit (Hanya Developer)
+// Cek apakah user boleh mengakses Form Registrasi Unit (Hanya Developer)
 export function canAccessRegistrationForm(user: UserAccount | null): boolean {
   if (!user) return false;
   return isDeveloper(user);
@@ -348,16 +435,34 @@ export function canAccessRegistrationForm(user: UserAccount | null): boolean {
 
 // Cek apakah user berhak melihat/membuka modul tertentu (Jika false -> HIDE MODUL dari menu & launcher!)
 export function canUserViewModule(user: UserAccount | null | undefined, moduleId: number): boolean {
-  if (!user) return false;
-  if (isDeveloper(user)) return true; // Akun Developer melihat semua modul 1-7
+  if (!user || user.status === 'NONAKTIF') return false;
+  if (isDeveloper(user)) return true; // Akun Developer melihat semua modul
 
-  // Cek matriks izin granular per modul
+  // 1. Prioritas Utama: Cek matriks izin granular per modul
   const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
-  if (user.permissions && user.permissions[modKey]) {
-    return Boolean(user.permissions[modKey]?.viewer); // Jika false -> HIDE modul!
+  if (user.permissions && user.permissions[modKey] !== undefined) {
+    return Boolean(user.permissions[modKey]?.viewer); // Jika false -> HIDE/LOCK modul!
   }
 
-  // Fallback backwards-compatibility
+  // 2. Fallback legacy modulePermissions jika ada
+  if (user.modulePermissions) {
+    const legacyKeys: Record<number, keyof UserModulePermissions> = {
+      1: 'modul1Asset',
+      2: 'modul2Manpower',
+      3: 'modul3Maintenance',
+      4: 'modul4Inventory',
+      5: 'modul5P2H',
+      6: 'modul6SparePart',
+      7: 'modul7Tyre',
+      8: 'modul8MasterPart',
+    };
+    const key = legacyKeys[moduleId];
+    if (key && user.modulePermissions[key] !== undefined) {
+      return Boolean(user.modulePermissions[key]);
+    }
+  }
+
+  // 3. Fallback level akun
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
   if (tier === 'DEVELOPER' || tier === 'ADMIN' || tier === 'KHUSUS') return true;
   if (tier === 'MEMBER') {
@@ -371,11 +476,18 @@ export function canUserInsertModule(user: UserAccount | null | undefined, module
   if (!user || user.status === 'NONAKTIF') return false;
   if (isDeveloper(user)) return true; // Developer full access
 
+  // 1. Cek matriks granular per modul
   const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
-  if (user.permissions && user.permissions[modKey]) {
+  if (user.permissions && user.permissions[modKey] !== undefined) {
     return Boolean(user.permissions[modKey]?.input);
   }
 
+  // 2. Jika akun diset HANYA_VIEW, secara tegas TIDAK BISA input
+  if (user.accessLevel === 'HANYA_VIEW') {
+    return false;
+  }
+
+  // 3. Fallback tier
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
   if (tier === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
   if (tier === 'MEMBER') return moduleId === 5;
@@ -387,12 +499,22 @@ export function canUserEditModule(user: UserAccount | null | undefined, moduleId
   if (!user || user.status === 'NONAKTIF') return false;
   if (isDeveloper(user)) return true; // Developer full access edit semua data
 
-  if (!moduleId) return false;
+  if (!moduleId) {
+    return user.accessLevel === 'BISA_MENGISI' || user.role === 'ADMIN';
+  }
+
+  // 1. Cek matriks granular per modul
   const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
-  if (user.permissions && user.permissions[modKey]) {
+  if (user.permissions && user.permissions[modKey] !== undefined) {
     return Boolean(user.permissions[modKey]?.edit);
   }
 
+  // 2. Jika akun diset HANYA_VIEW, secara tegas TIDAK BISA edit
+  if (user.accessLevel === 'HANYA_VIEW') {
+    return false;
+  }
+
+  // 3. Fallback tier
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
   if (tier === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
   return false;
@@ -408,11 +530,18 @@ export function canUserDeleteModule(user: UserAccount | null | undefined, module
   if (!user || user.status === 'NONAKTIF') return false;
   if (isDeveloper(user)) return true; // Developer full access delete semua data
 
+  // 1. Cek matriks granular per modul
   const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
-  if (user.permissions && user.permissions[modKey]) {
+  if (user.permissions && user.permissions[modKey] !== undefined) {
     return Boolean(user.permissions[modKey]?.delete);
   }
 
+  // 2. Jika akun diset HANYA_VIEW, tegas TIDAK BISA delete
+  if (user.accessLevel === 'HANYA_VIEW') {
+    return false;
+  }
+
+  // 3. Hanya Admin / Developer yang boleh menghapus data bila tidak ditentukan
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
   if (tier === 'ADMIN' || user.role === 'ADMIN') return [3, 4, 5, 6, 7, 8].includes(moduleId);
 
@@ -424,9 +553,15 @@ export function canUserExportModule(user: UserAccount | null | undefined, module
   if (!user || user.status === 'NONAKTIF') return false;
   if (isDeveloper(user)) return true; // Developer full export semua data
 
+  // 1. Cek matriks granular per modul
   const modKey = `modul${moduleId}` as keyof GranularUserPermissions;
-  if (user.permissions && user.permissions[modKey]) {
+  if (user.permissions && user.permissions[modKey] !== undefined) {
     return Boolean(user.permissions[modKey]?.export);
+  }
+
+  // 2. Jika akun diset HANYA_VIEW, cek apakah diizinkan export
+  if (user.accessLevel === 'HANYA_VIEW') {
+    return Boolean(user.accountTier === 'KHUSUS');
   }
 
   const tier = user.accountTier || (user.role === 'ADMIN' ? 'DEVELOPER' : 'MEMBER');
@@ -552,9 +687,11 @@ export function updateUserAccount(id: string, updates: Partial<UserAccount>): bo
     return false;
   }
 
-  users[index] = { ...users[index], ...updates };
+  users[index] = { ...users[index], ...updates, updatedAt: new Date().toISOString() };
   saveUsers(users);
   syncItemToFirestore('users', id, users[index]);
+  window.dispatchEvent(new CustomEvent('bkwa-users-updated'));
+  window.dispatchEvent(new CustomEvent('bkwa-user-session-updated'));
   return true;
 }
 
@@ -566,6 +703,7 @@ export function updateUserPassword(id: string, newPassword: string): { success: 
   }
 
   users[index].password = newPassword.trim();
+  users[index].updatedAt = new Date().toISOString();
   saveUsers(users);
   syncItemToFirestore('users', id, users[index]);
 
@@ -645,6 +783,7 @@ export function syncAllManpowerToUserAccounts(): {
           modul5P2H: false,
           modul6SparePart: false,
           modul7Tyre: false,
+          modul8MasterPart: false,
         },
         permissions: {
           modul1: { viewer: true, input: false, edit: false, delete: false, export: false },
@@ -654,6 +793,7 @@ export function syncAllManpowerToUserAccounts(): {
           modul5: { viewer: true, input: false, edit: false, delete: false, export: false },
           modul6: { viewer: true, input: false, edit: false, delete: false, export: false },
           modul7: { viewer: true, input: false, edit: false, delete: false, export: false },
+          modul8: { viewer: true, input: false, edit: false, delete: false, export: false },
         },
         createdAt: new Date().toISOString(),
       };
@@ -846,14 +986,21 @@ export function updateUnit(
   }
 
   const currentUser = getCurrentUser();
-  const today = new Date().toISOString().split('T')[0];
+  const nowIso = new Date().toISOString();
+  const today = nowIso.split('T')[0];
   const oldUnit = units[index];
+  const oldDocId = (oldUnit as any)._firestoreDocId || getDeterministicDocId('units', oldUnit);
 
   const updatedUnit: AssetUnit = {
     ...oldUnit,
     ...updates,
     terakhirDiperbarui: today,
   };
+  (updatedUnit as any)._updatedAtServer = nowIso;
+  const candidateWithoutDocId = { ...updatedUnit };
+  delete (candidateWithoutDocId as any)._firestoreDocId;
+  const newDocId = getDeterministicDocId('units', candidateWithoutDocId);
+  (updatedUnit as any)._firestoreDocId = newDocId;
 
   const historyLog: ActivityLog = {
     id: `log-${Date.now()}`,
@@ -869,6 +1016,9 @@ export function updateUnit(
 
   units[index] = updatedUnit;
   saveUnits(units);
+  if (oldDocId && oldDocId !== newDocId) {
+    deleteStaleFirestoreDoc('units', oldDocId);
+  }
   syncItemToFirestore('units', id, updatedUnit);
 
   logActivity({
@@ -899,7 +1049,8 @@ export function updateUnitOperatorSetting(
   }
 
   const currentUser = getCurrentUser();
-  const today = new Date().toISOString().split('T')[0];
+  const nowIso = new Date().toISOString();
+  const today = nowIso.split('T')[0];
   const oldUnit = units[index];
 
   const updatedUnit: AssetUnit = {
@@ -910,10 +1061,11 @@ export function updateUnitOperatorSetting(
     operatorJob: setting.operatorJob !== undefined ? setting.operatorJob : oldUnit.operatorJob,
     barcodeFuelStatus: setting.barcodeFuelStatus !== undefined ? setting.barcodeFuelStatus : oldUnit.barcodeFuelStatus,
     operatorRemark: setting.operatorRemark !== undefined ? setting.operatorRemark : oldUnit.operatorRemark,
-    operatorUpdatedAt: new Date().toISOString(),
+    operatorUpdatedAt: nowIso,
     operatorUpdatedBy: currentUser?.fullName || 'Staf Admin',
     terakhirDiperbarui: today,
   };
+  (updatedUnit as any)._updatedAtServer = nowIso;
 
   const historyLog: ActivityLog = {
     id: `log-${Date.now()}`,
@@ -1044,15 +1196,27 @@ export function updateManpower(
     return { success: false, message: 'Data Manpower tidak ditemukan!' };
   }
 
-  const now = new Date().toISOString().split('T')[0];
+  const oldRecord = list[index];
+  const oldDocId = (oldRecord as any)._firestoreDocId || getDeterministicDocId('manpower', oldRecord);
+  const nowIso = new Date().toISOString();
+  const now = nowIso.split('T')[0];
   const updatedRecord: ManpowerData = {
-    ...list[index],
+    ...oldRecord,
     ...updates,
     updatedAt: now,
   };
+  (updatedRecord as any)._updatedAtServer = nowIso;
+
+  const candidateWithoutDocId = { ...updatedRecord };
+  delete (candidateWithoutDocId as any)._firestoreDocId;
+  const newDocId = getDeterministicDocId('manpower', candidateWithoutDocId);
+  (updatedRecord as any)._firestoreDocId = newDocId;
 
   list[index] = updatedRecord;
   saveManpowerList(list);
+  if (oldDocId && oldDocId !== newDocId) {
+    deleteStaleFirestoreDoc('manpower', oldDocId);
+  }
   syncItemToFirestore('manpower', id, updatedRecord);
 
   logActivity({
@@ -1791,11 +1955,11 @@ export function updateBreakdownActivity(
 
 /**
  * Update spesifik baris entri riwayat pekerjaan harian pada suatu BreakdownRecord
- * Digunakan untuk fitur Inline Editing di Kartu No MO
+ * Digunakan untuk fitur Inline Editing di Kartu No MO (berdasarkan index atau id)
  */
 export function updateBreakdownHistoryEntry(
   breakdownId: string,
-  entryIndex: number,
+  entryIndexOrId: number | string,
   updatedEntry: Partial<BreakdownUpdateEntry>
 ): {
   success: boolean;
@@ -1810,32 +1974,83 @@ export function updateBreakdownHistoryEntry(
 
   const record = records[index];
   const history = [...(record.riwayatUpdate || [])];
-  if (entryIndex < 0 || entryIndex >= history.length) {
-    return { success: false, message: 'Baris riwayat update tidak valid!' };
+  let entryIndex = -1;
+  if (typeof entryIndexOrId === 'number') {
+    entryIndex = entryIndexOrId;
+  } else {
+    const key = String(entryIndexOrId).trim();
+    entryIndex = history.findIndex((h) => h.id === key || h.createdAt === key);
   }
 
-  history[entryIndex] = {
+  if (entryIndex < 0 || entryIndex >= history.length) {
+    return { success: false, message: 'Baris riwayat update tidak ditemukan atau tidak valid!' };
+  }
+
+  const mergedEntry: BreakdownUpdateEntry = {
     ...history[entryIndex],
     ...updatedEntry,
   };
+  history[entryIndex] = mergedEntry;
 
-  // Jika yang diedit adalah riwayat paling akhir, sinkronkan juga atribut utama record
-  const isLatest = entryIndex === 0 || entryIndex === history.length - 1;
+  // Identifikasi entri kronologis paling akhir
+  const sortedNewestFirst = [...history].sort((a, b) => {
+    const ka = a.createdAt || `${a.startJob || a.tanggal || ''}T${a.jamStart || '00:00'}`;
+    const kb = b.createdAt || `${b.startJob || b.tanggal || ''}T${b.jamStart || '00:00'}`;
+    return kb.localeCompare(ka);
+  });
+  const newestEntry = sortedNewestFirst[0];
+  const isLatest =
+    newestEntry === mergedEntry ||
+    (newestEntry?.id && mergedEntry.id && newestEntry.id === mergedEntry.id) ||
+    entryIndex === 0;
+
   const now = new Date().toISOString();
+  let downtimeHours = record.downtimeHours;
+  let completedAt = record.completedAt;
+  const nextStatus = (isLatest ? (mergedEntry.statusUnit || record.statusUnit) : record.statusUnit) as BreakdownStatusUnitOption;
+
+  if (isLatest) {
+    if (nextStatus === 'READY' || nextStatus === 'LIMIT OPERASI') {
+      const endDateStr = mergedEntry.endDate || mergedEntry.finishJob || mergedEntry.tanggal || now.split('T')[0];
+      const endTimeStr = mergedEntry.jamFinish || '17:00';
+      completedAt = completedAt || `${endDateStr}T${endTimeStr}:00`;
+      const startDateStr = record.tanggal || now.split('T')[0];
+      const startTimeStr = record.jamBreakdown || '08:00';
+      const startMs = Date.parse(`${startDateStr}T${startTimeStr}`);
+      const endMs = Date.parse(`${endDateStr}T${endTimeStr}`);
+      if (!isNaN(startMs) && !isNaN(endMs)) {
+        downtimeHours = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60)));
+      } else if (!downtimeHours) {
+        downtimeHours = 1;
+      }
+    } else {
+      completedAt = undefined;
+    }
+  }
 
   const updatedRecord: BreakdownRecord = {
     ...record,
     riwayatUpdate: history,
     updatedAt: now,
-    ...(isLatest ? {
-      statusUnit: (updatedEntry.statusUnit as any) || record.statusUnit,
-      progress: (updatedEntry.progress as any) || record.progress,
-      pic1: updatedEntry.pic1 !== undefined ? updatedEntry.pic1 : record.pic1,
-      pic2: updatedEntry.pic2 !== undefined ? updatedEntry.pic2 : record.pic2,
-      pic3: updatedEntry.pic3 !== undefined ? updatedEntry.pic3 : record.pic3,
-      detailKerusakan: updatedEntry.detailKerusakan || record.detailKerusakan,
-      remark: updatedEntry.remark !== undefined ? updatedEntry.remark : record.remark,
-    } : {}),
+    ...(isLatest
+      ? {
+          startJob: mergedEntry.startJob || record.startJob,
+          jamStart: mergedEntry.jamStart !== undefined ? mergedEntry.jamStart : record.jamStart,
+          endDate: mergedEntry.endDate || mergedEntry.finishJob || record.endDate,
+          jamFinish: mergedEntry.jamFinish !== undefined ? mergedEntry.jamFinish : record.jamFinish,
+          statusUnit: nextStatus,
+          progress: (mergedEntry.progress as any) || record.progress,
+          pic1: mergedEntry.pic1 !== undefined ? mergedEntry.pic1 : record.pic1,
+          pic2: mergedEntry.pic2 !== undefined ? mergedEntry.pic2 : record.pic2,
+          pic3: mergedEntry.pic3 !== undefined ? mergedEntry.pic3 : record.pic3,
+          detailKerusakan: mergedEntry.detailKerusakan || mergedEntry.detailPekerjaan || record.detailKerusakan,
+          remark: mergedEntry.remark !== undefined ? mergedEntry.remark : record.remark,
+          partsJasa: mergedEntry.partsJasa !== undefined ? mergedEntry.partsJasa : record.partsJasa,
+          component: ((updatedEntry as any).component as BreakdownComponentOption) || record.component,
+          downtimeHours,
+          completedAt,
+        }
+      : {}),
   };
 
   records[index] = updatedRecord;
@@ -1854,6 +2069,14 @@ export function updateBreakdownHistoryEntry(
     message: 'Baris riwayat pekerjaan berhasil diperbarui!',
     record: updatedRecord,
   };
+}
+
+export function updateBreakdownHistoryEntryById(
+  breakdownId: string,
+  entryIdOrCreatedAt: string,
+  updatedEntry: Partial<BreakdownUpdateEntry> & { component?: BreakdownComponentOption | string }
+) {
+  return updateBreakdownHistoryEntry(breakdownId, entryIdOrCreatedAt, updatedEntry);
 }
 
 /**

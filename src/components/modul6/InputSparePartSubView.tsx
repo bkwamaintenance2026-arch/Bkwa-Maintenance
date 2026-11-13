@@ -21,7 +21,9 @@ import {
 interface InputSparePartSubViewProps {
   spareParts: SparePartItem[];
   currentUser: UserAccount;
+  canInsert: boolean;
   canEdit: boolean;
+  canDelete: boolean;
   onAddOrUpdatePart: (
     data: Omit<SparePartItem, 'id' | 'createdAt' | 'updatedAt'>,
     id?: string
@@ -37,7 +39,9 @@ interface InputSparePartSubViewProps {
 export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
   spareParts,
   currentUser,
+  canInsert,
   canEdit,
+  canDelete,
   onAddOrUpdatePart,
   onAddStock,
   onDeletePart,
@@ -102,7 +106,13 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
     setEditingId(null);
   };
 
+  const canSubmitForm = editingId ? canEdit : canInsert;
+
   const handleEditClick = (item: SparePartItem) => {
+    if (!canEdit) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengedit data spare part.' });
+      return;
+    }
     setEditingId(item.id);
     setFormData({
       partNumber: item.partNumber,
@@ -119,6 +129,15 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
 
   const handleSubmitForm = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmitForm) {
+      setFeedback({
+        type: 'error',
+        message: editingId
+          ? 'Akses Ditolak: Anda tidak memiliki izin mengedit data spare part.'
+          : 'Akses Ditolak: Anda tidak memiliki izin mendaftarkan spare part baru.',
+      });
+      return;
+    }
 
     if (!formData.partNumber.trim()) {
       setFeedback({ type: 'error', message: 'Part Number (PN) wajib diisi!' });
@@ -152,6 +171,11 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
   // Submit Modal Tambah Stok (+)
   const handleConfirmAddStock = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canInsert && !canEdit) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin menambah stok spare part.' });
+      setSelectedStockPart(null);
+      return;
+    }
     if (!selectedStockPart) return;
 
     if (incomingQty <= 0) {
@@ -225,7 +249,7 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
       )}
 
       {/* FORM INPUT SPARE PART / INCOMING COMPONENT */}
-      {canEdit && (
+      {canSubmitForm && (
         <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl">
           <div className="flex items-center justify-between pb-4 mb-5 border-b border-stone-800">
             <div className="flex items-center gap-3">
@@ -529,7 +553,7 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
                           </span>
 
                           {/* Tombol + untuk Menambah STOCK (Sesuai Permintaan User) */}
-                          {canEdit && (
+                          {(canInsert || canEdit) && (
                             <button
                               type="button"
                               onClick={() => {
@@ -564,33 +588,37 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
 
                       {/* Aksi Edit & Hapus */}
                       <td className="px-3 py-3 text-center whitespace-nowrap">
-                        {canEdit ? (
+                        {canEdit || canDelete ? (
                           <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleEditClick(item)}
-                              className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
-                              title="Edit spesifikasi part"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Yakin ingin menghapus [${item.partNumber}] ${item.namaBarang}?`)) {
-                                  const res = onDeletePart(item.id);
-                                  if (res.success) {
-                                    setFeedback({ type: 'success', message: res.message });
-                                  } else {
-                                    setFeedback({ type: 'error', message: res.message });
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleEditClick(item)}
+                                className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-amber-400 hover:bg-stone-700 transition"
+                                title="Edit spesifikasi part"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm(`Yakin ingin menghapus [${item.partNumber}] ${item.namaBarang}?`)) {
+                                    const res = onDeletePart(item.id);
+                                    if (res.success) {
+                                      setFeedback({ type: 'success', message: res.message });
+                                    } else {
+                                      setFeedback({ type: 'error', message: res.message });
+                                    }
                                   }
-                                }
-                              }}
-                              className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-rose-400 hover:bg-stone-700 transition"
-                              title="Hapus part"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                                }}
+                                className="p-1.5 rounded-lg bg-stone-800 text-stone-300 hover:text-rose-400 hover:bg-stone-700 transition"
+                                title="Hapus part"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-[10px] text-stone-500">View Only</span>

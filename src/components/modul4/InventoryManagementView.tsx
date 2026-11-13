@@ -28,7 +28,11 @@ import { ExportFuelOilReportModal } from './ExportFuelOilReportModal';
 import { 
   calculateInventoryStockLevels, 
   calculateFuelSummaryBulanBerjalan, 
-  calculateOutFieldFuelBulanBerjalan 
+  calculateOutFieldFuelBulanBerjalan,
+  isDeveloper,
+  canUserEditModule,
+  canUserInsertModule,
+  canUserExportModule
 } from '../../utils/storage';
 import { 
   Fuel, 
@@ -179,6 +183,11 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   onAddCustomOilType,
   onBackToMainMenu,
 }) => {
+  const isDev = isDeveloper(currentUser);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canManageBalance = isDev || canUserEditModule(currentUser, 4) || canUserInsertModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
+
   // Category Filter & Active Sub-Modul
   const [selectedCategory, setSelectedCategory] = useState<FogCategoryColumn>('ALL');
   const [activeSubModule, setActiveSubModule] = useState<FogSubModuleTab>('out_field_fuel');
@@ -205,6 +214,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       endDate?: string;
     }
   ) => {
+    if (!canExport) return;
     setExportCategoryTarget(cat);
     setExportModalGroupBy(settings?.groupBy || 'NONE');
     setExportModalUnitFilter(settings?.unitFilter || 'ALL');
@@ -301,6 +311,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   }, [greaseDistributions]);
 
   const handleOpenBalanceModal = () => {
+    if (!canManageBalance) return;
     setEditFuelTangki(periodBalance.sisaPeriodeLaluFuelTangki || 0);
     setEditFuelFT(periodBalance.sisaPeriodeLaluFuelFT || 0);
     setEditKapasitasTangkiUtama(periodBalance.kapasitasTangkiUtama || 20000);
@@ -312,6 +323,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   const handleSaveBalanceSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageBalance) return;
     const updated: InventoryPeriodBalance = {
       sisaPeriodeLaluFuelTangki: Number(editFuelTangki) || 0,
       sisaPeriodeLaluFuelFT: Number(editFuelFT) || 0,
@@ -331,6 +343,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   const handleSaveQuickCapacity = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit && !canManageBalance) return;
     const val = Math.max(1, Number(quickCapacityVal) || (quickCapacityTarget === 'tangki_utama' ? 20000 : 5000));
     const updated: InventoryPeriodBalance = {
       ...periodBalance,
@@ -519,38 +532,42 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                id="btn-open-export-fuel-oil-pdf"
-                type="button"
-                onClick={() => {
-                  let cat: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE' = 'ALL';
-                  if (activeSubModule === 'fuel_stock') {
-                    cat = 'TANGKI_UTAMA';
-                  } else if (activeSubModule === 'fuel_transfer' || activeSubModule === 'fuel_dist') {
-                    cat = 'FUEL_TRUCK';
-                  } else if (activeSubModule === 'out_field_fuel') {
-                    cat = 'SPBU_LUAR';
-                  } else if (activeSubModule === 'oil_dist' || activeSubModule === 'oil_stock') {
-                    cat = 'OLI_PER_TIPE';
-                  }
-                  handleOpenExportWithSettings(cat);
-                }}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
-                title="Download / Cetak Dokumen Laporan Resmi Bahan Bakar & Pelumas (.pdf)"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                <span>Export Laporan PDF</span>
-              </button>
+              {canExport && (
+                <button
+                  id="btn-open-export-fuel-oil-pdf"
+                  type="button"
+                  onClick={() => {
+                    let cat: 'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE' = 'ALL';
+                    if (activeSubModule === 'fuel_stock') {
+                      cat = 'TANGKI_UTAMA';
+                    } else if (activeSubModule === 'fuel_transfer' || activeSubModule === 'fuel_dist') {
+                      cat = 'FUEL_TRUCK';
+                    } else if (activeSubModule === 'out_field_fuel') {
+                      cat = 'SPBU_LUAR';
+                    } else if (activeSubModule === 'oil_dist' || activeSubModule === 'oil_stock') {
+                      cat = 'OLI_PER_TIPE';
+                    }
+                    handleOpenExportWithSettings(cat);
+                  }}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
+                  title="Download / Cetak Dokumen Laporan Resmi Bahan Bakar & Pelumas (.pdf)"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Export Laporan PDF</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={handleOpenBalanceModal}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 border border-stone-700 text-stone-200 text-xs font-semibold shadow-sm transition active:scale-95"
-                title="Atur Sisa Periode Sebelumnya & Kapasitas Manual Tangki Solar"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-                <span>Kalibrasi Saldo & Kapasitas Tangki</span>
-              </button>
+              {canManageBalance && (
+                <button
+                  type="button"
+                  onClick={handleOpenBalanceModal}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 border border-stone-700 text-stone-200 text-xs font-semibold shadow-sm transition active:scale-95"
+                  title="Atur Sisa Periode Sebelumnya & Kapasitas Manual Tangki Solar"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Kalibrasi Saldo & Kapasitas Tangki</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -591,19 +608,21 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <span>Level: <strong className="text-stone-200">{computation?.tangkiUtama?.persentase ?? 0}%</strong></span>
                   <div className="flex items-center gap-1">
                     <span>Kap: {(computation?.tangkiUtama?.kapasitasMaksimal ?? 20000).toLocaleString('id-ID')} L</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuickCapacityTarget('tangki_utama');
-                        setQuickCapacityVal(computation?.tangkiUtama?.kapasitasMaksimal || 20000);
-                        setShowQuickCapacityModal(true);
-                      }}
-                      className="p-0.5 hover:text-amber-300 text-stone-500"
-                      title="Ubah Kapasitas Tangki Utama"
-                    >
-                      <Pencil className="w-2.5 h-2.5" />
-                    </button>
+                    {canManageBalance && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuickCapacityTarget('tangki_utama');
+                          setQuickCapacityVal(computation?.tangkiUtama?.kapasitasMaksimal || 20000);
+                          setShowQuickCapacityModal(true);
+                        }}
+                        className="p-0.5 hover:text-amber-300 text-stone-500"
+                        title="Ubah Kapasitas Tangki Utama"
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="w-full bg-stone-800 h-1.5 rounded-full overflow-hidden">
@@ -649,19 +668,21 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                   <span>Level: <strong className="text-stone-200">{computation?.fuelTruck?.persentase ?? 0}%</strong></span>
                   <div className="flex items-center gap-1">
                     <span>FT-01: {(computation?.fuelTruck?.kapasitasMaksimal ?? 5000).toLocaleString('id-ID')} L</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuickCapacityTarget('fuel_truck');
-                        setQuickCapacityVal(computation?.fuelTruck?.kapasitasMaksimal || 5000);
-                        setShowQuickCapacityModal(true);
-                      }}
-                      className="p-0.5 hover:text-blue-300 text-stone-500"
-                      title="Ubah Kapasitas Armada Fuel Truck (FT-01)"
-                    >
-                      <Pencil className="w-2.5 h-2.5" />
-                    </button>
+                    {canManageBalance && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuickCapacityTarget('fuel_truck');
+                          setQuickCapacityVal(computation?.fuelTruck?.kapasitasMaksimal || 5000);
+                          setShowQuickCapacityModal(true);
+                        }}
+                        className="p-0.5 hover:text-blue-300 text-stone-500"
+                        title="Ubah Kapasitas Armada Fuel Truck (FT-01)"
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="w-full bg-stone-800 h-1.5 rounded-full overflow-hidden">
@@ -943,10 +964,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             suppliers={suppliers}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={() => {
-              setExportCategoryTarget('TANGKI_UTAMA');
-              setShowExportModal(true);
-            }}
+            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('TANGKI_UTAMA') : undefined}
             onSave={onSaveFuelStockInput}
             onDelete={onDeleteFuelStockInput}
           />
@@ -961,10 +979,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             standardSolarPrice={standardSolarPrice}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={() => {
-              setExportCategoryTarget('FUEL_TRUCK');
-              setShowExportModal(true);
-            }}
+            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('FUEL_TRUCK') : undefined}
             onSave={onSaveFuelTransfer}
             onDelete={onDeleteFuelTransfer}
           />
@@ -977,7 +992,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             equipmentList={units}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={(settings) => handleOpenExportWithSettings('FUEL_TRUCK', settings)}
+            onOpenExportPDF={canExport ? (settings) => handleOpenExportWithSettings('FUEL_TRUCK', settings) : undefined}
             onSave={onSaveFuelDistribution}
             onDelete={onDeleteFuelDistribution}
           />
@@ -1005,10 +1020,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             manpowerList={manpowerList}
             availableOilTypes={availableOilTypes}
             currentUser={currentUser}
-            onOpenExportPDF={() => {
-              setExportCategoryTarget('OLI_PER_TIPE');
-              setShowExportModal(true);
-            }}
+            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('OLI_PER_TIPE') : undefined}
             onSave={onSaveOilDistribution}
             onDelete={onDeleteOilDistribution}
           />

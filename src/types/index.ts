@@ -66,6 +66,7 @@ export interface UserAccount {
   modulePermissions?: UserModulePermissions;
   permissions?: GranularUserPermissions; // Izin granular per modul 1 s/d 7 (Viewer, Input, Edit, Delete, Export)
   createdAt: string;
+  updatedAt?: string;
   lastLogin?: string;
 }
 

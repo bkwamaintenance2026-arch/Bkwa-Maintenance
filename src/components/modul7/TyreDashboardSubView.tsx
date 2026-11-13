@@ -7,7 +7,7 @@ import {
   TyreRemoveRecord, 
   UserAccount 
 } from '../../types';
-import { isDeveloper } from '../../utils/storage';
+import { isDeveloper, canUserEditModule, canUserDeleteModule, canUserExportModule } from '../../utils/storage';
 import { 
   BarChart3, 
   AlertTriangle, 
@@ -57,6 +57,9 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
   onNavigateToRemove,
 }) => {
   const isDev = isDeveloper(currentUser);
+  const canEdit = isDev || canUserEditModule(currentUser, 7);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 7);
+  const canExport = isDev || canUserExportModule(currentUser, 7);
 
   // Filter & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -166,6 +169,7 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
 
   // Export CSV
   const handleExportCSV = () => {
+    if (!canExport) return;
     const headers = [
       'No',
       'Kode Tyre',
@@ -254,22 +258,31 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
-            >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
-              <span>Export CSV</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
-            >
-              <Printer className="w-3.5 h-3.5 text-blue-400" />
-              <span>Cetak Radar</span>
-            </button>
+            {canExport ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Export CSV</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
+                >
+                  <Printer className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Cetak Radar</span>
+                </button>
+              </>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-900 text-stone-500 border border-stone-800 text-xs font-mono">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Print &amp; Export Terkunci</span>
+              </span>
+            )}
           </div>
         </div>
 
@@ -380,18 +393,23 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
         </div>
       </div>
 
-      {/* Developer Notice */}
-      <div className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 flex items-center justify-between text-xs text-stone-400">
+      {/* Permission Notice */}
+      <div className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-400">
         <div className="flex items-center gap-2">
-          <ShieldAlert className={`w-4 h-4 ${isDev ? 'text-amber-400' : 'text-stone-500'}`} />
+          <ShieldAlert className={`w-4 h-4 ${canEdit || canDelete || canExport ? 'text-amber-400' : 'text-stone-500'}`} />
           <span>
-            {isDev ? (
-              <span className="text-amber-300 font-semibold font-mono">
-                Akun Developer: Anda memiliki otoritas Edit &amp; Delete penuh untuk seluruh data tyre di dashboard.
-              </span>
-            ) : (
-              <span>Akses Edit &amp; Delete di dashboard dikunci khusus untuk Akun Developer.</span>
-            )}
+            Hak Akses Modul 7:{' '}
+            <span className={canEdit ? 'text-amber-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Edit {canEdit ? 'Aktif' : 'Terkunci'}
+            </span>
+            {' • '}
+            <span className={canDelete ? 'text-rose-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Delete {canDelete ? 'Aktif' : 'Terkunci'}
+            </span>
+            {' • '}
+            <span className={canExport ? 'text-blue-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Print/Export {canExport ? 'Aktif' : 'Terkunci'}
+            </span>
           </span>
         </div>
         <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
@@ -729,7 +747,7 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
                 <th className="py-3 px-3 min-w-[160px]">Prosentase Sisa (%)</th>
                 <th className="py-3 px-3 text-right">Keausan (%)</th>
                 <th className="py-3 px-3">Rekomendasi Tindakan</th>
-                <th className="py-3 px-3 text-center">Aksi (Dev Only)</th>
+                <th className="py-3 px-3 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800">
@@ -850,33 +868,43 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
                         </p>
                       </td>
 
-                      {/* Aksi Khusus Akun Developer */}
+                      {/* Aksi Sesuai Hak Akses Modul 7 */}
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {isDev ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => onEditTyre && onEditTyre(t)}
-                                title="Edit Data Tyre (Developer Only)"
-                                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 transition"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmId(t.id)}
-                                title="Hapus Data Tyre (Developer Only)"
-                                className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
+                          {canEdit ? (
+                            <button
+                              type="button"
+                              onClick={() => onEditTyre && onEditTyre(t)}
+                              title="Edit Data Tyre"
+                              className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 transition"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
                           ) : (
                             <button
                               type="button"
                               disabled
-                              title="Edit & Hapus Khusus Akun Developer"
+                              title="Tidak memiliki izin Edit pada Modul 7"
+                              className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {canDelete ? (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmId(t.id)}
+                              title="Hapus Data Tyre"
+                              className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              title="Tidak memiliki izin Delete pada Modul 7"
                               className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
                             >
                               <Lock className="w-3.5 h-3.5" />
@@ -903,7 +931,7 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
                 Hapus Data Tyre Ini?
               </h4>
               <p className="text-xs text-stone-400 mt-1">
-                Data master dan monitoring tyre ini akan dihapus dari sistem. Khusus akun Developer.
+                Data master dan monitoring tyre ini akan dihapus permanen dari sistem.
               </p>
             </div>
             <div className="flex justify-center gap-3">

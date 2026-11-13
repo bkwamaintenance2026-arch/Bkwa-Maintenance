@@ -31,6 +31,7 @@ interface OrderPartModalProps {
   breakdown: BreakdownRecord | null;
   availableSpareParts: SparePartItem[];
   currentUser: UserAccount;
+  canCreatePR?: boolean;
   onRecordTransaction: (data: Omit<SparePartTransaction, 'id' | 'noTransaksi' | 'createdAt' | 'status'>) => {
     success: boolean;
     message: string;
@@ -57,6 +58,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
   breakdown,
   availableSpareParts,
   currentUser,
+  canCreatePR = true,
   onRecordTransaction,
   onRequestPermintaanBarang,
 }) => {
@@ -294,17 +296,19 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                           </li>
                         ))}
                       </ul>
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          onClick={handleOpenPermintaanBarang}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white text-xs font-mono font-bold shadow-md transition"
-                        >
-                          <FileText className="w-4 h-4" />
-                          <span>Buatkan Form Permintaan Barang Sekarang</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {canCreatePR && (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={handleOpenPermintaanBarang}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white text-xs font-mono font-bold shadow-md transition"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Buatkan Form Permintaan Barang Sekarang</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -563,15 +567,17 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
             {/* Aksi Bawah */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-stone-800">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleOpenPermintaanBarang}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-mono font-bold transition"
-                  title="Langsung buka form Permintaan Barang jika part tidak ada di gudang"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Form Permintaan Barang</span>
-                </button>
+                {canCreatePR && (
+                  <button
+                    type="button"
+                    onClick={handleOpenPermintaanBarang}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-mono font-bold transition"
+                    title="Langsung buka form Permintaan Barang jika part tidak ada di gudang"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Form Permintaan Barang</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end">

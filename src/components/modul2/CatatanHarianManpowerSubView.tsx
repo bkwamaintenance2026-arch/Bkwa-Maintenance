@@ -36,7 +36,13 @@ import {
   Sliders,
   Award
 } from 'lucide-react';
-import { canUserEdit, canUserExportModule } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 // Helper hitung durasi lembur / jam kerja otomatis
 export const calculateOvertimeDuration = (
@@ -135,8 +141,11 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   onToggleApproveLog,
   onBatchApproveLogs,
 }) => {
-  const canEdit = canUserEdit(currentUser, 2);
-  const canExport = canUserExportModule(currentUser, 2);
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 2);
+  const canEdit = isDev || canUserEditModule(currentUser, 2);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 2);
+  const canExport = isDev || canUserExportModule(currentUser, 2);
 
   // Tanggal Catatan aktif (Default: Hari ini YYYY-MM-DD)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -182,6 +191,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const [catatan, setCatatan] = useState<string>('');
   const [dibuatOleh, setDibuatOleh] = useState<string>(defaultAdminName);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
 
   // Perhitungan durasi aktif di form input secara realtime
   const activeDuration = useMemo(() => {
@@ -354,10 +364,12 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!canEdit) {
+    if (!canSubmitForm) {
       setFeedback({
         type: 'error',
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Pengisian catatan dinonaktifkan.',
+        message: editingId
+          ? 'Akses Ditolak: Akun Anda tidak memiliki izin Edit catatan pada Modul 2.'
+          : 'Akses Ditolak: Akun Anda tidak memiliki izin Input catatan pada Modul 2.',
       });
       return;
     }
@@ -490,10 +502,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
   // Delete action
   const handleDelete = (record: CatatanHarianManpowerRecord) => {
-    if (!canEdit) {
+    if (!canDelete) {
       setFeedback({
         type: 'error',
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View".',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Hapus catatan pada Modul 2.',
       });
       return;
     }
@@ -622,6 +634,13 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
   // Helper Cetak Langsung melalui Hidden iFrame (100% Anti-Blank & Bebas Konflik CSS Media Print)
   const handleDirectPrintElement = (containerId: string, docTitle: string) => {
+    if (!canExport) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export / Cetak pada Modul 2.',
+      });
+      return;
+    }
     const targetEl = document.getElementById(containerId);
     if (!targetEl) {
       window.print();
@@ -697,8 +716,18 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
   // Export CSV
   const handleExportCSV = () => {
+    if (!canExport) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export pada Modul 2.',
+      });
+      return;
+    }
     if (filteredLogs.length === 0) {
-      alert('Tidak ada data catatan harian untuk di-export.');
+      setFeedback({
+        type: 'error',
+        message: 'Tidak ada data catatan harian untuk di-export.',
+      });
       return;
     }
 
@@ -1290,9 +1319,9 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             <div className="flex items-center gap-2">
               <button
                 type="submit"
-                disabled={!canEdit}
+                disabled={!canSubmitForm}
                 className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition shadow-lg ${
-                  canEdit
+                  canSubmitForm
                     ? 'text-stone-950 bg-amber-500 hover:bg-amber-400 shadow-amber-500/20 active:scale-95'
                     : 'text-stone-500 bg-stone-800 cursor-not-allowed'
                 }`}
@@ -1397,15 +1426,17 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             )}
 
             {/* Tombol Cetak Dokumen SURAT PERINTAH LEMBUR */}
-            <button
-              type="button"
-              onClick={() => setShowPrintModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap"
-              title="Cetak Surat Perintah Lembur & Catatan Harian Manpower"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak Surat Perintah Lembur</span>
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition shadow-md whitespace-nowrap"
+                title="Cetak Surat Perintah Lembur & Catatan Harian Manpower"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Cetak Surat Perintah Lembur</span>
+              </button>
+            )}
 
             {/* Tombol Export Excel */}
             {canExport && (
@@ -1619,14 +1650,14 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
                           <button
                             type="button"
-                            disabled={!canEdit}
+                            disabled={!canDelete}
                             onClick={() => handleDelete(item)}
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
-                              canEdit
+                              canDelete
                                 ? 'text-rose-300 bg-rose-950/40 hover:bg-rose-900/50 border-rose-800/60'
                                 : 'text-stone-500 bg-stone-900/60 border-stone-800 cursor-not-allowed opacity-60'
                             }`}
-                            title="Hapus Catatan Harian"
+                            title={canDelete ? 'Hapus Catatan Harian' : 'Anda tidak memiliki izin Hapus'}
                           >
                             <Trash2 className="w-3 h-3 text-rose-400" />
                             <span>Hapus</span>
@@ -2063,19 +2094,21 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                   Tutup
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleDirectPrintElement(
-                      'printable-lembur-area',
-                      `Surat_Perintah_Lembur_PT_BATU_KALI_WELANG_AMPUH_ETIKA09_${selectedDate}`
-                    )
-                  }
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak Surat Perintah Lembur</span>
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleDirectPrintElement(
+                        'printable-lembur-area',
+                        `Surat_Perintah_Lembur_PT_BATU_KALI_WELANG_AMPUH_ETIKA09_${selectedDate}`
+                      )
+                    }
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-md shadow-amber-500/20 active:scale-95"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Cetak Surat Perintah Lembur</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

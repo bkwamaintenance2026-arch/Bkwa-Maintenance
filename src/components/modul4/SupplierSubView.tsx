@@ -16,7 +16,12 @@ import {
   Truck,
   Lock
 } from 'lucide-react';
-import { canUserEdit } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+} from '../../utils/storage';
 
 interface SupplierSubViewProps {
   suppliers: SupplierRecord[];
@@ -34,11 +39,15 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
   onSave,
   onDelete,
 }) => {
-  const canEdit = canUserEdit(currentUser, 4);
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 4);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -55,7 +64,7 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
   const [itemName, setItemName] = useState('');
 
   const handleOpenAdd = () => {
-    if (!canEdit) return;
+    if (!canInsert) return;
     setEditingId(null);
     setNamaDistributor('');
     setAlamat('');
@@ -80,8 +89,8 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) {
-      setErrorMsg('Akses Ditolak: Akun Anda dalam mode "Hanya View". Penambahan/perubahan data suplier tidak diizinkan.');
+    if (!canSubmitForm) {
+      setErrorMsg('Akses Ditolak: Anda tidak memiliki izin untuk menyimpan atau mengubah data suplier.');
       return;
     }
     if (!namaDistributor.trim()) {
@@ -112,7 +121,7 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
   };
 
   const handleDelete = (id: string) => {
-    if (!canEdit) return;
+    if (!canDelete) return;
     onDelete(id);
     setDeleteConfirmId(null);
   };
@@ -159,7 +168,7 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
             />
           </div>
 
-          {canEdit ? (
+          {canInsert ? (
             <button
               id="btn-add-supplier"
               type="button"
@@ -175,7 +184,7 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
               type="button"
               disabled
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 text-stone-500 border border-stone-700 font-bold text-xs cursor-not-allowed opacity-75"
-              title="Akun Anda dalam mode Hanya View. Hubungi Developer untuk izin pengisian data."
+              title="Akun Anda tidak memiliki izin menambah suplier di Modul 4."
             >
               <Lock className="w-4 h-4 text-stone-500" />
               <span>+ Tambah Suplier (Terkunci)</span>
@@ -251,16 +260,16 @@ export const SupplierSubView: React.FC<SupplierSubViewProps> = ({
 
               <button
                 type="button"
-                disabled={!canEdit}
-                onClick={() => setDeleteConfirmId(sup.id)}
+                disabled={!canDelete}
+                onClick={() => canDelete && setDeleteConfirmId(sup.id)}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border ${
-                  canEdit
+                  canDelete
                     ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/50 text-rose-300'
                     : 'bg-stone-900/60 text-stone-500 border-stone-800 cursor-not-allowed opacity-60'
                 }`}
-                title={canEdit ? 'Hapus suplier' : 'Akun Anda dalam mode Hanya View'}
+                title={canDelete ? 'Hapus suplier' : 'Tidak ada izin Hapus'}
               >
-                {canEdit ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-500" />}
+                {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-500" />}
                 <span>Hapus</span>
               </button>
             </div>

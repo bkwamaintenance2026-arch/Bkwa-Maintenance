@@ -5,7 +5,7 @@ import {
   UserAccount,
   ManpowerData 
 } from '../../types';
-import { getAllSparePartTransactions, getAllManpower } from '../../utils/storage';
+import { getAllSparePartTransactions, getAllManpower, isDeveloper, canUserExportModule } from '../../utils/storage';
 import { exportPartRequirementToPDF, generatePartRequirementPDF } from '../../utils/pdfGenerator';
 import { 
   resolveReportSignatories, 
@@ -50,6 +50,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
 }) => {
   if (!isOpen || !breakdown) return null;
 
+  const canExport = isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
   const moNumber = breakdown.noMaintenanceOrder || breakdown.noNotifikasi;
   const notifNumber = breakdown.noNotifikasi;
   const unitInfo = `${breakdown.noUnit}${breakdown.namaAlat ? ` - ${breakdown.namaAlat}` : ''}`;
@@ -383,51 +384,55 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Tombol Pratinjau PDF */}
-            <button
-              id="btn-preview-pdf-part-requirement"
-              type="button"
-              onClick={handlePreviewPDF}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold text-xs shadow transition active:scale-95 cursor-pointer"
-              title="Buka Pratinjau (Preview) PDF untuk cek daftar part & lembar pengesahan sebelum download"
-            >
-              <Eye className="w-4 h-4 text-amber-400" />
-              <span>Pratinjau PDF</span>
-            </button>
+            {canExport && (
+              <>
+                {/* Tombol Pratinjau PDF */}
+                <button
+                  id="btn-preview-pdf-part-requirement"
+                  type="button"
+                  onClick={handlePreviewPDF}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold text-xs shadow transition active:scale-95 cursor-pointer"
+                  title="Buka Pratinjau (Preview) PDF untuk cek daftar part & lembar pengesahan sebelum download"
+                >
+                  <Eye className="w-4 h-4 text-amber-400" />
+                  <span>Pratinjau PDF</span>
+                </button>
 
-            {/* Tombol Export PDF */}
-            <button
-              id="btn-export-pdf-part-requirement"
-              type="button"
-              onClick={handleExportPDF}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95 cursor-pointer"
-              title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office Malang"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Export PDF (Kirim ke Malang)</span>
-            </button>
+                {/* Tombol Export PDF */}
+                <button
+                  id="btn-export-pdf-part-requirement"
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95 cursor-pointer"
+                  title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office Malang"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Export PDF (Kirim ke Malang)</span>
+                </button>
 
-            {/* Tombol Print Langsung */}
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 font-mono font-bold text-xs transition"
-              title="Cetak Langsung via Printer"
-            >
-              <Printer className="w-3.5 h-3.5 text-amber-400" />
-              <span>Cetak</span>
-            </button>
+                {/* Tombol Print Langsung */}
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 font-mono font-bold text-xs transition"
+                  title="Cetak Langsung via Printer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Cetak</span>
+                </button>
 
-            {/* Tombol Export Word */}
-            <button
-              type="button"
-              onClick={handleExportWord}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 font-mono font-bold text-xs transition"
-              title="Download format Word (.doc)"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Word (.doc)</span>
-            </button>
+                {/* Tombol Export Word */}
+                <button
+                  type="button"
+                  onClick={handleExportWord}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 font-mono font-bold text-xs transition"
+                  title="Download format Word (.doc)"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Word (.doc)</span>
+                </button>
+              </>
+            )}
 
             <button
               type="button"

@@ -18,6 +18,12 @@ import {
   getSavedReportSignatories, 
   saveReportSignatories 
 } from '../../utils/reportSignatories';
+import {
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+  isDeveloper
+} from '../../utils/storage';
 import { 
   Clock, 
   AlertTriangle, 
@@ -42,7 +48,10 @@ import {
   Layers,
   Settings,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock,
+  Edit3,
+  RotateCcw
 } from 'lucide-react';
 
 // Daftar label komponen khusus update pekerjaan sesuai permintaan user
@@ -83,6 +92,13 @@ interface ActiveBreakdownMonitoringSubViewProps {
       component?: BreakdownComponentOption | string;
     }
   ) => { success: boolean; message: string; record?: BreakdownRecord };
+  onUpdateHistoryEntry?: (
+    breakdownId: string,
+    entryIdOrCreatedAt: string,
+    updatedEntry: Partial<import('../../types').BreakdownUpdateEntry> & {
+      component?: BreakdownComponentOption | string;
+    }
+  ) => { success: boolean; message: string; record?: BreakdownRecord };
   onDeleteBreakdown?: (id: string) => { success: boolean; message: string };
   onNavigateToHistory?: (record?: BreakdownRecord) => void;
   initialExpandedId?: string | null;
@@ -94,10 +110,16 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
   currentUser,
   manpowerList,
   onUpdateActivity,
+  onUpdateHistoryEntry,
   onDeleteBreakdown,
   onNavigateToHistory,
   initialExpandedId,
 }) => {
+  // Hak akses RBAC untuk Modul 3
+  const canEdit = isDeveloper(currentUser) || canUserEditModule(currentUser, 3);
+  const canDelete = isDeveloper(currentUser) || canUserDeleteModule(currentUser, 3);
+  const canExport = isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
+
   // Timer realtime untuk update kalkulasi downtime setiap 60 detik secara otomatis
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
@@ -156,6 +178,8 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
   };
 
   interface InlineFormState {
+    editingUpdateId?: string | null;
+    editingUpdateInfo?: string;
     startDate: string;
     startTime: string;
     endDate: string;
@@ -495,6 +519,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
 
   // Handler tambah Spare Part ke tabel inline unit
   const handleAddPartToForm = (bId: string) => {
+    if (!canEdit) {
+      alert('Akses Ditolak: Akun Anda dalam mode "Hanya View". Anda tidak memiliki izin untuk menginput atau mengubah data perbaikan.');
+      return;
+    }
     const b = breakdowns.find((x) => x.id === bId);
     if (!b) return;
     const form = getInlineForm(b);
@@ -536,6 +564,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
 
   // Handler hapus Spare Part dari tabel inline unit
   const handleRemovePartFromForm = (bId: string, itemIdx: number) => {
+    if (!canEdit) {
+      alert('Akses Ditolak: Akun Anda dalam mode "Hanya View".');
+      return;
+    }
     const b = breakdowns.find((x) => x.id === bId);
     if (!b) return;
     const form = getInlineForm(b);
@@ -547,8 +579,73 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
     updateInlineFormField(bId, 'partsJasa', updated);
   };
 
-  // Handler Submit Quick Update
+  // Handler Muat / Edit Riwayat Update ke Form di atas (Sesuai Permintaan User: tinggal isi End Time lalu Simpan)
+  const handleLoadUpdateToForm = (b: BreakdownRecord, updateItem: any) => {
+    if (!canEdit) {
+      alert('Akses Ditolak: Akun Anda dalam mode "Hanya View".');
+      return;
+    }
+
+    const currentForm = getInlineForm(b);
+    const entryKey = String(updateItem.id || updateItem.createdAt || '');
+    const infoLabel = `${updateItem.tanggal || updateItem.startJob || '-'} (${updateItem.jamStart || '-'})`;
+
+    setFormInputs((prev) => ({
+      ...prev,
+      [b.id]: {
+        ...currentForm,
+        editingUpdateId: entryKey || null,
+        editingUpdateInfo: infoLabel,
+        startDate: updateItem.tanggal || updateItem.startJob || getTodayDateString(),
+        startTime: updateItem.jamStart || currentForm.startTime || '08:00',
+        endDate: updateItem.endDate || updateItem.finishJob || updateItem.tanggal || updateItem.startJob || getTodayDateString(),
+        endTime: updateItem.jamFinish || '',
+        component: b.component || currentForm.component || 'Engine',
+        detailKerusakan: updateItem.detailKerusakan || updateItem.detailPekerjaan || '',
+        progress: updateItem.progress || currentForm.progress || 'On Progress',
+        statusUnit: updateItem.statusUnit || currentForm.statusUnit || 'BREAKDOWN',
+        pic1: updateItem.pic1 || '',
+        pic2: updateItem.pic2 || '',
+        pic3: updateItem.pic3 || '',
+        remark: updateItem.remark || '',
+        partsJasa: updateItem.partsJasa && updateItem.partsJasa.length > 0 ? updateItem.partsJasa : [],
+      },
+    }));
+
+    setToastMessage({
+      text: `Baris riwayat [${infoLabel}] dimuat ke form! Silakan masukkan End Time lalu klik Simpan.`,
+      type: 'success',
+    });
+    setTimeout(() => setToastMessage(null), 4000);
+
+    // Scroll smoothly ke form update & fokus ke input End Time
+    setTimeout(() => {
+      const endTimeEl = document.getElementById(`inline-end-time-${b.id}`) as HTMLInputElement | null;
+      const formElement = document.getElementById(`form-update-inline-${b.id}`);
+      if (formElement) {
+        formElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      if (endTimeEl) {
+        endTimeEl.focus();
+      }
+    }, 100);
+  };
+
+  // Batal edit baris riwayat dan kosongkan form kembali untuk pencatatan pekerjaan baru
+  const handleCancelEditUpdate = (bId: string) => {
+    setFormInputs((prev) => {
+      const next = { ...prev };
+      delete next[bId];
+      return next;
+    });
+  };
+
+  // Handler Submit Quick Update (atau Update Baris Riwayat In-Place jika sedang dalam mode edit End Time)
   const handleSaveInlineUpdate = (b: BreakdownRecord) => {
+    if (!canEdit) {
+      alert('Akses Ditolak: Akun Anda dalam mode "Hanya View". Anda tidak memiliki izin untuk mengupdate status unit atau pekerjaan.');
+      return;
+    }
     const form = getInlineForm(b);
     if (!form.detailKerusakan.trim()) {
       alert('Mohon isi uraian tindakan / detail pekerjaan perbaikan!');
@@ -558,24 +655,47 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
     setSavingId(b.id);
 
     try {
-      const res = onUpdateActivity(b.id, {
-        startJob: form.startDate || getTodayDateString(),
-        jamStart: form.startTime || '08:00',
-        endDate: form.endDate || form.startDate || getTodayDateString(),
-        jamFinish: form.endTime || '',
-        component: form.component || b.component || 'Engine',
-        detailKerusakan: form.detailKerusakan.trim(),
-        progress: form.progress,
-        statusUnit: form.statusUnit,
-        pic1: form.pic1.trim(),
-        pic2: form.pic2.trim(),
-        pic3: form.pic3.trim(),
-        remark: form.remark.trim(),
-        partsJasa: form.partsJasa.length > 0 ? form.partsJasa : undefined,
-      });
+      let res: { success: boolean; message: string; record?: BreakdownRecord };
+
+      if (form.editingUpdateId && onUpdateHistoryEntry) {
+        res = onUpdateHistoryEntry(b.id, form.editingUpdateId, {
+          tanggal: form.startDate || getTodayDateString(),
+          startJob: form.startDate || getTodayDateString(),
+          jamStart: form.startTime || '08:00',
+          endDate: form.endDate || form.startDate || getTodayDateString(),
+          finishJob: form.endDate || form.startDate || getTodayDateString(),
+          jamFinish: form.endTime || '',
+          component: form.component || b.component || 'Engine',
+          detailKerusakan: form.detailKerusakan.trim(),
+          detailPekerjaan: form.detailKerusakan.trim(),
+          progress: form.progress,
+          statusUnit: form.statusUnit,
+          pic1: form.pic1.trim(),
+          pic2: form.pic2.trim(),
+          pic3: form.pic3.trim(),
+          remark: form.remark.trim(),
+          partsJasa: form.partsJasa.length > 0 ? form.partsJasa : [],
+        });
+      } else {
+        res = onUpdateActivity(b.id, {
+          startJob: form.startDate || getTodayDateString(),
+          jamStart: form.startTime || '08:00',
+          endDate: form.endDate || form.startDate || getTodayDateString(),
+          jamFinish: form.endTime || '',
+          component: form.component || b.component || 'Engine',
+          detailKerusakan: form.detailKerusakan.trim(),
+          progress: form.progress,
+          statusUnit: form.statusUnit,
+          pic1: form.pic1.trim(),
+          pic2: form.pic2.trim(),
+          pic3: form.pic3.trim(),
+          remark: form.remark.trim(),
+          partsJasa: form.partsJasa.length > 0 ? form.partsJasa : undefined,
+        });
+      }
 
       if (res.success) {
-        // Reset form input untuk unit ini
+        // Kosongkan form input untuk unit ini agar siap mencatat pekerjaan baru
         setFormInputs((prev) => {
           const next = { ...prev };
           delete next[b.id];
@@ -585,6 +705,11 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         if (form.statusUnit === 'READY') {
           setToastMessage({
             text: `Unit ${b.noUnit} telah diupdate menjadi READY dan otomatis tersimpan di History Breakdown!`,
+            type: 'success',
+          });
+        } else if (form.editingUpdateId) {
+          setToastMessage({
+            text: `End Time & perubahan riwayat pekerjaan ${b.noUnit} berhasil disimpan! Form siap mencatat pekerjaan baru.`,
             type: 'success',
           });
         } else {
@@ -738,16 +863,18 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
 
           <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
             {/* Tombol Print & Preview Laporan Monitoring (WYSIWYG) */}
-            <button
-              id="btn-print-preview-monitoring"
-              type="button"
-              onClick={() => setShowMonitoringPrintModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow-lg shadow-amber-500/20 cursor-pointer"
-              title="Print dan Preview Laporan Harian Monitoring Breakdown sesuai tampilan layar"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Preview Laporan</span>
-            </button>
+            {canExport && (
+              <button
+                id="btn-print-preview-monitoring"
+                type="button"
+                onClick={() => setShowMonitoringPrintModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow-lg shadow-amber-500/20 cursor-pointer"
+                title="Print dan Preview Laporan Harian Monitoring Breakdown sesuai tampilan layar"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Preview Laporan</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -1072,14 +1199,16 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                             <span>{isExpanded ? 'Tutup' : 'Update'}</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setSinglePrintRecord(b)}
-                            className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
-                            title="Print SPK & Log Unit ini"
-                          >
-                            <Printer className="w-3 h-3" />
-                          </button>
+                          {canExport && (
+                            <button
+                              type="button"
+                              onClick={() => setSinglePrintRecord(b)}
+                              className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
+                              title="Print SPK & Log Unit ini"
+                            >
+                              <Printer className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1109,14 +1238,16 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                               </div>
 
                               <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setSinglePrintRecord(b)}
-                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-950 border border-stone-800 hover:border-amber-500/50 text-stone-300 hover:text-amber-300 text-[10px] font-mono font-bold transition cursor-pointer"
-                                >
-                                  <Printer className="w-3 h-3" />
-                                  <span>Print SPK Unit</span>
-                                </button>
+                                {canExport && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSinglePrintRecord(b)}
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-950 border border-stone-800 hover:border-amber-500/50 text-stone-300 hover:text-amber-300 text-[10px] font-mono font-bold transition cursor-pointer"
+                                  >
+                                    <Printer className="w-3 h-3" />
+                                    <span>Print SPK Unit</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => toggleExpand(b.id)}
@@ -1129,18 +1260,43 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                             </div>
 
                             {/* Form Cepat Input Update Progress */}
-                            <div className="bg-stone-950 p-3 rounded-xl border border-stone-800 space-y-3">
+                            <div id={`form-update-inline-${b.id}`} className={`bg-stone-950 p-3 rounded-xl border space-y-3 ${inlineForm.editingUpdateId ? 'border-amber-500 ring-1 ring-amber-500/30' : 'border-stone-800'}`}>
                               <div className="flex items-center justify-between flex-wrap gap-2">
                                 <span className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1.5">
                                   <Save className="w-3.5 h-3.5" />
-                                  <span>FORM UPDATE PEKERJAAN &amp; PENUGASAN PIC</span>
-                                </span>
-                                {workDurationPreview && (
-                                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                                    ⏱ Durasi Kerja: {workDurationPreview}
+                                  <span>
+                                    {inlineForm.editingUpdateId
+                                      ? `MODE EDIT RIWAYAT (${inlineForm.editingUpdateInfo || ''}) — MASUKKAN END TIME`
+                                      : 'FORM UPDATE PEKERJAAN & PENUGASAN PIC'}
                                   </span>
-                                )}
+                                </span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {inlineForm.editingUpdateId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelEditUpdate(b.id)}
+                                      className="flex items-center gap-1 px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-600 text-[10px] font-mono font-bold cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3 h-3 text-amber-400" />
+                                      <span>Batal Edit (Form Baru)</span>
+                                    </button>
+                                  )}
+                                  {workDurationPreview && (
+                                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                      ⏱ Durasi Kerja: {workDurationPreview}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
+
+                              {!canEdit && (
+                                <div className="p-3 bg-sky-950/40 border border-sky-800/60 rounded-xl flex items-center gap-2.5 text-xs text-sky-200 font-mono">
+                                  <Lock className="w-4 h-4 text-sky-400 shrink-0" />
+                                  <span>
+                                    <strong>Mode Hanya View Aktif:</strong> Akun Anda berstatus viewer untuk Modul 3. Anda dapat memantau data runtutan perbaikan dan downtime, namun form update pekerjaan dan pengubahan status terkunci.
+                                  </span>
+                                </div>
+                              )}
 
                               {/* BARIS 1: Start Date, Start Time, End Date, End Time */}
                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -1218,10 +1374,15 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                     </div>
                                   </div>
                                   <input
+                                    id={`inline-end-time-${b.id}`}
                                     type="time"
                                     value={inlineForm.endTime}
                                     onChange={(e) => updateInlineFormField(b.id, 'endTime', e.target.value)}
-                                    className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs text-stone-200 font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                                    className={`w-full bg-stone-900 border rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none ${
+                                      inlineForm.editingUpdateId
+                                        ? 'border-amber-500 text-amber-300 font-bold ring-1 ring-amber-500/40'
+                                        : 'border-stone-700 text-stone-200'
+                                    }`}
                                   />
                                 </div>
                               </div>
@@ -1488,11 +1649,25 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                   <div className="col-span-2 sm:col-span-2 flex items-end">
                                     <button
                                       type="button"
+                                      disabled={!canEdit}
                                       onClick={() => handleAddPartToForm(b.id)}
-                                      className="w-full py-1.5 px-2 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1 transition cursor-pointer"
+                                      className={`w-full py-1.5 px-2 rounded font-bold text-xs flex items-center justify-center gap-1 transition ${
+                                        !canEdit
+                                          ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-stone-700'
+                                          : 'bg-amber-500 hover:bg-amber-400 text-stone-950 cursor-pointer'
+                                      }`}
                                     >
-                                      <Plus className="w-3.5 h-3.5" />
-                                      <span>+ Tambah Part</span>
+                                      {canEdit ? (
+                                        <>
+                                          <Plus className="w-3.5 h-3.5" />
+                                          <span>+ Tambah Part</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Lock className="w-3.5 h-3.5 text-stone-400" />
+                                          <span>Terkunci</span>
+                                        </>
+                                      )}
                                     </button>
                                   </div>
                                 </div>
@@ -1560,12 +1735,14 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
 
                                 <button
                                   type="button"
-                                  disabled={savingId === b.id}
+                                  disabled={savingId === b.id || !canEdit}
                                   onClick={() => handleSaveInlineUpdate(b)}
-                                  className={`py-2 px-5 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
-                                    inlineForm.statusUnit === 'READY'
-                                      ? 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 shadow-emerald-500/20 ring-2 ring-emerald-400/50'
-                                      : 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-amber-500/20'
+                                  className={`py-2 px-5 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg ${
+                                    !canEdit
+                                      ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-stone-700'
+                                      : inlineForm.statusUnit === 'READY'
+                                      ? 'bg-emerald-500 hover:bg-emerald-400 text-stone-950 shadow-emerald-500/20 ring-2 ring-emerald-400/50 cursor-pointer'
+                                      : 'bg-amber-500 hover:bg-amber-400 text-stone-950 shadow-amber-500/20 cursor-pointer'
                                   }`}
                                 >
                                   {savingId === b.id ? (
@@ -1573,10 +1750,21 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                       <span>Menyimpan Update...</span>
                                     </>
+                                  ) : !canEdit ? (
+                                    <>
+                                      <Lock className="w-3.5 h-3.5 text-stone-400" />
+                                      <span>Mode View (Terkunci)</span>
+                                    </>
                                   ) : (
                                     <>
                                       <Save className="w-3.5 h-3.5" />
-                                      <span>{inlineForm.statusUnit === 'READY' ? 'Simpan & Nyatakan READY' : 'Simpan Update Pekerjaan'}</span>
+                                      <span>
+                                        {inlineForm.editingUpdateId
+                                          ? 'Simpan Perubahan & End Time'
+                                          : inlineForm.statusUnit === 'READY'
+                                          ? 'Simpan & Nyatakan READY'
+                                          : 'Simpan Update Pekerjaan'}
+                                      </span>
                                     </>
                                   )}
                                 </button>
@@ -1611,6 +1799,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                         <th className="p-2 w-24">Status</th>
                                         <th className="p-2 w-32">PIC Teknisi</th>
                                         <th className="p-2">Remark &amp; Part</th>
+                                        <th className="p-2 w-28 text-center">Aksi / Edit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-stone-800/60 text-[10px]">
@@ -1685,6 +1874,25 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                                   ))}
                                                 </div>
                                               )}
+                                            </td>
+                                            {/* Tombol Edit / Update (Muat ke form di atas untuk isi End Time) */}
+                                            <td className="p-2 text-center whitespace-nowrap">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleLoadUpdateToForm(b, upd)}
+                                                disabled={!canEdit}
+                                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition shadow-sm ${
+                                                  !canEdit
+                                                    ? "bg-stone-800 text-stone-500 border border-stone-700 cursor-not-allowed"
+                                                    : isLatest
+                                                    ? "bg-amber-500 hover:bg-amber-400 text-stone-950 font-black cursor-pointer shadow-amber-500/20 ring-1 ring-amber-400/60"
+                                                    : "bg-stone-800 hover:bg-stone-700 text-amber-300 border border-stone-700 cursor-pointer"
+                                                }`}
+                                                title="Muat data pekerjaan ini ke form di atas untuk mengisi End Time atau update detail pekerjaan"
+                                              >
+                                                <Edit3 className="w-3 h-3" />
+                                                <span>{isLatest ? "Update / End Time" : "Edit / Muat"}</span>
+                                              </button>
                                             </td>
                                           </tr>
                                         );

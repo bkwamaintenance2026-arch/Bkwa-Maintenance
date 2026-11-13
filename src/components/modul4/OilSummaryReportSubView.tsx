@@ -11,6 +11,7 @@ import { resolveOilSummarySignatories } from '../../utils/reportSignatories';
 import { generateOilSummaryReportPDF, exportOilSummaryReportToPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import { BkwaLogo } from '../BkwaLogo';
+import { isDeveloper, canUserEditModule, canUserExportModule } from '../../utils/storage';
 import { 
   Droplet, 
   Search, 
@@ -64,6 +65,10 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   manpowerList,
   currentUser,
 }) => {
+  const isDev = isDeveloper(currentUser);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
+
   // 1. Initial date presets (Default: Bulan Berjalan)
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -121,6 +126,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
 
   const handleSaveSignatories = () => {
+    if (!canEdit) return;
     if (picFog) localStorage.setItem(STORAGE_KEY_PIC_FOG, picFog);
     if (picFogJabatan) localStorage.setItem(STORAGE_KEY_PIC_FOG_JABATAN, picFogJabatan);
     if (inventoryUser) localStorage.setItem(STORAGE_KEY_INVENTORY, inventoryUser);
@@ -333,6 +339,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
   // 8. Handler Preview & Export PDF
   const handlePreviewPDF = () => {
+    if (!canExport) return;
     try {
       const result = generateOilSummaryReportPDF({
         startDate: startDate || undefined,
@@ -361,6 +368,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   };
 
   const handleExportPDF = () => {
+    if (!canExport) return;
     try {
       exportOilSummaryReportToPDF({
         startDate: startDate || undefined,
@@ -386,6 +394,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
   // Browser Direct Print
   const handlePrintBrowser = () => {
+    if (!canExport) return;
     window.print();
   };
 
@@ -426,40 +435,42 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
           </div>
 
           {/* Action Export Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              id="btn-preview-print-oil-summary"
-              type="button"
-              onClick={() => setShowPrintModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-semibold transition shadow-sm active:scale-95"
-              title="Buka Lembar Pratinjau Cetak Lengkap (Kop Surat Resmi)"
-            >
-              <Printer className="w-4 h-4 text-emerald-400" />
-              <span>Preview Print (Cetak)</span>
-            </button>
+          {canExport && (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                id="btn-preview-print-oil-summary"
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-semibold transition shadow-sm active:scale-95"
+                title="Buka Lembar Pratinjau Cetak Lengkap (Kop Surat Resmi)"
+              >
+                <Printer className="w-4 h-4 text-emerald-400" />
+                <span>Preview Print (Cetak)</span>
+              </button>
 
-            <button
-              id="btn-preview-pdf-oil-summary"
-              type="button"
-              onClick={handlePreviewPDF}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold transition shadow-sm active:scale-95"
-              title="Buka Pratinjau PDF interaktif untuk cek data sebelum download"
-            >
-              <Eye className="w-4 h-4 text-emerald-400" />
-              <span>Pratinjau PDF (Preview)</span>
-            </button>
+              <button
+                id="btn-preview-pdf-oil-summary"
+                type="button"
+                onClick={handlePreviewPDF}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold transition shadow-sm active:scale-95"
+                title="Buka Pratinjau PDF interaktif untuk cek data sebelum download"
+              >
+                <Eye className="w-4 h-4 text-emerald-400" />
+                <span>Pratinjau PDF (Preview)</span>
+              </button>
 
-            <button
-              id="btn-export-pdf-oil-summary"
-              type="button"
-              onClick={handleExportPDF}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 text-xs font-mono font-black transition shadow-lg shadow-emerald-500/25 active:scale-95"
-              title="Download Dokumen Resmi PDF ke Komputer (.pdf)"
-            >
-              <FileDown className="w-4 h-4" />
-              <span>Download PDF Resmi</span>
-            </button>
-          </div>
+              <button
+                id="btn-export-pdf-oil-summary"
+                type="button"
+                onClick={handleExportPDF}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 text-xs font-mono font-black transition shadow-lg shadow-emerald-500/25 active:scale-95"
+                title="Download Dokumen Resmi PDF ke Komputer (.pdf)"
+              >
+                <FileDown className="w-4 h-4" />
+                <span>Download PDF Resmi</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,16 +727,18 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                 {saveSuccessMsg}
               </span>
             )}
-            <button
-              id="btn-simpan-penandatangan-oil-summary"
-              type="button"
-              onClick={handleSaveSignatories}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-mono font-black text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
-              title="Simpan pilihan pejabat penandatangan"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Simpan Pengesahan</span>
-            </button>
+            {canEdit && (
+              <button
+                id="btn-simpan-penandatangan-oil-summary"
+                type="button"
+                onClick={handleSaveSignatories}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-stone-950 font-mono font-black text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition cursor-pointer"
+                title="Simpan pilihan pejabat penandatangan"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Simpan Pengesahan</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -736,15 +749,17 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <label className="block text-[11px] font-mono font-bold text-emerald-400 uppercase">
                 1. Di Buat Oleh
               </label>
-              <button
-                type="button"
-                onClick={() => setCustomPicFog(!customPicFog)}
-                className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
-                title="Ganti ke input manual"
-              >
-                <Edit3 className="w-3 h-3" />
-                <span>{customPicFog ? 'Dropdown' : 'Ketik Manual'}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setCustomPicFog(!customPicFog)}
+                  className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
+                  title="Ganti ke input manual"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{customPicFog ? 'Dropdown' : 'Ketik Manual'}</span>
+                </button>
+              )}
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
               Dropdown modul 2 jabatan administrasi
@@ -753,6 +768,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             {!customPicFog ? (
               <select
                 id="select-pic-fog-admin"
+                disabled={!canEdit}
                 value={picFog}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -760,7 +776,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                   const found = manpowerList.find((m) => m.nama === val);
                   if (found?.jabatan) setPicFogJabatan(found.jabatan);
                 }}
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none cursor-pointer"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {resolvedSignatories.administrasiList.length > 0 && (
                   <optgroup label="Manpower Berjabatan Administrasi">
@@ -783,10 +799,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <input
                 id="input-pic-fog-manual"
                 type="text"
+                disabled={!canEdit}
                 value={picFog}
                 onChange={(e) => setPicFog(e.target.value)}
                 placeholder="Nama Pembuat Laporan..."
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-emerald-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
             )}
 
@@ -802,15 +819,17 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <label className="block text-[11px] font-mono font-bold text-blue-400 uppercase">
                 2. Diperiksa Oleh
               </label>
-              <button
-                type="button"
-                onClick={() => setCustomInventory(!customInventory)}
-                className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
-                title="Ganti ke input manual"
-              >
-                <Edit3 className="w-3 h-3" />
-                <span>{customInventory ? 'Dropdown' : 'Ketik Manual'}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setCustomInventory(!customInventory)}
+                  className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
+                  title="Ganti ke input manual"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{customInventory ? 'Dropdown' : 'Ketik Manual'}</span>
+                </button>
+              )}
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
               Dropdown modul 2 jabatan administrasi
@@ -819,6 +838,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             {!customInventory ? (
               <select
                 id="select-inventory-admin"
+                disabled={!canEdit}
                 value={inventoryUser}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -826,7 +846,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                   const found = manpowerList.find((m) => m.nama === val);
                   if (found?.jabatan) setInventoryJabatan(found.jabatan);
                 }}
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none cursor-pointer"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {resolvedSignatories.administrasiList.length > 0 && (
                   <optgroup label="Manpower Berjabatan Administrasi">
@@ -849,10 +869,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <input
                 id="input-inventory-manual"
                 type="text"
+                disabled={!canEdit}
                 value={inventoryUser}
                 onChange={(e) => setInventoryUser(e.target.value)}
                 placeholder="Nama Pemeriksa Laporan..."
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-blue-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
             )}
 
@@ -868,15 +889,17 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <label className="block text-[11px] font-mono font-bold text-amber-400 uppercase">
                 3. Disetujui Oleh
               </label>
-              <button
-                type="button"
-                onClick={() => setCustomKabag(!customKabag)}
-                className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
-                title="Ganti ke input manual"
-              >
-                <Edit3 className="w-3 h-3" />
-                <span>{customKabag ? 'Dropdown' : 'Ketik Manual'}</span>
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setCustomKabag(!customKabag)}
+                  className="text-[10px] font-mono text-stone-400 hover:text-stone-200 flex items-center gap-1"
+                  title="Ganti ke input manual"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{customKabag ? 'Dropdown' : 'Ketik Manual'}</span>
+                </button>
+              )}
             </div>
             <p className="text-[10px] text-stone-400 leading-tight">
               Kabag Workshop (Dodik Mariyadi)
@@ -885,6 +908,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             {!customKabag ? (
               <select
                 id="select-kabag-dodik"
+                disabled={!canEdit}
                 value={kabagWorkshop}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -892,7 +916,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                   const found = manpowerList.find((m) => m.nama === val);
                   if (found?.jabatan) setKabagWorkshopJabatan(found.jabatan);
                 }}
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none cursor-pointer"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="Dodik Mariyadi">Dodik Mariyadi — Kabag Workshop</option>
                 {manpowerList
@@ -907,10 +931,11 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               <input
                 id="input-kabag-dodik-manual"
                 type="text"
+                disabled={!canEdit}
                 value={kabagWorkshop}
                 onChange={(e) => setKabagWorkshop(e.target.value)}
                 placeholder="Dodik Mariyadi"
-                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none"
+                className="w-full px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-stone-100 text-xs font-mono focus:border-amber-500 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
             )}
 
@@ -1242,23 +1267,27 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportPDF}
-                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
-                >
-                  <FileDown className="w-3.5 h-3.5" />
-                  <span>Download PDF</span>
-                </button>
+                {canExport && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleExportPDF}
+                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
+                    >
+                      <FileDown className="w-3.5 h-3.5" />
+                      <span>Download PDF</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handlePrintBrowser}
-                  className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold text-xs font-mono transition flex items-center gap-1.5 shadow"
-                >
-                  <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Print Browser</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintBrowser}
+                      className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold text-xs font-mono transition flex items-center gap-1.5 shadow"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Print Browser</span>
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"

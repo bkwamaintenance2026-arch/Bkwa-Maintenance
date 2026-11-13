@@ -18,7 +18,11 @@ import {
   getStoredPurchaseRequests, 
   createPurchaseRequest, 
   updatePurchaseRequestStatus,
-  canUserEditModule 
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule 
 } from '../../utils/storage';
 import { InputSparePartSubView } from './InputSparePartSubView';
 import { TransaksiSparePartSubView } from './TransaksiSparePartSubView';
@@ -56,8 +60,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const [transactions, setTransactions] = useState<SparePartTransaction[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
 
-  // RBAC Edit permission for Modul 6
-  const canEdit = canUserEditModule(currentUser, 6);
+  // RBAC granular permissions for Modul 6
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 6);
+  const canEdit = isDev || canUserEditModule(currentUser, 6);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 6);
+  const canExport = isDev || canUserExportModule(currentUser, 6);
 
   // Load data dari storage
   const loadData = () => {
@@ -75,6 +83,14 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
     data: Omit<SparePartItem, 'id' | 'createdAt' | 'updatedAt'>,
     id?: string
   ) => {
+    if (id ? !canEdit : !canInsert) {
+      return {
+        success: false,
+        message: id
+          ? 'Akses Ditolak: Anda tidak memiliki izin mengedit data spare part.'
+          : 'Akses Ditolak: Anda tidak memiliki izin menambah data spare part.',
+      };
+    }
     const res = saveSparePartItem(data, id);
     if (res.success) {
       loadData();
@@ -85,6 +101,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   // Handler: Tambah Stok Cepat (+)
   const handleAddStock = (partId: string, qtyToAdd: number, keterangan?: string) => {
+    if (!canInsert && !canEdit) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki izin menambah stok spare part.',
+      };
+    }
     const res = addSparePartStock(partId, qtyToAdd, keterangan);
     if (res.success) {
       loadData();
@@ -95,6 +117,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   // Handler: Hapus Part
   const handleDeletePart = (id: string) => {
+    if (!canDelete) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki izin menghapus data spare part.',
+      };
+    }
     const res = deleteSparePartItem(id);
     if (res.success) {
       loadData();
@@ -107,6 +135,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const handleRecordTransaction = (
     data: Omit<SparePartTransaction, 'id' | 'noTransaksi' | 'createdAt' | 'status'>
   ) => {
+    if (!canInsert && !canEdit) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki izin memproses order spare part.',
+      };
+    }
     const res = recordSparePartTransaction(data);
     if (res.success) {
       loadData();
@@ -119,6 +153,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const handleSubmitPurchaseRequest = (
     data: Omit<PurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'status'>
   ) => {
+    if (!canInsert) {
+      return {
+        success: false,
+        message: 'Akses Ditolak: Anda tidak memiliki izin membuat Form Permintaan Barang (SPB).',
+      };
+    }
     const res = createPurchaseRequest(data);
     if (res.success) {
       loadData();
@@ -129,6 +169,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   // Handler: Update Status PR
   const handleUpdatePRStatus = (id: string, status: PurchaseRequest['status']) => {
+    if (!canEdit) return;
     updatePurchaseRequestStatus(id, status);
     loadData();
     if (onRefreshData) onRefreshData();
@@ -249,7 +290,9 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         <InputSparePartSubView
           spareParts={spareParts}
           currentUser={currentUser}
+          canInsert={canInsert}
           canEdit={canEdit}
+          canDelete={canDelete}
           onAddOrUpdatePart={handleAddOrUpdatePart}
           onAddStock={handleAddStock}
           onDeletePart={handleDeletePart}
@@ -261,6 +304,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           transactions={transactions}
           purchaseRequests={purchaseRequests}
           currentUser={currentUser}
+          canInsert={canInsert}
           canEdit={canEdit}
           onRecordTransaction={handleRecordTransaction}
           onSubmitPurchaseRequest={handleSubmitPurchaseRequest}
@@ -270,7 +314,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
         <MonitoringSupplySubView
           breakdowns={breakdowns}
           currentUser={currentUser}
+          canInsert={canInsert}
           canEdit={canEdit}
+          canDelete={canDelete}
+          canExport={canExport}
           manpowerList={manpowerList}
           onRefreshData={() => {
             loadData();

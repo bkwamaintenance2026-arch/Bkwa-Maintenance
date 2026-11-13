@@ -36,6 +36,7 @@ interface TransaksiSparePartSubViewProps {
   transactions: SparePartTransaction[];
   purchaseRequests: PurchaseRequest[];
   currentUser: UserAccount;
+  canInsert: boolean;
   canEdit: boolean;
   onRecordTransaction: (data: Omit<SparePartTransaction, 'id' | 'noTransaksi' | 'createdAt' | 'status'>) => {
     success: boolean;
@@ -57,11 +58,13 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
   transactions,
   purchaseRequests,
   currentUser,
+  canInsert,
   canEdit,
   onRecordTransaction,
   onSubmitPurchaseRequest,
   onUpdatePRStatus,
 }) => {
+  const canOrderPart = canInsert || canEdit;
   // Search & Filters for Breakdown List
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'ALL' | 'BREAKDOWN' | 'LIMIT OPERASI' | 'READY'>('ACTIVE');
@@ -118,6 +121,7 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
 
   // Handler klik No Maintenance Order atau tombol Order Part
   const handleOpenOrderPart = (b: BreakdownRecord) => {
+    if (!canOrderPart) return;
     setSelectedBreakdownForOrder(b);
     setIsOrderPartOpen(true);
   };
@@ -135,6 +139,7 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
       keterangan?: string;
     }>;
   }) => {
+    if (!canInsert) return;
     setPrInitialData(params);
     setIsPermintaanBarangOpen(true);
   };
@@ -213,16 +218,23 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
                     <tr key={b.id} className="hover:bg-stone-800/40 transition">
                       {/* Klik No Maintenance Order -> Langsung memunculkan Form Order Part */}
                       <td className="px-3 py-3 whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenOrderPart(b)}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-stone-950 border border-amber-500/30 text-xs font-bold transition group active:scale-95"
-                          title="Klik untuk membuka Form Order Part untuk No Maintenance Order ini"
-                        >
-                          <Hash className="w-3.5 h-3.5 text-amber-500 group-hover:text-stone-950" />
-                          <span>{moNumber}</span>
-                          <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
-                        </button>
+                        {canOrderPart ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenOrderPart(b)}
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-stone-950 border border-amber-500/30 text-xs font-bold transition group active:scale-95"
+                            title="Klik untuk membuka Form Order Part untuk No Maintenance Order ini"
+                          >
+                            <Hash className="w-3.5 h-3.5 text-amber-500 group-hover:text-stone-950" />
+                            <span>{moNumber}</span>
+                            <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-800/70 text-amber-400 border border-stone-700 text-xs font-bold">
+                            <Hash className="w-3.5 h-3.5 text-amber-500" />
+                            <span>{moNumber}</span>
+                          </span>
+                        )}
                       </td>
 
                       <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">
@@ -262,14 +274,18 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
 
                       {/* Tombol Aksi Order Part */}
                       <td className="px-3 py-3 text-center whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenOrderPart(b)}
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-bold shadow transition"
-                        >
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                          <span>Order Part</span>
-                        </button>
+                        {canOrderPart ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenOrderPart(b)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-bold shadow transition"
+                          >
+                            <ShoppingCart className="w-3.5 h-3.5" />
+                            <span>Order Part</span>
+                          </button>
+                        ) : (
+                          <span className="text-[10px] text-stone-500">View Only</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -397,22 +413,24 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setPrInitialData({
-                noMaintenanceOrder: '',
-                noUnit: '',
-                namaAlat: '',
-                items: [],
-              });
-              setIsPermintaanBarangOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition"
-          >
-            <FileText className="w-4 h-4 text-rose-400" />
-            <span>Buat Form SPB Manual</span>
-          </button>
+          {canInsert && (
+            <button
+              type="button"
+              onClick={() => {
+                setPrInitialData({
+                  noMaintenanceOrder: '',
+                  noUnit: '',
+                  namaAlat: '',
+                  items: [],
+                });
+                setIsPermintaanBarangOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition"
+            >
+              <FileText className="w-4 h-4 text-rose-400" />
+              <span>Buat Form SPB Manual</span>
+            </button>
+          )}
         </div>
 
         {purchaseRequests.length === 0 ? (
@@ -523,6 +541,7 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
         breakdown={selectedBreakdownForOrder}
         availableSpareParts={spareParts}
         currentUser={currentUser}
+        canCreatePR={canInsert}
         onRecordTransaction={onRecordTransaction}
         onRequestPermintaanBarang={handleTriggerPermintaanBarang}
       />

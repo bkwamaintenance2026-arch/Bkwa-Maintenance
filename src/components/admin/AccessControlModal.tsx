@@ -189,7 +189,18 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
     setHasUnsavedChanges(true);
   };
 
-  // Ubah Izin Spesifik Per-Modul (Modul 1 s/d Modul 7)
+  const moduleLegacyKeyMap: Record<number, keyof UserModulePermissions> = {
+    1: 'modul1Asset',
+    2: 'modul2Manpower',
+    3: 'modul3Maintenance',
+    4: 'modul4Inventory',
+    5: 'modul5P2H',
+    6: 'modul6SparePart',
+    7: 'modul7Tyre',
+    8: 'modul8MasterPart',
+  };
+
+  // Ubah Izin Spesifik Per-Modul (Modul 1 s/d Modul 8)
   const handleToggleModulePermission = (targetId: string, moduleNum: number, mode: 'VIEW' | 'EDIT' | 'LOCKED') => {
     setUsersList((prev) =>
       prev.map((u) => {
@@ -206,7 +217,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
 
         let newModPerm = { ...currentModPerm };
         if (mode === 'EDIT') {
-          newModPerm = { viewer: true, input: true, edit: true, delete: false, export: true };
+          newModPerm = { viewer: true, input: true, edit: true, delete: currentModPerm.delete ?? false, export: true };
         } else if (mode === 'VIEW') {
           newModPerm = { viewer: true, input: false, edit: false, delete: false, export: false };
         } else {
@@ -219,13 +230,95 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
           [modKey]: newModPerm,
         };
 
-        // Cek apakah ada setidaknya satu modul yang bisa diedit
-        const anyEditable = Object.values(updatedPermissions).some((p) => p && (p.input || p.edit));
+        const legacyKey = moduleLegacyKeyMap[moduleNum];
+        const updatedModulePerms: UserModulePermissions = {
+          ...(u.modulePermissions || {
+            modul1Asset: false,
+            modul2Manpower: false,
+            modul3Maintenance: false,
+            modul4Inventory: false,
+            modul5P2H: false,
+            modul6SparePart: false,
+            modul7Tyre: false,
+            modul8MasterPart: false,
+          }),
+          ...(legacyKey ? { [legacyKey]: mode === 'EDIT' } : {}),
+        };
+
+        // Cek apakah ada setidaknya satu modul yang bisa diedit/diinput/hapus
+        const anyEditable = Object.values(updatedPermissions).some((p) => p && (p.input || p.edit || p.delete));
         const newAccessLevel: UserAccessLevel = anyEditable ? 'BISA_MENGISI' : 'HANYA_VIEW';
 
         return {
           ...u,
           accessLevel: newAccessLevel,
+          modulePermissions: updatedModulePerms,
+          permissions: updatedPermissions,
+        };
+      })
+    );
+    setHasUnsavedChanges(true);
+  };
+
+  // Toggle 1 flag granular spesifik (viewer | input | edit | delete | export) pada modul tertentu
+  const handleToggleGranularFlag = (
+    targetId: string,
+    moduleNum: number,
+    flag: 'viewer' | 'input' | 'edit' | 'delete' | 'export'
+  ) => {
+    setUsersList((prev) =>
+      prev.map((u) => {
+        if (u.id !== targetId || u.role === 'ADMIN') return u;
+        const modKey = `modul${moduleNum}` as keyof GranularUserPermissions;
+        const currentModPerm = u.permissions?.[modKey] || {
+          viewer: true,
+          input: false,
+          edit: false,
+          delete: false,
+          export: false,
+        };
+
+        const nextVal = !currentModPerm[flag];
+        let newModPerm = {
+          ...currentModPerm,
+          [flag]: nextVal,
+        };
+
+        // Jika Viewer dimatikan -> semua izin modul ikut dimatikan (terkunci)
+        if (flag === 'viewer' && !nextVal) {
+          newModPerm = { viewer: false, input: false, edit: false, delete: false, export: false };
+        } else if (flag !== 'viewer' && nextVal) {
+          // Jika Input/Edit/Delete/Export dinyalakan -> otomatis aktifkan Viewer
+          newModPerm.viewer = true;
+        }
+
+        const updatedPermissions: GranularUserPermissions = {
+          ...(u.permissions || {}),
+          [modKey]: newModPerm,
+        };
+
+        const legacyKey = moduleLegacyKeyMap[moduleNum];
+        const updatedModulePerms: UserModulePermissions = {
+          ...(u.modulePermissions || {
+            modul1Asset: false,
+            modul2Manpower: false,
+            modul3Maintenance: false,
+            modul4Inventory: false,
+            modul5P2H: false,
+            modul6SparePart: false,
+            modul7Tyre: false,
+            modul8MasterPart: false,
+          }),
+          ...(legacyKey ? { [legacyKey]: Boolean(newModPerm.input || newModPerm.edit) } : {}),
+        };
+
+        const anyEditable = Object.values(updatedPermissions).some((p) => p && (p.input || p.edit || p.delete));
+        const newAccessLevel: UserAccessLevel = anyEditable ? 'BISA_MENGISI' : 'HANYA_VIEW';
+
+        return {
+          ...u,
+          accessLevel: newAccessLevel,
+          modulePermissions: updatedModulePerms,
           permissions: updatedPermissions,
         };
       })
@@ -293,6 +386,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
       return;
     }
 
+    const isCanFill = newNonKaryawanData.accessLevel === 'BISA_MENGISI';
     const res = registerKaryawanUser({
       username: cleanUsername,
       fullName: newNonKaryawanData.fullName.trim(),
@@ -302,14 +396,25 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
       phone: newNonKaryawanData.phone.trim() || cleanUsername,
       status: 'AKTIF',
       accessLevel: newNonKaryawanData.accessLevel,
+      modulePermissions: {
+        modul1Asset: isCanFill,
+        modul2Manpower: isCanFill,
+        modul3Maintenance: isCanFill,
+        modul4Inventory: isCanFill,
+        modul5P2H: isCanFill,
+        modul6SparePart: isCanFill,
+        modul7Tyre: isCanFill,
+        modul8MasterPart: isCanFill,
+      },
       permissions: {
-        modul1: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul2: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul3: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul4: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul5: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul6: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
-        modul7: { viewer: true, input: newNonKaryawanData.accessLevel === 'BISA_MENGISI', edit: false, delete: false, export: false },
+        modul1: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul2: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul3: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul4: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul5: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul6: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul7: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
+        modul8: { viewer: true, input: isCanFill, edit: isCanFill, delete: false, export: isCanFill },
       },
     });
 
@@ -821,9 +926,18 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                       {!isDev && onSwitchUser && (
                         <button
                           type="button"
-                          onClick={() => onSwitchUser(user)}
+                          onClick={async () => {
+                            if (hasUnsavedChanges) {
+                              setIsSaving(true);
+                              await saveAccessControlSettings(usersList);
+                              setIsSaving(false);
+                              setHasUnsavedChanges(false);
+                              onRefreshUsers();
+                            }
+                            onSwitchUser(user);
+                          }}
                           className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-stone-300 bg-stone-800 hover:bg-stone-750 border border-stone-700 transition"
-                          title={`Uji coba tampilan aplikasi sebagai ${user.fullName}`}
+                          title={`Simpan & uji coba tampilan aplikasi sebagai ${user.fullName}`}
                         >
                           <RefreshCw className="w-3 h-3 text-amber-400 inline mr-1" />
                           <span>Simulasi</span>
@@ -921,45 +1035,81 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                                 </p>
                               </div>
 
-                              <div className="flex items-center gap-1.5 pt-1 border-t border-stone-800/80">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePermission(user.id, mod.num, 'VIEW')}
-                                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
-                                    !isLocked && !isCanEdit
-                                      ? 'bg-sky-600 text-white shadow-sm'
-                                      : 'bg-stone-800 text-stone-400 hover:text-stone-200'
-                                  }`}
-                                >
-                                  <Eye className="w-3 h-3" />
-                                  <span>View</span>
-                                </button>
+                              <div className="space-y-1.5 pt-1 border-t border-stone-800/80">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleModulePermission(user.id, mod.num, 'VIEW')}
+                                    className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
+                                      !isLocked && !isCanEdit
+                                        ? 'bg-sky-600 text-white shadow-sm'
+                                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                                    }`}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    <span>View</span>
+                                  </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePermission(user.id, mod.num, 'EDIT')}
-                                  className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
-                                    !isLocked && isCanEdit
-                                      ? 'bg-emerald-600 text-white shadow-sm'
-                                      : 'bg-stone-800 text-stone-400 hover:text-stone-200'
-                                  }`}
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                  <span>Isi &amp; Edit</span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleModulePermission(user.id, mod.num, 'EDIT')}
+                                    className={`flex-1 py-1 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition ${
+                                      !isLocked && isCanEdit
+                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        : 'bg-stone-800 text-stone-400 hover:text-stone-200'
+                                    }`}
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>Isi &amp; Edit</span>
+                                  </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleModulePermission(user.id, mod.num, isLocked ? 'VIEW' : 'LOCKED')}
-                                  className={`p-1 rounded-lg text-[10px] transition ${
-                                    isLocked
-                                      ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
-                                      : 'bg-stone-800 text-stone-500 hover:text-stone-300'
-                                  }`}
-                                  title={isLocked ? 'Buka Kunci Modul' : 'Kunci / Sembunyikan Modul'}
-                                >
-                                  <Lock className="w-3 h-3" />
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleModulePermission(user.id, mod.num, isLocked ? 'VIEW' : 'LOCKED')}
+                                    className={`p-1 rounded-lg text-[10px] transition ${
+                                      isLocked
+                                        ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
+                                        : 'bg-stone-800 text-stone-500 hover:text-stone-300'
+                                    }`}
+                                    title={isLocked ? 'Buka Kunci Modul' : 'Kunci / Sembunyikan Modul'}
+                                  >
+                                    <Lock className="w-3 h-3" />
+                                  </button>
+                                </div>
+
+                                {/* Kontrol Granular: View / Input / Edit / Hapus / Export */}
+                                <div className="grid grid-cols-5 gap-1 pt-1">
+                                  {(
+                                    [
+                                      { key: 'viewer', label: 'View' },
+                                      { key: 'input', label: 'Input' },
+                                      { key: 'edit', label: 'Edit' },
+                                      { key: 'delete', label: 'Hapus' },
+                                      { key: 'export', label: 'Export' },
+                                    ] as const
+                                  ).map((item) => {
+                                    const active = Boolean(perm[item.key]);
+                                    return (
+                                      <button
+                                        key={item.key}
+                                        type="button"
+                                        onClick={() => handleToggleGranularFlag(user.id, mod.num, item.key)}
+                                        className={`py-0.5 px-1 rounded text-[9px] font-mono font-bold border transition ${
+                                          active
+                                            ? item.key === 'delete'
+                                              ? 'bg-rose-600/80 text-white border-rose-500'
+                                              : item.key === 'export'
+                                              ? 'bg-amber-500/90 text-stone-950 border-amber-400'
+                                              : 'bg-emerald-700/80 text-white border-emerald-500'
+                                            : 'bg-stone-950 text-stone-500 border-stone-800 hover:text-stone-300'
+                                        }`}
+                                        title={`Toggle izin ${item.label} pada ${mod.title}`}
+                                      >
+                                        {item.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
                               </div>
                             </div>
                           );

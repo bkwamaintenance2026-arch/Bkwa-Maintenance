@@ -35,10 +35,14 @@ import {
   Filter, 
   Sparkles, 
   ClipboardList,
-  UserCheck
+  UserCheck,
+  Printer
 } from 'lucide-react';
 import { 
-  canUserEdit, 
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
   canUserExportModule,
   getAllMechanicWorkLogs,
   registerMechanicWorkLog,
@@ -53,6 +57,8 @@ import {
 } from '../../utils/storage';
 import { MechanicWorkLogSubView } from './MechanicWorkLogSubView';
 import { CatatanHarianManpowerSubView } from './CatatanHarianManpowerSubView';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { generateManpowerListPDF, exportManpowerListToPDF } from '../../utils/pdfGenerator';
 
 interface ManpowerViewProps {
   manpowerList: ManpowerData[];
@@ -84,9 +90,12 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   onDeleteManpower,
   onBackToMainMenu,
 }) => {
-  // Cek otorisasi hak akses user untuk Modul 2
-  const canEdit = canUserEdit(currentUser, 2);
-  const canExport = canUserExportModule(currentUser, 2);
+  // Cek otorisasi hak akses granular user untuk Modul 2
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 2);
+  const canEdit = isDev || canUserEditModule(currentUser, 2);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 2);
+  const canExport = isDev || canUserExportModule(currentUser, 2);
 
   // Sub-Modul Tab State: Data Manpower vs Catatan Harian Manpower vs Remark Pekerjaan Mekanik
   const [activeSubModule, setActiveSubModule] = useState<SubModuleTab>('data_karyawan');
@@ -131,8 +140,43 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   // Status feedback message
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Search filter
+  // Search filter & per-column header filters
   const [searchTerm, setSearchTerm] = useState('');
+  const [colFilters, setColFilters] = useState({
+    nik: '',
+    nama: '',
+    jabatan: 'ALL',
+    noWa: '',
+    statusKaryawan: 'ALL',
+    tglMasukKerja: '',
+    keterangan: '',
+  });
+  const hasActiveColFilters = useMemo(() => {
+    return Object.entries(colFilters).some(([k, v]) =>
+      k === 'jabatan' || k === 'statusKaryawan' ? v !== 'ALL' : String(v).trim() !== ''
+    );
+  }, [colFilters]);
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setColFilters({
+      nik: '',
+      nama: '',
+      jabatan: 'ALL',
+      noWa: '',
+      statusKaryawan: 'ALL',
+      tglMasukKerja: '',
+      keterangan: '',
+    });
+  };
+
+  // Print Preview PDF Modal State
+  const [pdfPreviewState, setPdfPreviewState] = useState<{
+    isOpen: boolean;
+    blobUrl: string | null;
+    filename: string;
+  }>({ isOpen: false, blobUrl: null, filename: '' });
+
+  const canSubmitForm = editingId ? canEdit : canInsert;
 
   // Auto dismiss feedback after 4 seconds
   useEffect(() => {
@@ -151,10 +195,12 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    if (!canEdit) {
+    if (!canSubmitForm) {
       setFeedback({ 
         type: 'error', 
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Pengisian data manpower dinonaktifkan.' 
+        message: editingId
+          ? 'Akses Ditolak: Akun Anda tidak memiliki izin Edit pada Modul 2.'
+          : 'Akses Ditolak: Akun Anda tidak memiliki izin Input pada Modul 2.' 
       });
       return;
     }
@@ -318,10 +364,10 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
 
   // 4. DELETED ACTION
   const handleDelete = (mp: ManpowerData) => {
-    if (!canEdit) {
+    if (!canDelete) {
       setFeedback({ 
         type: 'error', 
-        message: 'Akses Ditolak: Akun Anda dalam mode "Hanya View". Penghapusan data manpower dinonaktifkan.' 
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Hapus data manpower pada Modul 2.' 
       });
       return;
     }
@@ -357,10 +403,20 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     }
   };
 
-  // Export CSV handler for authorized users (Akun Khusus & Developer)
+  // Export CSV handler for authorized users
   const handleExportCSV = () => {
+    if (!canExport) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export pada Modul 2.',
+      });
+      return;
+    }
     if (sortedList.length === 0) {
-      alert('Tidak ada data manpower untuk di-export.');
+      setFeedback({
+        type: 'error',
+        message: 'Tidak ada data manpower untuk di-export.',
+      });
       return;
     }
     const headers = [
@@ -395,6 +451,41 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     document.body.removeChild(link);
   };
 
+  // Print Preview PDF handler
+  const handleOpenPrintPreview = () => {
+    if (!canExport) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export / Print Preview pada Modul 2.',
+      });
+      return;
+    }
+    if (sortedList.length === 0) {
+      setFeedback({
+        type: 'error',
+        message: 'Tidak ada data manpower untuk ditampilkan pada Print Preview.',
+      });
+      return;
+    }
+    const res = generateManpowerListPDF({
+      manpowerList: sortedList,
+      allManpower: manpowerList,
+      currentUser,
+    });
+    setPdfPreviewState({
+      isOpen: true,
+      blobUrl: res.blobUrl,
+      filename: res.filename,
+    });
+  };
+
+  const handleClosePrintPreview = () => {
+    if (pdfPreviewState.blobUrl) {
+      URL.revokeObjectURL(pdfPreviewState.blobUrl);
+    }
+    setPdfPreviewState({ isOpen: false, blobUrl: null, filename: '' });
+  };
+
   // KPI Ringkasan Status Karyawan & Personil
   const manpowerStats = useMemo(() => {
     const total = manpowerList.length;
@@ -406,9 +497,27 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
     return { total, tetap, kontrak, harianLepas, etikaSby, kemitraanMagang };
   }, [manpowerList]);
 
+  // Opsi unik jabatan dari master + list
+  const jabatanFilterOptions = useMemo(() => {
+    const set = new Set<string>(MANPOWER_JABATAN_OPTIONS);
+    manpowerList.forEach((m) => {
+      if (m.jabatan && m.jabatan.trim()) set.add(m.jabatan.trim());
+    });
+    return Array.from(set).sort();
+  }, [manpowerList]);
+
   // Filtered & Sorted list
   const sortedList = useMemo(() => {
     const filtered = manpowerList.filter((m) => {
+      if (colFilters.nik && !(m.nik || '').toLowerCase().includes(colFilters.nik.toLowerCase().trim())) return false;
+      if (colFilters.nama && !(m.nama || '').toLowerCase().includes(colFilters.nama.toLowerCase().trim())) return false;
+      if (colFilters.jabatan !== 'ALL' && (m.jabatan || '').toLowerCase().trim() !== colFilters.jabatan.toLowerCase().trim()) return false;
+      if (colFilters.noWa && !(m.noWa || '').toLowerCase().includes(colFilters.noWa.toLowerCase().trim())) return false;
+      if (colFilters.statusKaryawan !== 'ALL' && (m.statusKaryawan || '') !== colFilters.statusKaryawan) return false;
+      if (colFilters.tglMasukKerja && !(m.tglMasukKerja || '').toLowerCase().includes(colFilters.tglMasukKerja.toLowerCase().trim())) return false;
+      if (colFilters.keterangan && !(m.keterangan || '').toLowerCase().includes(colFilters.keterangan.toLowerCase().trim())) return false;
+
+      if (!searchTerm.trim()) return true;
       const q = searchTerm.toLowerCase();
       return (
         (m.nik && m.nik.toLowerCase().includes(q)) ||
@@ -431,7 +540,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [manpowerList, searchTerm, sortField, sortOrder]);
+  }, [manpowerList, searchTerm, colFilters, sortField, sortOrder]);
 
   const renderSortHeader = (label: string, field: keyof ManpowerData) => {
     const isSorted = sortField === field;
@@ -670,7 +779,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
             id="form-data-manpower"
             className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 sm:p-6 shadow-xl relative"
           >
-            {!canEdit && (
+            {!canInsert && !canEdit && (
               <div className="mb-4 p-3.5 rounded-xl bg-sky-950/40 border border-sky-800/70 text-sky-200 text-xs flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <Eye className="w-4 h-4 text-sky-400 shrink-0" />
@@ -867,14 +976,14 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
               {/* HANYA TOMBOL "SIMPAN" DI BAWAH MENU FORM INPUT */}
               <div className="pt-4 border-t border-stone-800/80 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  {canEdit ? (
+                  {canSubmitForm ? (
                     <button
                       id="btn-manpower-simpan"
                       type="submit"
                       className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition shadow-lg shadow-amber-500/20 active:scale-95"
                     >
                       <Save className="w-4 h-4" />
-                      <span>Simpan</span>
+                      <span>{editingId ? 'Simpan Pembaruan' : 'Simpan'}</span>
                     </button>
                   ) : (
                     <button
@@ -882,15 +991,15 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                       type="button"
                       disabled
                       className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-stone-400 bg-stone-800 border border-stone-700 cursor-not-allowed opacity-80"
-                      title="Akun Anda dalam mode Hanya View. Hubungi Developer untuk izin pengisian data manpower."
+                      title="Akun Anda tidak memiliki izin untuk aksi ini."
                     >
                       <Lock className="w-4 h-4 text-stone-400" />
-                      <span>Pengisian Dikunci (Hanya View)</span>
+                      <span>{editingId ? 'Edit Dikunci' : 'Pengisian Dikunci (Hanya View)'}</span>
                     </button>
                   )}
 
                   {/* Reset form jika ada yang sedang diisi/diedit */}
-                  {canEdit && (editingId || formData.nik || formData.nama || formData.jabatan || formData.noWa || formData.statusKaryawan || formData.keterangan) && (
+                  {(canInsert || canEdit) && (editingId || formData.nik || formData.nama || formData.jabatan || formData.noWa || formData.statusKaryawan || formData.keterangan) && (
                     <button
                       type="button"
                       onClick={handleResetForm}
@@ -922,7 +1031,9 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                     DAFTAR DATA MANPOWER
                   </h3>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    {manpowerList.length} Personil
+                    {sortedList.length === manpowerList.length
+                      ? `${manpowerList.length} Personil`
+                      : `${sortedList.length} / ${manpowerList.length} Personil`}
                   </span>
                 </div>
                 <p className="text-xs text-stone-400 mt-0.5">
@@ -930,19 +1041,44 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                 </p>
               </div>
 
-              {/* Fast Search & Export */}
+              {/* Fast Search, Filter Reset, Print Preview & Export */}
               <div className="flex flex-wrap items-center gap-2">
-                {canExport && (
+                {(hasActiveColFilters || searchTerm.trim() !== '') && (
                   <button
-                    id="btn-export-modul2-csv"
                     type="button"
-                    onClick={handleExportCSV}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
-                    title="Export data personil manpower ke format CSV / Excel"
+                    onClick={handleResetFilters}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition whitespace-nowrap"
+                    title="Reset semua filter kolom dan pencarian"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>Export Excel</span>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Filter</span>
                   </button>
+                )}
+
+                {canExport && (
+                  <>
+                    <button
+                      id="btn-print-preview-modul2"
+                      type="button"
+                      onClick={handleOpenPrintPreview}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                      title="Print Preview & Download PDF resmi Data Manpower"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Print Preview</span>
+                    </button>
+
+                    <button
+                      id="btn-export-modul2-csv"
+                      type="button"
+                      onClick={handleExportCSV}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                      title="Export data personil manpower ke format CSV / Excel"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Export Excel</span>
+                    </button>
+                  </>
                 )}
 
                 <div className="w-full sm:w-60">
@@ -974,6 +1110,89 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                     {renderSortHeader('KETERANGAN', 'keterangan')}
                     <th className="py-3 px-3 text-center sticky right-0 bg-stone-950/90 shadow-l">
                       AKSI
+                    </th>
+                  </tr>
+                  {/* Filter Row di Header Tabel */}
+                  <tr className="bg-stone-900/90 border-t border-stone-800/80 normal-case">
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilters.nik}
+                        onChange={(e) => setColFilters((p) => ({ ...p, nik: e.target.value }))}
+                        placeholder="Filter NIK..."
+                        className="w-full min-w-[80px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-mono text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </th>
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilters.nama}
+                        onChange={(e) => setColFilters((p) => ({ ...p, nama: e.target.value }))}
+                        placeholder="Filter Nama..."
+                        className="w-full min-w-[110px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-sans text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </th>
+                    <th className="p-1.5">
+                      <select
+                        value={colFilters.jabatan}
+                        onChange={(e) => setColFilters((p) => ({ ...p, jabatan: e.target.value }))}
+                        className="w-full min-w-[110px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-sans text-stone-200 focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="ALL">Semua Jabatan</option>
+                        {jabatanFilterOptions.map((j) => (
+                          <option key={j} value={j}>{j}</option>
+                        ))}
+                      </select>
+                    </th>
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilters.noWa}
+                        onChange={(e) => setColFilters((p) => ({ ...p, noWa: e.target.value }))}
+                        placeholder="Filter No WA..."
+                        className="w-full min-w-[95px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-mono text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </th>
+                    <th className="p-1.5">
+                      <select
+                        value={colFilters.statusKaryawan}
+                        onChange={(e) => setColFilters((p) => ({ ...p, statusKaryawan: e.target.value }))}
+                        className="w-full min-w-[110px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-mono text-stone-200 focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="ALL">Semua Status</option>
+                        {STATUS_KARYAWAN_OPTIONS.map((st) => (
+                          <option key={st} value={st}>{st}</option>
+                        ))}
+                      </select>
+                    </th>
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilters.tglMasukKerja}
+                        onChange={(e) => setColFilters((p) => ({ ...p, tglMasukKerja: e.target.value }))}
+                        placeholder="YYYY-MM-DD..."
+                        className="w-full min-w-[90px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-mono text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </th>
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilters.keterangan}
+                        onChange={(e) => setColFilters((p) => ({ ...p, keterangan: e.target.value }))}
+                        placeholder="Filter Keterangan..."
+                        className="w-full min-w-[110px] bg-stone-950 border border-stone-700/80 rounded-lg px-2 py-1 text-[11px] font-sans text-stone-200 placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                      />
+                    </th>
+                    <th className="p-1.5 text-center sticky right-0 bg-stone-900/95">
+                      {(hasActiveColFilters || searchTerm.trim() !== '') && (
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className="text-[10px] font-mono text-amber-400 hover:text-amber-300 underline"
+                        >
+                          Clear
+                        </button>
+                      )}
                     </th>
                   </tr>
                 </thead>
@@ -1099,16 +1318,16 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                               <button
                                 id={`btn-delete-mp-${mp.id}`}
                                 type="button"
-                                disabled={!canEdit}
+                                disabled={!canDelete}
                                 onClick={() => handleDelete(mp)}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
-                                  canEdit
+                                  canDelete
                                     ? 'text-rose-300 bg-rose-950/40 hover:bg-rose-900/50 border-rose-800/60'
                                     : 'text-stone-500 bg-stone-900/60 border-stone-800 cursor-not-allowed opacity-60'
                                 }`}
-                                title={canEdit ? `Hapus data ${mp.nama || mp.nik}` : 'Akun Anda dalam mode Hanya View (Hapus dinonaktifkan)'}
+                                title={canDelete ? `Hapus data ${mp.nama || mp.nik}` : 'Anda tidak memiliki izin Hapus data manpower'}
                               >
-                                {canEdit ? <Trash2 className="w-3.5 h-3.5 text-rose-400" /> : <Lock className="w-3 h-3 text-stone-500" />}
+                                {canDelete ? <Trash2 className="w-3.5 h-3.5 text-rose-400" /> : <Lock className="w-3 h-3 text-stone-500" />}
                                 <span>Deleted</span>
                               </button>
                             </div>
@@ -1220,24 +1439,43 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   >
                     Tutup
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const dataToEdit = viewingData;
-                      setViewingData(null);
-                      handleEdit(dataToEdit);
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Edit Data Ini</span>
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dataToEdit = viewingData;
+                        setViewingData(null);
+                        handleEdit(dataToEdit);
+                      }}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-stone-950 bg-amber-500 hover:bg-amber-400 transition"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit Data Ini</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           )}
         </>
       )}
+
+      {/* PDF Print Preview Modal */}
+      <PdfPreviewModal
+        isOpen={pdfPreviewState.isOpen}
+        onClose={handleClosePrintPreview}
+        title="Print Preview — Master Data Manpower"
+        subtitle={`PT BATU KALI WELANG AMPUH (ETIKA09) • ${sortedList.length} Personil`}
+        pdfBlobUrl={pdfPreviewState.blobUrl}
+        filename={pdfPreviewState.filename}
+        onDownload={() => {
+          exportManpowerListToPDF({
+            manpowerList: sortedList,
+            allManpower: manpowerList,
+            currentUser,
+          });
+        }}
+      />
     </div>
   );
 };

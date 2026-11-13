@@ -70,6 +70,7 @@ export function getDeterministicDocId(collectionName: string, item: any): string
   if (!item) return String(Date.now());
   
   if (collectionName === 'units') {
+    if (item._firestoreDocId) return String(item._firestoreDocId);
     // Normalisasi CN unit: 'DT-01', 'DT 01', 'dt01' -> 'dt01'
     const rawCn = (item.cnNew || item.nomorLambung || item.kodeUnit || item.namaAlat || item.id || '').toString();
     const cleanCn = rawCn.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -77,6 +78,7 @@ export function getDeterministicDocId(collectionName: string, item: any): string
   }
 
   if (collectionName === 'manpower') {
+    if (item._firestoreDocId) return String(item._firestoreDocId);
     const nik = (item.nik || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
     let wa = (item.noWa || '').toString().replace(/\D/g, '');
     if (wa.startsWith('0')) wa = '62' + wa.slice(1);
@@ -237,6 +239,48 @@ export async function syncItemToFirestore(collectionName: string, rawId: string,
   }
 }
 
+// Hapus docId lama di Firestore jika key deterministik berubah saat edit (tanpa mencatat tombstone pada id utama)
+export async function deleteStaleFirestoreDoc(collectionName: string, oldDocId: string): Promise<void> {
+  if (!oldDocId) return;
+  try {
+    await deleteDoc(doc(db, collectionName, oldDocId));
+  } catch (err) {
+    console.warn(`deleteStaleFirestoreDoc [${collectionName}/${oldDocId}]:`, err);
+  }
+}
+
+// Batch commit array item ke Firestore secara atomik (mencegah race condition onSnapshot saat update massal seperti hak akses)
+export async function batchSyncToFirestore(collectionName: string, items: any[]): Promise<void> {
+  if (!Array.isArray(items) || items.length === 0) return;
+  try {
+    const nowIso = new Date().toISOString();
+    const chunkSize = 400;
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((item) => {
+        if (!item) return;
+        if (item.id) removeTombstone(collectionName, item.id);
+        const docId = getDeterministicDocId(collectionName, item);
+        removeTombstone(collectionName, docId);
+        const docRef = doc(db, collectionName, docId);
+        const cleanData = sanitizeForFirestore({
+          ...item,
+          id: item.id || docId,
+          _firestoreDocId: docId,
+          _updatedAtServer: item.updatedAt || nowIso,
+        });
+        batch.set(docRef, cleanData, { merge: true });
+      });
+      await batch.commit();
+    }
+    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID') });
+  } catch (err) {
+    console.error(`Gagal batch sync [${collectionName}]:`, err);
+    throw err;
+  }
+}
+
 // Hapus 1 item dari Firestore secara permanen dan cegah kemunculan kembali
 export async function deleteItemFromFirestore(collectionName: string, rawId: string, itemData?: any): Promise<void> {
   try {
@@ -289,37 +333,75 @@ export async function deleteItemFromFirestore(collectionName: string, rawId: str
   }
 }
 
+// Helper pembanding timestamp untuk memilih versi data paling baru saat merge Firestore + Local
+function getEntityTimestampMs(item: any): number {
+  if (!item) return 0;
+  const candidates = [
+    item.updatedAt,
+    item._updatedAtServer,
+    item.operatorUpdatedAt,
+    item.terakhirDiperbarui,
+    item.createdAt,
+    item.tanggalRegistrasi,
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const ms = Date.parse(String(c));
+    if (!isNaN(ms)) return ms;
+  }
+  return 0;
+}
+
+function mergeByRecency(existing: any, incoming: any): any {
+  const existingTs = getEntityTimestampMs(existing);
+  const incomingTs = getEntityTimestampMs(incoming);
+  if (incomingTs >= existingTs) {
+    return { ...existing, ...incoming };
+  }
+  return { ...incoming, ...existing };
+}
+
 // Helper cerdas pembersih & penggabung data duplikat lokal (Deduplication Engine)
 export function deduplicateEntityList(collectionName: string, list: any[]): any[] {
   if (!Array.isArray(list) || list.length <= 1) return list || [];
 
   if (collectionName === 'units') {
+    // 1. Deduplikasi berdasarkan id terlebih dahulu (menangani edit CN_NEW agar tidak duplikat)
+    const byId = new Map<string, any>();
+    const noIdItems: any[] = [];
+    list.forEach((item) => {
+      if (!item) return;
+      const id = (item.id || '').toString().trim();
+      if (id) {
+        if (byId.has(id)) {
+          byId.set(id, mergeByRecency(byId.get(id), item));
+        } else {
+          byId.set(id, item);
+        }
+      } else {
+        noIdItems.push(item);
+      }
+    });
+
+    const stage1 = [...Array.from(byId.values()), ...noIdItems];
     const map = new Map<string, any>();
     const seenIds = new Set<string>();
 
-    list.forEach((item) => {
+    stage1.forEach((item) => {
       if (!item) return;
       // Normalisasi cerdas: 'DT-01', 'DT 01', 'dt01' -> 'dt01'
       const rawCn = (item.cnNew || item.nomorLambung || item.kodeUnit || item.namaAlat || item.id || '').toString();
       const key = rawCn.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!key) return;
-      // Jika sudah ada, pilih data yang lebih baru / lebih lengkap
       if (map.has(key)) {
-        const existing = map.get(key);
-        const existingDate = existing.terakhirDiperbarui || existing.tanggalRegistrasi || '';
-        const itemDate = item.terakhirDiperbarui || item.tanggalRegistrasi || '';
-        if (itemDate >= existingDate) {
-          map.set(key, { ...existing, ...item });
-        } else {
-          map.set(key, { ...item, ...existing });
-        }
+        map.set(key, mergeByRecency(map.get(key), item));
       } else {
         map.set(key, item);
       }
     });
 
     const dedupedUnits: any[] = [];
-    map.forEach((item, k) => {
+    map.forEach((item) => {
       let id = (item.id || '').toString().trim();
       if (!id || seenIds.has(id)) {
         id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 6)}-${dedupedUnits.length}`;
@@ -333,19 +415,47 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
   }
 
   if (collectionName === 'manpower') {
-    const map = new Map<string, any>();
+    // 1. Deduplikasi berdasarkan id terlebih dahulu agar edit NIK / No WA / Nama tidak memunculkan baris duplikat
+    const byId = new Map<string, any>();
+    const noIdItems: any[] = [];
     list.forEach((item) => {
+      if (!item) return;
+      const id = (item.id || '').toString().trim();
+      if (id) {
+        if (byId.has(id)) {
+          byId.set(id, mergeByRecency(byId.get(id), item));
+        } else {
+          byId.set(id, item);
+        }
+      } else {
+        noIdItems.push(item);
+      }
+    });
+
+    const stage1 = [...Array.from(byId.values()), ...noIdItems];
+    const map = new Map<string, any>();
+    stage1.forEach((item) => {
       if (!item) return;
       const nikKey = (item.nik || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       let waKey = (item.noWa || '').toString().replace(/\D/g, '');
       if (waKey.startsWith('0')) waKey = '62' + waKey.slice(1);
       const nameKey = (item.nama || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-      const primaryKey = nikKey ? `nik_${nikKey}` : (waKey ? `wa_${waKey}` : `name_${nameKey}`);
-      if (!primaryKey || primaryKey === 'name_') return;
+      const jabKey = (item.jabatan || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const primaryKey = nikKey
+        ? `nik_${nikKey}`
+        : waKey
+        ? `wa_${waKey}`
+        : nameKey
+        ? `name_${nameKey}_${jabKey}`
+        : item.id
+        ? `id_${item.id}`
+        : '';
+      if (!primaryKey) return;
 
       if (map.has(primaryKey)) {
-        const existing = map.get(primaryKey);
-        map.set(primaryKey, { ...existing, ...item, noWa: item.noWa || existing.noWa });
+        const merged = mergeByRecency(map.get(primaryKey), item);
+        merged.noWa = merged.noWa || map.get(primaryKey).noWa || item.noWa;
+        map.set(primaryKey, merged);
       } else {
         map.set(primaryKey, item);
       }
@@ -360,9 +470,7 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
       const key = (item.username || item.id || '').toString().trim().toLowerCase();
       if (!key) return;
       if (map.has(key)) {
-        const existing = map.get(key);
-        // Pertahankan status dan password terbaru
-        map.set(key, { ...existing, ...item });
+        map.set(key, mergeByRecency(map.get(key), item));
       } else {
         map.set(key, item);
       }

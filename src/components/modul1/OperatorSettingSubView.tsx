@@ -37,7 +37,14 @@ import {
   FileText,
   CheckCheck
 } from 'lucide-react';
-import { canAccessRegistrationForm, updateUnitOperatorSetting } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+  updateUnitOperatorSetting,
+} from '../../utils/storage';
 import { generateOperatorSettingPDF, exportOperatorSettingToPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 
@@ -131,10 +138,13 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   currentUser = null,
   onUpdateOperatorSetting,
 }) => {
-  // Safe edit permission check
-  const canEdit = currentUser
-    ? Boolean(canAccessRegistrationForm(currentUser) || currentUser?.role === 'ADMIN' || currentUser?.accountTier === 'ADMIN' || currentUser?.role === 'DEVELOPER')
-    : true;
+  // Strict Granular RBAC Modul 1
+  const isDev = isDeveloper(currentUser);
+  const canInsert = currentUser ? isDev || canUserInsertModule(currentUser, 1) : false;
+  const canEditPerm = currentUser ? isDev || canUserEditModule(currentUser, 1) : false;
+  const canDelete = currentUser ? isDev || canUserDeleteModule(currentUser, 1) : false;
+  const canExport = currentUser ? isDev || canUserExportModule(currentUser, 1) : false;
+  const canEdit = canInsert || canEditPerm;
 
   // Feedback banner state
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -159,6 +169,15 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   const [tableFilterStatus, setTableFilterStatus] = useState<string>('ALL');
   const [tableFilterBarcode, setTableFilterBarcode] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'ASSIGNED_ONLY' | 'ALL_UNITS'>('ASSIGNED_ONLY');
+
+  // Filter per-kolom di header tabel (mudah cari & edit)
+  const [colFilterCn, setColFilterCn] = useState<string>('');
+  const [colFilterJenis, setColFilterJenis] = useState<string>('ALL');
+  const [colFilterStatus, setColFilterStatus] = useState<string>('ALL');
+  const [colFilterOperator, setColFilterOperator] = useState<string>('');
+  const [colFilterJob, setColFilterJob] = useState<string>('');
+  const [colFilterBarcode, setColFilterBarcode] = useState<string>('ALL');
+  const [colFilterRemark, setColFilterRemark] = useState<string>('');
 
   // Sorting state untuk Header Kolom Tabel
   const [sortField, setSortField] = useState<OperatorSortField>('cnNew');
@@ -581,6 +600,43 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         }
       }
 
+      // Filter per-kolom di header tabel
+      if (colFilterCn.trim() && !(u.cnNew || '').toLowerCase().includes(colFilterCn.trim().toLowerCase())) {
+        return false;
+      }
+      if (colFilterJenis !== 'ALL' && (u.jenis || '').trim().toLowerCase() !== colFilterJenis.trim().toLowerCase()) {
+        return false;
+      }
+      if (colFilterStatus !== 'ALL' && (u.status || '').trim().toLowerCase() !== colFilterStatus.trim().toLowerCase()) {
+        return false;
+      }
+      if (colFilterOperator.trim() && !(u.operatorName || '').toLowerCase().includes(colFilterOperator.trim().toLowerCase())) {
+        return false;
+      }
+      if (colFilterJob.trim() && !(u.operatorJob || '').toLowerCase().includes(colFilterJob.trim().toLowerCase())) {
+        return false;
+      }
+      if (colFilterBarcode !== 'ALL') {
+        if (colFilterBarcode === 'RUSAK_HILANG') {
+          if (!isBarcodeIssue(u)) return false;
+        } else if (colFilterBarcode === 'TERPASANG') {
+          if (!isBarcodeActive(u)) return false;
+        } else if (colFilterBarcode === 'RUSAK') {
+          const isR = u.barcodeFuelStatus === 'RUSAK' || (isBarcodeIssue(u) && u.barcodeFuelStatus !== 'HILANG');
+          if (!isR) return false;
+        } else if (colFilterBarcode === 'HILANG') {
+          const isH = u.barcodeFuelStatus === 'HILANG' || (u.operatorRemark || '').toUpperCase().includes('TIDAK ADA BARCODE');
+          if (!isH) return false;
+        } else if (colFilterBarcode === 'BELUM ADA') {
+          if (isBarcodeIssue(u) || isBarcodeActive(u)) return false;
+        } else if ((u.barcodeFuelStatus || 'BELUM ADA') !== colFilterBarcode) {
+          return false;
+        }
+      }
+      if (colFilterRemark.trim() && !(u.operatorRemark || '').toLowerCase().includes(colFilterRemark.trim().toLowerCase())) {
+        return false;
+      }
+
       // Search keyword filter
       if (searchTerm.trim()) {
         const q = searchTerm.toLowerCase().trim();
@@ -617,7 +673,23 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [units, viewMode, tableFilterJenis, tableFilterStatus, tableFilterBarcode, searchTerm, sortField, sortOrder]);
+  }, [
+    units, 
+    viewMode, 
+    tableFilterJenis, 
+    tableFilterStatus, 
+    tableFilterBarcode, 
+    colFilterCn, 
+    colFilterJenis, 
+    colFilterStatus, 
+    colFilterOperator, 
+    colFilterJob, 
+    colFilterBarcode, 
+    colFilterRemark, 
+    searchTerm, 
+    sortField, 
+    sortOrder
+  ]);
 
   // Statistik Ringkas Akurat
   const stats = useMemo(() => {
@@ -1492,26 +1564,30 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-300 hover:text-amber-400 hover:border-amber-500/40 text-xs font-mono font-bold transition shadow cursor-pointer"
-              title="Export data ke CSV"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Export CSV</span>
-            </button>
+            {canExport && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-300 hover:text-amber-400 hover:border-amber-500/40 text-xs font-mono font-bold transition shadow cursor-pointer"
+                  title="Export data ke CSV"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Export CSV</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleOpenPdfPreview}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-stone-950 hover:bg-amber-400 text-xs font-mono font-black transition shadow-lg shadow-amber-500/20 cursor-pointer"
-              title="Buka Dokumen Pratinjau PDF Resmi untuk Cetak & Download"
-            >
-              <Eye className="w-3.5 h-3.5 text-stone-950" />
-              <Printer className="w-3.5 h-3.5 text-stone-950" />
-              <span>Print Preview</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={handleOpenPdfPreview}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-stone-950 hover:bg-amber-400 text-xs font-mono font-black transition shadow-lg shadow-amber-500/20 cursor-pointer"
+                  title="Buka Dokumen Pratinjau PDF Resmi untuk Cetak & Download"
+                >
+                  <Eye className="w-3.5 h-3.5 text-stone-950" />
+                  <Printer className="w-3.5 h-3.5 text-stone-950" />
+                  <span>Print Preview</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1782,7 +1858,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               <table className="w-full text-left text-xs text-stone-300">
                 <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
                   <tr>
-                    <th className="px-3.5 py-3.5 w-10 text-center">No</th>
+                    <th className="px-3.5 py-3 w-10 text-center">No</th>
                     {renderSortHeader('No. Unit (CN New)', 'cnNew', 'min-w-[170px]')}
                     {renderSortHeader('Jenis Unit', 'jenis', 'min-w-[130px]')}
                     {renderSortHeader('Status Unit', 'status', 'min-w-[140px]')}
@@ -1790,7 +1866,114 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                     {renderSortHeader('Job (Pekerjaan)', 'operatorJob', 'min-w-[180px]')}
                     {renderSortHeader('Status Barcode Fuel', 'barcodeFuelStatus', 'min-w-[150px]')}
                     {renderSortHeader('Remark', 'operatorRemark', 'min-w-[160px]')}
-                    <th className="px-3.5 py-3.5 text-center whitespace-nowrap w-24">Aksi</th>
+                    <th className="px-3.5 py-3 text-center whitespace-nowrap w-24">Aksi</th>
+                  </tr>
+                  {/* BARIS FILTER PER KOLOM HEADER (Filter Cepat) */}
+                  <tr className="bg-stone-900/90 border-b border-stone-800/80 text-[10px] font-mono lowercase">
+                    <th className="p-1.5 text-center">
+                      {(colFilterCn || colFilterJenis !== 'ALL' || colFilterStatus !== 'ALL' || colFilterOperator || colFilterJob || colFilterBarcode !== 'ALL' || colFilterRemark) ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setColFilterCn('');
+                            setColFilterJenis('ALL');
+                            setColFilterStatus('ALL');
+                            setColFilterOperator('');
+                            setColFilterJob('');
+                            setColFilterBarcode('ALL');
+                            setColFilterRemark('');
+                          }}
+                          className="p-1 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500 hover:text-white transition cursor-pointer"
+                          title="Reset semua filter kolom"
+                        >
+                          ✕
+                        </button>
+                      ) : (
+                        <span className="text-stone-600">🔍</span>
+                      )}
+                    </th>
+                    {/* Filter CN Unit */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilterCn}
+                        onChange={(e) => setColFilterCn(e.target.value)}
+                        placeholder="Filter CN..."
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-xs text-amber-300 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                    </th>
+                    {/* Filter Jenis */}
+                    <th className="p-1.5">
+                      <select
+                        value={colFilterJenis}
+                        onChange={(e) => setColFilterJenis(e.target.value)}
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1 py-1 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono cursor-pointer"
+                      >
+                        <option value="ALL">Semua</option>
+                        {uniqueJenisList.map((j) => (
+                          <option key={j} value={j}>{j}</option>
+                        ))}
+                      </select>
+                    </th>
+                    {/* Filter Status */}
+                    <th className="p-1.5">
+                      <select
+                        value={colFilterStatus}
+                        onChange={(e) => setColFilterStatus(e.target.value)}
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1 py-1 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono cursor-pointer"
+                      >
+                        <option value="ALL">Semua</option>
+                        {uniqueStatusList.map((st) => (
+                          <option key={st} value={st}>{st}</option>
+                        ))}
+                      </select>
+                    </th>
+                    {/* Filter Operator */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilterOperator}
+                        onChange={(e) => setColFilterOperator(e.target.value)}
+                        placeholder="Filter operator..."
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                    </th>
+                    {/* Filter Job */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilterJob}
+                        onChange={(e) => setColFilterJob(e.target.value)}
+                        placeholder="Filter job..."
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                    </th>
+                    {/* Filter Barcode */}
+                    <th className="p-1.5">
+                      <select
+                        value={colFilterBarcode}
+                        onChange={(e) => setColFilterBarcode(e.target.value)}
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1 py-1 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono cursor-pointer"
+                      >
+                        <option value="ALL">Semua</option>
+                        <option value="TERPASANG">Terpasang</option>
+                        <option value="RUSAK_HILANG">Rusak/Hilang</option>
+                        <option value="BELUM ADA">Belum Ada</option>
+                      </select>
+                    </th>
+                    {/* Filter Remark */}
+                    <th className="p-1.5">
+                      <input
+                        type="text"
+                        value={colFilterRemark}
+                        onChange={(e) => setColFilterRemark(e.target.value)}
+                        placeholder="Filter remark..."
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1.5 py-1 text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono"
+                      />
+                    </th>
+                    <th className="p-1.5 text-center text-[9px] text-stone-500 uppercase">
+                      Filter
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-800/60 font-mono text-[11px]">
@@ -1899,17 +2082,19 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                         {/* Aksi */}
                         <td className="px-3.5 py-3 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleEditFromTable(u)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[10px] font-bold transition cursor-pointer border border-stone-700"
-                              title="Edit atau perbarui setting unit ini di form"
-                            >
-                              <Edit3 className="w-3 h-3 text-amber-400" />
-                              <span>Edit</span>
-                            </button>
+                            {canEditPerm && (
+                              <button
+                                type="button"
+                                onClick={() => handleEditFromTable(u)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-stone-800 hover:bg-amber-500 hover:text-stone-950 text-stone-300 font-mono text-[10px] font-bold transition cursor-pointer border border-stone-700"
+                                title="Edit atau perbarui setting unit ini di form"
+                              >
+                                <Edit3 className="w-3 h-3 text-amber-400" />
+                                <span>Edit</span>
+                              </button>
+                            )}
 
-                            {(u.operatorName || u.operatorJob || u.operatorRemark) && canEdit && (
+                            {(u.operatorName || u.operatorJob || u.operatorRemark) && canDelete && (
                               <button
                                 type="button"
                                 onClick={() => handleRemoveAssignment(u)}

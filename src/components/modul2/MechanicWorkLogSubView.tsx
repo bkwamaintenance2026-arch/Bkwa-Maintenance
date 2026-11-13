@@ -32,7 +32,13 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
-import { canUserEdit, canUserExportModule } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 interface MechanicWorkLogSubViewProps {
   workLogs: MechanicWorkLogRecord[];
@@ -67,8 +73,11 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
   onSaveWorkLog,
   onDeleteWorkLog,
 }) => {
-  const canEdit = canUserEdit(currentUser, 2);
-  const canExport = canUserExportModule(currentUser, 2);
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 2);
+  const canEdit = isDev || canUserEditModule(currentUser, 2);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 2);
+  const canExport = isDev || canUserExportModule(currentUser, 2);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
@@ -82,6 +91,7 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const [formData, setFormData] = useState(EMPTY_LOG_FORM);
+  const canSubmitForm = editingId ? canEdit : canInsert;
 
   // Daftar nama karyawan khusus jabatan Mekanik, Helper Mekanik, PKL, Magang
   // Ditempatkan di urutan teratas, diikuti seluruh personil manpower lainnya
@@ -145,7 +155,7 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
   }, [workLogs, searchTerm, filterCategory, filterStatus, filterDate]);
 
   const handleOpenAdd = () => {
-    if (!canEdit) return;
+    if (!canInsert) return;
     setEditingId(null);
     const defaultMekanik = mechanicCandidates.mechanics[0] || manpowerList[0];
     setFormData({
@@ -198,7 +208,7 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) return;
+    if (!canSubmitForm) return;
 
     if (!formData.namaMekanik.trim() || !formData.uraianPekerjaan.trim()) {
       setFeedback({
@@ -233,6 +243,7 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
   };
 
   const handleDelete = (id: string) => {
+    if (!canDelete) return;
     const res = onDeleteWorkLog(id);
     if (res.success) {
       setFeedback({ type: 'success', message: res.message });
@@ -243,8 +254,9 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
   };
 
   const handleExportCSV = () => {
+    if (!canExport) return;
     if (filteredList.length === 0) {
-      alert('Tidak ada data pekerjaan mekanik untuk di-export.');
+      setFeedback({ type: 'error', message: 'Tidak ada data pekerjaan mekanik untuk di-export.' });
       return;
     }
 
@@ -372,7 +384,7 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
               </button>
             )}
 
-            {canEdit ? (
+            {canInsert ? (
               <button
                 type="button"
                 onClick={handleOpenAdd}
@@ -616,24 +628,24 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
                       </button>
 
                       {canEdit && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(log)}
-                            className="p-1.5 rounded-lg bg-stone-800 text-blue-400 hover:text-blue-300 hover:bg-stone-700 transition"
-                            title="Edit Pekerjaan Mekanik"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteConfirmId(log.id)}
-                            className="p-1.5 rounded-lg bg-stone-800 text-rose-400 hover:text-rose-300 hover:bg-stone-700 transition"
-                            title="Hapus Catatan"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(log)}
+                          className="p-1.5 rounded-lg bg-stone-800 text-blue-400 hover:text-blue-300 hover:bg-stone-700 transition"
+                          title="Edit Pekerjaan Mekanik"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirmId(log.id)}
+                          className="p-1.5 rounded-lg bg-stone-800 text-rose-400 hover:text-rose-300 hover:bg-stone-700 transition"
+                          title="Hapus Catatan"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
                   </td>

@@ -23,7 +23,13 @@ import {
   Lock,
   Download
 } from 'lucide-react';
-import { canUserEdit } from '../../utils/storage';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 interface OilStockInputSubViewProps {
   oilStockInputs: OilStockInputRecord[];
@@ -49,13 +55,18 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   onDelete,
   onAddCustomOilType,
 }) => {
-  const canEdit = canUserEdit(currentUser, 4);
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 4);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showAddOilModal, setShowAddOilModal] = useState(false);
   const [newOilNameInput, setNewOilNameInput] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -109,7 +120,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   });
 
   const handleOpenAdd = () => {
-    if (!canEdit) return;
+    if (!canInsert) return;
     setEditingId(null);
     setDistributor(effectiveSuppliers[0]?.namaDistributor || suppliers[0]?.namaDistributor || '');
     const now = new Date();
@@ -155,8 +166,8 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) {
-      setErrorMsg('Akses Ditolak: Akun Anda dalam mode "Hanya View". Penambahan/perubahan input stock oli tidak diizinkan.');
+    if (!canSubmitForm) {
+      setErrorMsg('Akses Ditolak: Anda tidak memiliki izin untuk menyimpan atau mengubah input stock oli.');
       return;
     }
     if (!distributor) {
@@ -200,7 +211,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
   const handleAddNewOil = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) return;
+    if (!canInsert && !canEdit) return;
     if (!newOilNameInput.trim()) return;
     onAddCustomOilType(newOilNameInput.trim());
     setNamaOli(newOilNameInput.trim().toUpperCase());
@@ -209,7 +220,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   };
 
   const handleDelete = (id: string) => {
-    if (!canEdit) return;
+    if (!canDelete) return;
     onDelete(id);
     setDeleteConfirmId(null);
   };
@@ -228,8 +239,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
-    if (filteredList.length === 0) {
-      alert('Tidak ada data stok oli untuk diexport.');
+    if (!canExport || filteredList.length === 0) {
       return;
     }
     const headers = ['TANGGAL', 'JAM', 'DISTRIBUTOR / SUPPLIER', 'NAMA / JENIS OLI', 'QTY', 'SATUAN', 'PIC GUDANG', 'JABATAN', 'REMARK'];
@@ -292,17 +302,19 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
             />
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
-            title="Export CSV Penerimaan Stok Oli (PT BATU KALI WELANG AMPUH)"
-          >
-            <Download className="w-4 h-4 text-emerald-400" />
-            <span>Export CSV</span>
-          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+              title="Export CSV Penerimaan Stok Oli (PT BATU KALI WELANG AMPUH)"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Export CSV</span>
+            </button>
+          )}
 
-          {canEdit ? (
+          {canInsert ? (
             <button
               id="btn-add-oil-stock"
               type="button"
@@ -318,7 +330,7 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
               type="button"
               disabled
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 text-stone-500 border border-stone-700 font-bold text-xs cursor-not-allowed opacity-75"
-              title="Akun Anda dalam mode Hanya View. Hubungi Developer untuk izin pengisian data."
+              title="Akun Anda tidak memiliki izin menambah data di Modul 4."
             >
               <Lock className="w-4 h-4 text-stone-500" />
               <span>+ Input Stock Oli (Terkunci)</span>
@@ -432,16 +444,16 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                       </button>
                       <button
                         type="button"
-                        disabled={!canEdit}
-                        onClick={() => setDeleteConfirmId(item.id)}
+                        disabled={!canDelete}
+                        onClick={() => canDelete && setDeleteConfirmId(item.id)}
                         className={`p-1.5 rounded-lg transition border ${
-                          canEdit
+                          canDelete
                             ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
                             : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
                         }`}
-                        title={canEdit ? 'Hapus Record' : 'Akun Anda dalam mode Hanya View'}
+                        title={canDelete ? 'Hapus Record' : 'Tidak ada izin Hapus'}
                       >
-                        {canEdit ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                        {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
                       </button>
                     </div>
                   </td>

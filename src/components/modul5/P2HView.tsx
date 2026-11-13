@@ -8,7 +8,7 @@ import {
   P2HKelayakanStatus, 
   UserAccount 
 } from '../../types';
-import { canUserEditModule, canUserExportModule, isDeveloper } from '../../utils/storage';
+import { canUserInsertModule, canUserEditModule, canUserDeleteModule, canUserExportModule, isDeveloper } from '../../utils/storage';
 import { 
   ClipboardCheck, 
   CheckCircle2, 
@@ -145,11 +145,12 @@ export const P2HView: React.FC<P2HViewProps> = ({
   onBackToMainMenu,
   isSubModule = false,
 }) => {
-  // Otorisasi Modul 5:
-  // Admin, Member, dan Developer bisa Input Form P2H.
-  // Developer, Admin, dan Khusus bisa Export data P2H.
-  const canInput = canUserEditModule(currentUser, 5);
-  const canExport = canUserExportModule(currentUser, 5);
+  // Otorisasi Granular Modul 5:
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 5);
+  const canEdit = isDev || canUserEditModule(currentUser, 5);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 5);
+  const canExport = isDev || canUserExportModule(currentUser, 5);
 
   const [activeTab, setActiveTab] = useState<'form' | 'riwayat'>('form');
 
@@ -178,6 +179,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Form State: Bagian 1 Informasi Umum
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [editingNoP2H, setEditingNoP2H] = useState<string | null>(null);
   const [operatorName, setOperatorName] = useState(
     currentUser.role === 'KARYAWAN' ? currentUser.fullName : ''
@@ -237,6 +239,10 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // 1. Tombol Cepat: Check All OK (Sesuai spesifikasi poin 7.d)
   const handleCheckAllOk = () => {
+    if (!canSubmitForm) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengubah formulir P2H.' });
+      return;
+    }
     setChecklistItems((prev) =>
       prev.map((item) => ({
         ...item,
@@ -252,6 +258,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Ubah status item individual
   const handleItemStatusChange = (itemId: string, newStatus: P2HCheckStatus) => {
+    if (!canSubmitForm) return;
     setChecklistItems((prev) =>
       prev.map((item) => {
         if (item.id === itemId) {
@@ -272,6 +279,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Ubah catatan kerusakan pada item
   const handleItemCatatanChange = (itemId: string, catatan: string) => {
+    if (!canSubmitForm) return;
     setChecklistItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, catatanKerusakan: catatan } : item))
     );
@@ -279,17 +287,18 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Upload foto kerusakan (Base64)
   const handleItemFotoUpload = (itemId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canSubmitForm) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Hanya file gambar/foto yang diperbolehkan.');
+      setFeedback({ type: 'error', message: 'Hanya file gambar/foto yang diperbolehkan.' });
       return;
     }
 
     // Limit 4MB
     if (file.size > 4 * 1024 * 1024) {
-      alert('Ukuran foto maksimal 4MB.');
+      setFeedback({ type: 'error', message: 'Ukuran foto maksimal 4MB.' });
       return;
     }
 
@@ -305,6 +314,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Hapus foto kerusakan
   const handleRemoveFoto = (itemId: string) => {
+    if (!canSubmitForm) return;
     setChecklistItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, fotoKerusakan: undefined } : item))
     );
@@ -323,8 +333,12 @@ export const P2HView: React.FC<P2HViewProps> = ({
     setPersetujuanJujur(true);
   };
 
-  // Open Edit P2H Form (Developer Access)
+  // Open Edit P2H Form
   const handleOpenEditP2H = (rec: P2HRecord) => {
+    if (!canEdit) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengedit laporan P2H.' });
+      return;
+    }
     setEditingId(rec.id);
     setEditingNoP2H(rec.noP2H);
     setOperatorName(rec.operatorName);
@@ -343,10 +357,12 @@ export const P2HView: React.FC<P2HViewProps> = ({
   const handleSubmitP2H = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!canInput) {
+    if (!canSubmitForm) {
       setFeedback({
         type: 'error',
-        message: 'Akses Ditolak: Anda tidak memiliki izin untuk menginput formulir P2H.',
+        message: editingId
+          ? 'Akses Ditolak: Anda tidak memiliki izin untuk mengedit laporan P2H.'
+          : 'Akses Ditolak: Anda tidak memiliki izin untuk menginput formulir P2H.',
       });
       return;
     }
@@ -447,8 +463,12 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Export Riwayat P2H to Excel / CSV
   const handleExportRiwayatCSV = () => {
+    if (!canExport) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mengexport data P2H.' });
+      return;
+    }
     if (filteredRiwayat.length === 0) {
-      alert('Tidak ada data riwayat P2H untuk di-export.');
+      setFeedback({ type: 'error', message: 'Tidak ada data riwayat P2H untuk di-export.' });
       return;
     }
 
@@ -509,9 +529,13 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Cetak Dokumen P2H via Print Browser
   const handlePrintP2HRecord = (rec: P2HRecord) => {
+    if (!canExport) {
+      setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak dokumen P2H.' });
+      return;
+    }
     const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) {
-      alert('Gagal membuka jendela cetak. Pastikan pop-up diizinkan di peramban Anda.');
+      setFeedback({ type: 'error', message: 'Gagal membuka jendela cetak. Pastikan pop-up diizinkan di peramban Anda.' });
       return;
     }
 
@@ -768,6 +792,16 @@ export const P2HView: React.FC<P2HViewProps> = ({
             </div>
           )}
 
+          {/* Read-Only Notice if no Insert/Edit permission */}
+          {!canSubmitForm && (
+            <div className="bg-rose-950/50 border border-rose-500/40 rounded-2xl p-4 flex items-center gap-3 text-xs text-rose-200">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+              <span>
+                Mode Lihat Saja (View Only): Akun Anda tidak memiliki izin untuk {editingId ? 'mengedit' : 'menambah / mengirim'} formulir P2H.
+              </span>
+            </div>
+          )}
+
           {/* Quick Bar: Tombol Cepat Check All OK (Poin 7.d) */}
           <div className="bg-gradient-to-r from-teal-950/70 via-stone-900 to-teal-950/70 border border-teal-600/40 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
             <div className="flex items-center gap-3">
@@ -784,15 +818,17 @@ export const P2HView: React.FC<P2HViewProps> = ({
               </div>
             </div>
 
-            <button
-              id="btn-p2h-check-all-ok"
-              type="button"
-              onClick={handleCheckAllOk}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black text-xs transition shadow-lg shadow-teal-500/25 active:scale-95 shrink-0"
-            >
-              <CheckCircle className="w-4 h-4" />
-              <span>⚡ CHECK ALL OK</span>
-            </button>
+            {canSubmitForm && (
+              <button
+                id="btn-p2h-check-all-ok"
+                type="button"
+                onClick={handleCheckAllOk}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 font-black text-xs transition shadow-lg shadow-teal-500/25 active:scale-95 shrink-0"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>⚡ CHECK ALL OK</span>
+              </button>
+            )}
           </div>
 
           {/* BAGIAN 1: INFORMASI UMUM (Poin 7.a) */}
@@ -1333,14 +1369,16 @@ export const P2HView: React.FC<P2HViewProps> = ({
                 <span>Reset Form</span>
               </button>
 
-              <button
-                id="btn-submit-p2h-form"
-                type="submit"
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 text-xs font-black transition shadow-lg shadow-teal-500/25 active:scale-95"
-              >
-                <Save className="w-4 h-4" />
-                <span>KIRIM / SIMPAN LAPORAN P2H</span>
-              </button>
+              {canSubmitForm && (
+                <button
+                  id="btn-submit-p2h-form"
+                  type="submit"
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-stone-950 text-xs font-black transition shadow-lg shadow-teal-500/25 active:scale-95"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{editingId ? 'SIMPAN PERUBAHAN P2H' : 'KIRIM / SIMPAN LAPORAN P2H'}</span>
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -1439,13 +1477,15 @@ export const P2HView: React.FC<P2HViewProps> = ({
               <div className="p-12 text-center text-stone-500">
                 <ClipboardCheck className="w-12 h-12 mx-auto mb-3 opacity-30 text-teal-400" />
                 <p className="text-sm font-mono">Belum ada riwayat laporan P2H yang sesuai dengan filter.</p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('form')}
-                  className="mt-3 px-4 py-2 rounded-xl bg-teal-500 text-stone-950 text-xs font-bold inline-block"
-                >
-                  Input Form P2H Baru
-                </button>
+                {canInsert && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('form')}
+                    className="mt-3 px-4 py-2 rounded-xl bg-teal-500 text-stone-950 text-xs font-bold inline-block"
+                  >
+                    Input Form P2H Baru
+                  </button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1521,38 +1561,42 @@ export const P2HView: React.FC<P2HViewProps> = ({
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
 
-                              <button
-                                type="button"
-                                onClick={() => handlePrintP2HRecord(rec)}
-                                title="Cetak Lembar P2H"
-                                className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 transition"
-                              >
-                                <Printer className="w-3.5 h-3.5" />
-                              </button>
+                              {canExport && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintP2HRecord(rec)}
+                                  title="Cetak Lembar P2H"
+                                  className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 transition"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+                              )}
 
-                              {isDeveloper(currentUser) && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditP2H(rec)}
-                                    title="Edit Laporan P2H (Developer Only)"
-                                    className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 transition"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (confirm(`Hapus laporan P2H ${rec.noP2H}?`)) {
-                                        onDeleteP2H(rec.id);
-                                      }
-                                    }}
-                                    title="Hapus Laporan (Developer Only)"
-                                    className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 transition"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditP2H(rec)}
+                                  title="Edit Laporan P2H"
+                                  className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 transition"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!canDelete) return;
+                                    if (confirm(`Hapus laporan P2H ${rec.noP2H}?`)) {
+                                      onDeleteP2H(rec.id);
+                                    }
+                                  }}
+                                  title="Hapus Laporan P2H"
+                                  className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-400 transition"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               )}
                             </div>
                           </td>
@@ -1585,14 +1629,16 @@ export const P2HView: React.FC<P2HViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handlePrintP2HRecord(viewingRecord)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold transition"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak</span>
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={() => handlePrintP2HRecord(viewingRecord)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak</span>
+                  </button>
+                )}
 
                 <button
                   type="button"

@@ -10,7 +10,7 @@ import {
   TyreJenis, 
   UserAccount 
 } from '../../types';
-import { isDeveloper } from '../../utils/storage';
+import { isDeveloper, canUserInsertModule, canUserEditModule, canUserDeleteModule } from '../../utils/storage';
 import { 
   RotateCcw, 
   Plus, 
@@ -56,6 +56,9 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
   onDeleteRemove,
 }) => {
   const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 7);
+  const canEdit = isDev || canUserEditModule(currentUser, 7);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 7);
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -110,6 +113,7 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
 
   // Open Create Modal
   const handleOpenCreate = () => {
+    if (!canInsert) return;
     setEditingId(null);
     const firstUnit = wheeledUnits[0];
     const initialCn = firstUnit ? getUnitCn(firstUnit) : '';
@@ -152,6 +156,7 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
 
   // Open Edit Modal
   const handleOpenEdit = (item: TyreRemoveRecord) => {
+    if (!canEdit) return;
     setEditingId(item.id);
     setCnNew(item.cnNew);
     setNamaAlat(item.namaAlat || '');
@@ -194,6 +199,11 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
   // Submit Handler
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (editingId ? !canEdit : !canInsert) {
+      setErrorMsg('Anda tidak memiliki izin untuk menyimpan perubahan ini.');
+      return;
+    }
 
     if (!cnNew.trim()) {
       setErrorMsg('CN New wajib dipilih dari List Modul 1!');
@@ -284,31 +294,43 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              id="btn-tambah-remove-tyre"
-              type="button"
-              onClick={handleOpenCreate}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow-lg shadow-orange-600/30 transition active:scale-95"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Input Pelepasan Tyre</span>
-            </button>
+            {canInsert ? (
+              <button
+                id="btn-tambah-remove-tyre"
+                type="button"
+                onClick={handleOpenCreate}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow-lg shadow-orange-600/30 transition active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Input Pelepasan Tyre</span>
+              </button>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-900 text-stone-500 border border-stone-800 text-xs font-mono">
+                <Lock className="w-3.5 h-3.5" />
+                <span>View Only (Insert Terkunci)</span>
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Developer Notice */}
-      <div className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 flex items-center justify-between text-xs text-stone-400">
+      {/* Permission Notice */}
+      <div className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs text-stone-400">
         <div className="flex items-center gap-2">
-          <ShieldAlert className={`w-4 h-4 ${isDev ? 'text-amber-400' : 'text-stone-500'}`} />
+          <ShieldAlert className={`w-4 h-4 ${canEdit || canDelete ? 'text-amber-400' : 'text-stone-500'}`} />
           <span>
-            {isDev ? (
-              <span className="text-amber-300 font-semibold font-mono">
-                Akses Developer: Anda berhak mengedit dan menghapus riwayat pelepasan tyre.
-              </span>
-            ) : (
-              <span>Fitur Edit &amp; Delete riwayat khusus untuk Akun Developer.</span>
-            )}
+            Hak Akses Modul 7:{' '}
+            <span className={canInsert ? 'text-emerald-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Insert {canInsert ? 'Aktif' : 'Terkunci'}
+            </span>
+            {' • '}
+            <span className={canEdit ? 'text-amber-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Edit {canEdit ? 'Aktif' : 'Terkunci'}
+            </span>
+            {' • '}
+            <span className={canDelete ? 'text-rose-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Delete {canDelete ? 'Aktif' : 'Terkunci'}
+            </span>
           </span>
         </div>
         <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-stone-800 text-stone-300 border border-stone-700">
@@ -432,11 +454,11 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
                     </td>
                     <td className="py-3 px-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {isDev ? (
+                        {canEdit ? (
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(item)}
-                            title="Edit Data Pelepasan (Developer Only)"
+                            title="Edit Data Pelepasan"
                             className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 transition"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
@@ -445,18 +467,18 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
                           <button
                             type="button"
                             disabled
-                            title="Edit Khusus Akun Developer"
+                            title="Tidak memiliki izin Edit pada Modul 7"
                             className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
                           >
                             <Lock className="w-3.5 h-3.5" />
                           </button>
                         )}
 
-                        {isDev ? (
+                        {canDelete ? (
                           <button
                             type="button"
                             onClick={() => setDeleteConfirmId(item.id)}
-                            title="Hapus Data Pelepasan (Developer Only)"
+                            title="Hapus Data Pelepasan"
                             className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 transition"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -465,7 +487,7 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
                           <button
                             type="button"
                             disabled
-                            title="Hapus Khusus Akun Developer"
+                            title="Tidak memiliki izin Delete pada Modul 7"
                             className="p-1.5 rounded-lg bg-stone-900 text-stone-600 border border-stone-800 cursor-not-allowed"
                           >
                             <Lock className="w-3.5 h-3.5" />
@@ -793,7 +815,7 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
                 Hapus Catatan Pelepasan Tyre?
               </h4>
               <p className="text-xs text-stone-400 mt-1">
-                Data riwayat pelepasan ban ini akan dihapus. Aksi ini khusus akun Developer.
+                Data riwayat pelepasan ban ini akan dihapus permanen.
               </p>
             </div>
             <div className="flex justify-center gap-3">

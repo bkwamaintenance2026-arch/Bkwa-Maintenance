@@ -19,7 +19,11 @@ import {
   getAllTyreRemoves,
   addOrUpdateTyreRemove,
   deleteTyreRemove,
-  isDeveloper
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule
 } from '../../utils/storage';
 import { TyreRegistrationSubView } from './TyreRegistrationSubView';
 import { TyreInstallSubView } from './TyreInstallSubView';
@@ -52,6 +56,10 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
   onBackToMainMenu,
 }) => {
   const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 7);
+  const canEdit = isDev || canUserEditModule(currentUser, 7);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 7);
+  const canExport = isDev || canUserExportModule(currentUser, 7);
 
   // Tab State: 1 = Registrasi, 2 = Install, 3 = Remove, 4 = Dashboard Monitoring
   const [activeSubModule, setActiveSubModule] = useState<1 | 2 | 3 | 4>(4); // default langsung buka Dashboard Monitoring!
@@ -98,6 +106,14 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
     data: Omit<TyreRegistration, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
   ) => {
+    const allowed = idToEdit ? canEdit : canInsert;
+    if (!allowed) {
+      const msg = idToEdit
+        ? 'Akses ditolak: Anda tidak memiliki izin Edit data pada Modul 7.'
+        : 'Akses ditolak: Anda tidak memiliki izin Tambah data (Insert) pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = addOrUpdateTyreRegistration(data, idToEdit);
     if (res.success) {
       refreshAllData();
@@ -109,6 +125,11 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
   };
 
   const handleDeleteRegistration = (id: string) => {
+    if (!canDelete) {
+      const msg = 'Akses ditolak: Anda tidak memiliki izin Delete data pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = deleteTyreRegistration(id);
     if (res.success) {
       refreshAllData();
@@ -124,6 +145,14 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
     data: Omit<TyreInstallRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
   ) => {
+    const allowed = idToEdit ? canEdit : canInsert;
+    if (!allowed) {
+      const msg = idToEdit
+        ? 'Akses ditolak: Anda tidak memiliki izin Edit data pada Modul 7.'
+        : 'Akses ditolak: Anda tidak memiliki izin Tambah data (Insert) pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = addOrUpdateTyreInstall(data, idToEdit);
     if (res.success) {
       refreshAllData();
@@ -135,6 +164,11 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
   };
 
   const handleDeleteInstall = (id: string) => {
+    if (!canDelete) {
+      const msg = 'Akses ditolak: Anda tidak memiliki izin Delete data pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = deleteTyreInstall(id);
     if (res.success) {
       refreshAllData();
@@ -150,6 +184,14 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
     data: Omit<TyreRemoveRecord, 'id' | 'createdAt' | 'updatedAt'>,
     idToEdit?: string
   ) => {
+    const allowed = idToEdit ? canEdit : canInsert;
+    if (!allowed) {
+      const msg = idToEdit
+        ? 'Akses ditolak: Anda tidak memiliki izin Edit data pada Modul 7.'
+        : 'Akses ditolak: Anda tidak memiliki izin Tambah data (Insert) pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = addOrUpdateTyreRemove(data, idToEdit);
     if (res.success) {
       refreshAllData();
@@ -161,6 +203,11 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
   };
 
   const handleDeleteRemove = (id: string) => {
+    if (!canDelete) {
+      const msg = 'Akses ditolak: Anda tidak memiliki izin Delete data pada Modul 7.';
+      setToastMessage({ type: 'error', text: msg });
+      return { success: false, message: msg };
+    }
     const res = deleteTyreRemove(id);
     if (res.success) {
       refreshAllData();
@@ -298,8 +345,11 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
           onDeleteRegistration={handleDeleteRegistration}
           generateNextCode={generateNextTyreCode}
           onNavigateToInstall={(code) => {
+            if (!canInsert) return;
             setActiveSubModule(2);
           }}
+          selectedTyreToEdit={selectedTyreToEdit}
+          onClearSelectedToEdit={() => setSelectedTyreToEdit(null)}
         />
       )}
 
@@ -336,11 +386,19 @@ export const TyreManagementView: React.FC<TyreManagementViewProps> = ({
           tyreRemoves={tyreRemoves}
           currentUser={currentUser}
           onEditTyre={(t) => {
+            if (!canEdit) return;
+            setSelectedTyreToEdit(t);
             setActiveSubModule(1);
           }}
           onDeleteTyre={handleDeleteRegistration}
-          onNavigateToInstall={() => setActiveSubModule(2)}
-          onNavigateToRemove={() => setActiveSubModule(3)}
+          onNavigateToInstall={() => {
+            if (!canInsert) return;
+            setActiveSubModule(2);
+          }}
+          onNavigateToRemove={() => {
+            if (!canInsert) return;
+            setActiveSubModule(3);
+          }}
         />
       )}
     </div>

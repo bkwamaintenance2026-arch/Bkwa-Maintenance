@@ -1,6 +1,12 @@
 import React from 'react';
 import { UserAccount, AssetUnit, ManpowerData, BreakdownRecord, P2HRecord } from '../types';
-import { canUserViewModule, canUserEditModule, canUserExportModule, canAccessRegistrationForm } from '../utils/storage';
+import {
+  canUserViewModule,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../utils/storage';
 import { BkwaLogo } from './BkwaLogo';
 import { 
   Truck, 
@@ -71,7 +77,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
       statLabel: `${totalUnits} Unit Terdaftar`,
       isViewable: canUserViewModule(currentUser, 1),
+      canInsert: canUserInsertModule(currentUser, 1),
       canEdit: canUserEditModule(currentUser, 1),
+      canDelete: canUserDeleteModule(currentUser, 1),
       canExport: canUserExportModule(currentUser, 1),
       devOnlyForm: true,
     },
@@ -88,7 +96,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
       statLabel: `${totalManpower} Personil`,
       isViewable: canUserViewModule(currentUser, 2),
+      canInsert: canUserInsertModule(currentUser, 2),
       canEdit: canUserEditModule(currentUser, 2),
+      canDelete: canUserDeleteModule(currentUser, 2),
       canExport: canUserExportModule(currentUser, 2),
       devOnlyForm: false,
     },
@@ -105,7 +115,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
       statLabel: activeBreakdowns > 0 ? `${activeBreakdowns} Unit Breakdown` : 'Semua Unit Normal',
       isViewable: canUserViewModule(currentUser, 3),
+      canInsert: canUserInsertModule(currentUser, 3),
       canEdit: canUserEditModule(currentUser, 3),
+      canDelete: canUserDeleteModule(currentUser, 3),
       canExport: canUserExportModule(currentUser, 3),
       devOnlyForm: false,
     },
@@ -122,7 +134,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
       statLabel: '6 Sub Modul FOG',
       isViewable: canUserViewModule(currentUser, 4),
+      canInsert: canUserInsertModule(currentUser, 4),
       canEdit: canUserEditModule(currentUser, 4),
+      canDelete: canUserDeleteModule(currentUser, 4),
       canExport: canUserExportModule(currentUser, 4),
       devOnlyForm: false,
     },
@@ -139,7 +153,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
       statLabel: `${totalP2H} Laporan P2H Terisi`,
       isViewable: canUserViewModule(currentUser, 5),
+      canInsert: canUserInsertModule(currentUser, 5),
       canEdit: canUserEditModule(currentUser, 5),
+      canDelete: canUserDeleteModule(currentUser, 5),
       canExport: canUserExportModule(currentUser, 5),
       devOnlyForm: false,
     },
@@ -156,7 +172,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
       statLabel: 'Spare Part & Order Part',
       isViewable: canUserViewModule(currentUser, 6),
+      canInsert: canUserInsertModule(currentUser, 6),
       canEdit: canUserEditModule(currentUser, 6),
+      canDelete: canUserDeleteModule(currentUser, 6),
       canExport: canUserExportModule(currentUser, 6),
       devOnlyForm: false,
     },
@@ -173,7 +191,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
       statLabel: 'Manajemen Ban Unit',
       isViewable: canUserViewModule(currentUser, 7),
+      canInsert: canUserInsertModule(currentUser, 7),
       canEdit: canUserEditModule(currentUser, 7),
+      canDelete: canUserDeleteModule(currentUser, 7),
       canExport: canUserExportModule(currentUser, 7),
       devOnlyForm: false,
     },
@@ -190,7 +210,9 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
       statLabel: 'Master Material & Part',
       isViewable: canUserViewModule(currentUser, 8),
+      canInsert: canUserInsertModule(currentUser, 8),
       canEdit: canUserEditModule(currentUser, 8),
+      canDelete: canUserDeleteModule(currentUser, 8),
       canExport: canUserExportModule(currentUser, 8),
       devOnlyForm: false,
     },
@@ -416,34 +438,19 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
                     {isAccessible ? (
                       <>
                         <span className="text-stone-400">Hak Akses:</span>
-                        {m.id === 1 && (
-                          <span className={tier === 'DEVELOPER' ? 'text-amber-400 font-bold' : 'text-stone-300'}>
-                            {tier === 'DEVELOPER' ? 'Form & Daftar' : (m.canExport ? 'Daftar & Export' : 'Lihat Saja')}
-                          </span>
-                        )}
-                        {m.id === 2 && (
-                          <span className={m.canExport ? 'text-blue-400 font-bold' : 'text-stone-300'}>
-                            {m.canExport ? 'Viewer & Export' : 'Lihat Saja'}
-                          </span>
-                        )}
-                        {m.id === 3 && (
-                          <span className="text-rose-400 font-bold">
-                            {tier === 'MEMBER' ? 'Viewer Saja' : (m.canEdit ? 'Input & Export' : 'Viewer & Export')}
-                          </span>
-                        )}
-                        {m.id === 4 && (
-                          <span className="text-emerald-400 font-bold">
-                            {m.canEdit ? 'Input & Export' : 'Viewer & Export'}
-                          </span>
-                        )}
-                        {m.id === 5 && (
-                          <span className="text-teal-400 font-bold">
-                            {m.canEdit ? 'Bisa Input Form P2H' : 'Monitoring & Export'}
-                          </span>
-                        )}
+                        <span className={m.canInsert || m.canEdit ? 'text-emerald-400 font-bold' : m.canExport ? 'text-amber-400 font-bold' : 'text-sky-400 font-bold'}>
+                          {[
+                            m.canInsert ? 'Input' : null,
+                            m.canEdit ? 'Edit' : null,
+                            m.canDelete ? 'Hapus' : null,
+                            m.canExport ? 'Export' : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' • ') || 'Hanya View'}
+                        </span>
                       </>
                     ) : (
-                      <span className="text-stone-400">Terkunci untuk Akun Member</span>
+                      <span className="text-stone-400">Modul Dikunci / Tidak Ada Akses</span>
                     )}
                   </div>
 

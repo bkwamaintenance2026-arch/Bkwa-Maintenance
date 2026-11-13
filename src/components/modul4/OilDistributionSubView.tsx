@@ -21,8 +21,16 @@ import {
   FileText,
   AlertTriangle,
   Download,
-  FileDown
+  FileDown,
+  Lock
 } from 'lucide-react';
+import {
+  isDeveloper,
+  canUserInsertModule,
+  canUserEditModule,
+  canUserDeleteModule,
+  canUserExportModule,
+} from '../../utils/storage';
 
 interface OilDistributionSubViewProps {
   oilDistributions: OilDistributionRecord[];
@@ -48,9 +56,16 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   onSave,
   onDelete,
 }) => {
+  const isDev = isDeveloper(currentUser);
+  const canInsert = isDev || canUserInsertModule(currentUser, 4);
+  const canEdit = isDev || canUserEditModule(currentUser, 4);
+  const canDelete = isDev || canUserDeleteModule(currentUser, 4);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -182,6 +197,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   };
 
   const handleOpenAdd = () => {
+    if (!canInsert) return;
     setEditingId(null);
     const bonNumber = `BON-OLI-${new Date().getFullYear()}/${(new Date().getMonth() + 1).toString().padStart(2, '0')}/${Math.floor(100 + Math.random() * 900)}`;
     setNoBon(bonNumber);
@@ -216,6 +232,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   };
 
   const handleOpenEdit = (item: OilDistributionRecord) => {
+    if (!canEdit) return;
     setEditingId(item.id);
     setNoBon(item.noBon || '');
     setTanggal(item.tanggal);
@@ -258,6 +275,10 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmitForm) {
+      setErrorMsg('Akses Ditolak: Anda tidak memiliki izin untuk menyimpan atau mengubah data distribusi oli.');
+      return;
+    }
     if (!noUnit.trim()) {
       setErrorMsg('1. No Unit wajib dipilih dari Modul 1 Asset!');
       return;
@@ -316,6 +337,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   };
 
   const handleDelete = (id: string) => {
+    if (!canDelete) return;
     onDelete(id);
     setDeleteConfirmId(null);
   };
@@ -336,8 +358,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
-    if (filteredList.length === 0) {
-      alert('Tidak ada data pengeluaran oli untuk diexport.');
+    if (!canExport || filteredList.length === 0) {
       return;
     }
     const headers = ['NO BON', 'TANGGAL', 'JAM', 'NO UNIT (CN)', 'NAMA ALAT', 'HM UNIT', 'JENIS OLI', 'QTY', 'SATUAN', 'RINCIAN KERUSAKAN', 'PIC MEKANIK', 'JABATAN MEKANIK', 'PIC GUDANG', 'JABATAN GUDANG', 'REMARK'];
@@ -406,17 +427,19 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
             />
           </div>
 
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
-            title="Export CSV Laporan Pengeluaran Oli (PT BATU KALI WELANG AMPUH)"
-          >
-            <Download className="w-4 h-4 text-emerald-400" />
-            <span>Export CSV</span>
-          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+              title="Export CSV Laporan Pengeluaran Oli (PT BATU KALI WELANG AMPUH)"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Export CSV</span>
+            </button>
+          )}
 
-          {onOpenExportPDF && (
+          {canExport && onOpenExportPDF && (
             <button
               id="btn-export-pdf-oil-distribution"
               type="button"
@@ -429,15 +452,28 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
             </button>
           )}
 
-          <button
-            id="btn-add-oil-distribution"
-            type="button"
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Catat Pengeluaran Oli</span>
-          </button>
+          {canInsert ? (
+            <button
+              id="btn-add-oil-distribution"
+              type="button"
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Catat Pengeluaran Oli</span>
+            </button>
+          ) : (
+            <button
+              id="btn-add-oil-distribution"
+              type="button"
+              disabled
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-800 text-stone-500 border border-stone-700 font-bold text-xs cursor-not-allowed opacity-75"
+              title="Akun Anda tidak memiliki izin menambah data di Modul 4"
+            >
+              <Lock className="w-4 h-4 text-stone-500" />
+              <span>+ Catat Pengeluaran Oli (Terkunci)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -543,17 +579,29 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
                     <div className="flex items-center justify-center gap-1.5">
                       <button
                         type="button"
+                        disabled={!canEdit}
                         onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                        className={`p-1.5 rounded-lg transition border ${
+                          canEdit
+                            ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                            : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                        }`}
+                        title={canEdit ? 'Edit Pengeluaran Oli' : 'Tidak ada izin Edit'}
                       >
-                        <Edit3 className="w-3.5 h-3.5" />
+                        {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setDeleteConfirmId(item.id)}
-                        className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 transition"
+                        disabled={!canDelete}
+                        onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                        className={`p-1.5 rounded-lg transition border ${
+                          canDelete
+                            ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                            : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                        }`}
+                        title={canDelete ? 'Hapus Pengeluaran Oli' : 'Tidak ada izin Hapus'}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                       </button>
                     </div>
                   </td>
