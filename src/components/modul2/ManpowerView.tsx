@@ -44,6 +44,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
   getAllMechanicWorkLogs,
   registerMechanicWorkLog,
   updateMechanicWorkLog,
@@ -96,6 +97,7 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 2);
   const canDelete = isDev || canUserDeleteModule(currentUser, 2);
   const canExport = isDev || canUserExportModule(currentUser, 2);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 2);
 
   // Sub-Modul Tab State: Data Manpower vs Catatan Harian Manpower vs Remark Pekerjaan Mekanik
   const [activeSubModule, setActiveSubModule] = useState<SubModuleTab>('data_karyawan');
@@ -453,10 +455,10 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
 
   // Print Preview PDF handler
   const handleOpenPrintPreview = () => {
-    if (!canExport) {
+    if (!canPrintPreview) {
       setFeedback({
         type: 'error',
-        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export / Print Preview pada Modul 2.',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Print Preview pada Modul 2.',
       });
       return;
     }
@@ -1055,30 +1057,30 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
                   </button>
                 )}
 
-                {canExport && (
-                  <>
-                    <button
-                      id="btn-print-preview-modul2"
-                      type="button"
-                      onClick={handleOpenPrintPreview}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
-                      title="Print Preview & Download PDF resmi Data Manpower"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>Print Preview</span>
-                    </button>
+                {canPrintPreview && (
+                  <button
+                    id="btn-print-preview-modul2"
+                    type="button"
+                    onClick={handleOpenPrintPreview}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                    title="Print Preview PDF resmi Data Manpower"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Print Preview</span>
+                  </button>
+                )}
 
-                    <button
-                      id="btn-export-modul2-csv"
-                      type="button"
-                      onClick={handleExportCSV}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
-                      title="Export data personil manpower ke format CSV / Excel"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <span>Export Excel</span>
-                    </button>
-                  </>
+                {canExport && (
+                  <button
+                    id="btn-export-modul2-csv"
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap"
+                    title="Export data personil manpower ke format CSV / Excel"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Export Excel</span>
+                  </button>
                 )}
 
                 <div className="w-full sm:w-60">
@@ -1468,13 +1470,17 @@ export const ManpowerView: React.FC<ManpowerViewProps> = ({
         subtitle={`PT BATU KALI WELANG AMPUH (ETIKA09) • ${sortedList.length} Personil`}
         pdfBlobUrl={pdfPreviewState.blobUrl}
         filename={pdfPreviewState.filename}
-        onDownload={() => {
-          exportManpowerListToPDF({
-            manpowerList: sortedList,
-            allManpower: manpowerList,
-            currentUser,
-          });
-        }}
+        onDownload={
+          canExport
+            ? () => {
+                exportManpowerListToPDF({
+                  manpowerList: sortedList,
+                  allManpower: manpowerList,
+                  currentUser,
+                });
+              }
+            : undefined
+        }
       />
     </div>
   );

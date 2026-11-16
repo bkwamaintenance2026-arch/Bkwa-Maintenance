@@ -32,7 +32,8 @@ import {
   isDeveloper,
   canUserEditModule,
   canUserInsertModule,
-  canUserExportModule
+  canUserExportModule,
+  canUserPrintPreviewModule
 } from '../../utils/storage';
 import { 
   Fuel, 
@@ -187,6 +188,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canManageBalance = isDev || canUserEditModule(currentUser, 4) || canUserInsertModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   // Category Filter & Active Sub-Modul
   const [selectedCategory, setSelectedCategory] = useState<FogCategoryColumn>('ALL');
@@ -214,7 +216,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       endDate?: string;
     }
   ) => {
-    if (!canExport) return;
+    if (!canPrintPreview && !canExport) return;
     setExportCategoryTarget(cat);
     setExportModalGroupBy(settings?.groupBy || 'NONE');
     setExportModalUnitFilter(settings?.unitFilter || 'ALL');
@@ -532,7 +534,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {canExport && (
+              {(canPrintPreview || canExport) && (
                 <button
                   id="btn-open-export-fuel-oil-pdf"
                   type="button"
@@ -550,10 +552,10 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                     handleOpenExportWithSettings(cat);
                   }}
                   className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
-                  title="Download / Cetak Dokumen Laporan Resmi Bahan Bakar & Pelumas (.pdf)"
+                  title="Buka Print Preview / Laporan Resmi Bahan Bakar & Pelumas"
                 >
                   <FileDown className="w-3.5 h-3.5" />
-                  <span>Export Laporan PDF</span>
+                  <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview Laporan'}</span>
                 </button>
               )}
 
@@ -964,7 +966,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             suppliers={suppliers}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('TANGKI_UTAMA') : undefined}
+            onOpenExportPDF={canPrintPreview || canExport ? () => handleOpenExportWithSettings('TANGKI_UTAMA') : undefined}
             onSave={onSaveFuelStockInput}
             onDelete={onDeleteFuelStockInput}
           />
@@ -979,7 +981,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             standardSolarPrice={standardSolarPrice}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('FUEL_TRUCK') : undefined}
+            onOpenExportPDF={canPrintPreview || canExport ? () => handleOpenExportWithSettings('FUEL_TRUCK') : undefined}
             onSave={onSaveFuelTransfer}
             onDelete={onDeleteFuelTransfer}
           />
@@ -992,7 +994,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             equipmentList={units}
             manpowerList={manpowerList}
             currentUser={currentUser}
-            onOpenExportPDF={canExport ? (settings) => handleOpenExportWithSettings('FUEL_TRUCK', settings) : undefined}
+            onOpenExportPDF={canPrintPreview || canExport ? (settings) => handleOpenExportWithSettings('FUEL_TRUCK', settings) : undefined}
             onSave={onSaveFuelDistribution}
             onDelete={onDeleteFuelDistribution}
           />
@@ -1020,7 +1022,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
             manpowerList={manpowerList}
             availableOilTypes={availableOilTypes}
             currentUser={currentUser}
-            onOpenExportPDF={canExport ? () => handleOpenExportWithSettings('OLI_PER_TIPE') : undefined}
+            onOpenExportPDF={canPrintPreview || canExport ? () => handleOpenExportWithSettings('OLI_PER_TIPE') : undefined}
             onSave={onSaveOilDistribution}
             onDelete={onDeleteOilDistribution}
           />

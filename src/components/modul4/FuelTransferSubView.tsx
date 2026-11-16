@@ -32,6 +32,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
 } from '../../utils/storage';
 
 interface FuelTransferSubViewProps {
@@ -65,6 +66,7 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canDelete = isDev || canUserDeleteModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -272,16 +274,16 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
             />
           </div>
 
-          {canExport && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && onOpenExportPDF && (
             <button
               id="btn-export-pdf-fuel-transfer"
               type="button"
               onClick={onOpenExportPDF}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Export Laporan PDF Transaksi Transfer Fuel Truck (PT BATU KALI WELANG AMPUH)"
+              title="Buka Print Preview / Laporan PDF Transaksi Transfer Fuel Truck (PT BATU KALI WELANG AMPUH)"
             >
               <FileDown className="w-4 h-4 text-blue-400" />
-              <span>Export PDF</span>
+              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
             </button>
           )}
 

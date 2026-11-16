@@ -1045,6 +1045,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                                         ? 'bg-sky-600 text-white shadow-sm'
                                         : 'bg-stone-800 text-stone-400 hover:text-stone-200'
                                     }`}
+                                    title="Hanya View (termasuk Print Preview & Cetak dokumen)"
                                   >
                                     <Eye className="w-3 h-3" />
                                     <span>View</span>

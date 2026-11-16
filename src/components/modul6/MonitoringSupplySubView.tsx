@@ -16,7 +16,9 @@ import {
   getAllNonUnitPurchaseRequests,
   createNonUnitPurchaseRequest,
   updateNonUnitSupplyStatus,
-  deleteNonUnitPurchaseRequest
+  deleteNonUnitPurchaseRequest,
+  isDeveloper,
+  canUserPrintPreviewModule
 } from '../../utils/storage';
 import { NonUnitRequestModal } from './NonUnitRequestModal';
 import { 
@@ -48,6 +50,7 @@ interface MonitoringSupplySubViewProps {
   canEdit: boolean;
   canDelete: boolean;
   canExport: boolean;
+  canPrintPreview?: boolean;
   manpowerList?: ManpowerData[];
   onRefreshData?: () => void;
 }
@@ -59,9 +62,11 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
   canEdit,
   canDelete,
   canExport,
+  canPrintPreview,
   manpowerList = [],
   onRefreshData,
 }) => {
+  const hasPrintAccess = canPrintPreview ?? (isDeveloper(currentUser) || canUserPrintPreviewModule(currentUser, 6));
   // State data tracking & non-unit SPB
   const [supplyTrackings, setSupplyTrackings] = useState<PartSupplyItemTracking[]>([]);
   const [nonUnitRequests, setNonUnitRequests] = useState<NonUnitPurchaseRequest[]>([]);
@@ -457,7 +462,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
               )}
             </div>
 
-            {canExport && (
+            {hasPrintAccess && (
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -881,6 +886,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
         onClose={() => setShowNonUnitModal(false)}
         currentUser={currentUser}
         canExport={canExport}
+        canPrintPreview={hasPrintAccess}
         manpowerList={manpowerList}
         onSubmitPR={handleCreateNonUnitPR}
       />

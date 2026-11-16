@@ -7,7 +7,7 @@ import {
   UserAccount, 
   ManpowerData 
 } from '../../types';
-import { getAllManpower } from '../../utils/storage';
+import { getAllManpower, isDeveloper, canUserPrintPreviewModule } from '../../utils/storage';
 import { 
   FileText, 
   X, 
@@ -32,6 +32,7 @@ interface NonUnitRequestModalProps {
   onClose: () => void;
   currentUser: UserAccount;
   canExport?: boolean;
+  canPrintPreview?: boolean;
   manpowerList?: ManpowerData[];
   onSubmitPR: (data: Omit<NonUnitPurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'updatedAt' | 'statusSupply' | 'statusPengajuan'>) => {
     success: boolean;
@@ -45,9 +46,11 @@ export const NonUnitRequestModal: React.FC<NonUnitRequestModalProps> = ({
   onClose,
   currentUser,
   canExport = true,
+  canPrintPreview,
   manpowerList: propManpowerList,
   onSubmitPR,
 }) => {
+  const hasPrintAccess = canPrintPreview ?? (isDeveloper(currentUser) || canUserPrintPreviewModule(currentUser, 6));
   // Ambil data manpower untuk pembuat & pemeriksa
   const availableManpower = useMemo(() => {
     if (propManpowerList && propManpowerList.length > 0) return propManpowerList;
@@ -198,7 +201,7 @@ export const NonUnitRequestModal: React.FC<NonUnitRequestModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {createdPR && canExport && (
+            {createdPR && hasPrintAccess && (
               <button
                 type="button"
                 onClick={handlePrint}

@@ -48,6 +48,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
   updateBreakdownHistoryEntry,
   deleteBreakdownHistoryEntry
 } from '../../utils/storage';
@@ -86,6 +87,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   const canEdit = isDev || canUserEditModule(currentUser, 3);
   const canDelete = isDev || canUserDeleteModule(currentUser, 3);
   const canExport = isDev || canUserExportModule(currentUser, 3);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 3);
 
   // State tampilan: 'CARDS' (Kartu No MO dengan rincian harian) vs 'TABLE' (Tabel ringkas)
   const [viewMode, setViewMode] = useState<'CARDS' | 'TABLE'>('CARDS');
@@ -492,9 +494,9 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewFilename, setPreviewFilename] = useState<string>('');
 
-  // Handler Pratinjau PDF Sebelum Download
+  // Handler Pratinjau PDF Sebelum Download / Print
   const handlePreviewPDF = () => {
-    if (!canExport || filteredBreakdowns.length === 0) return;
+    if (!canPrintPreview || filteredBreakdowns.length === 0) return;
     try {
       const result = generateDetailHistoryPDF(filteredBreakdowns, selectedUnit, currentUser, signatories);
       setPreviewPdfUrl(result.blobUrl);
@@ -502,13 +504,13 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
       setShowPdfPreview(true);
     } catch (e) {
       console.error('Error generating Detail Breakdown PDF preview', e);
-      handleExportPDF();
+      if (canExport) handleExportPDF();
     }
   };
 
   // Handler Pratinjau PDF Khusus 1 No MO Saja
   const handlePreviewSingleMO = (b: BreakdownRecord) => {
-    if (!canExport) return;
+    if (!canPrintPreview) return;
     try {
       const result = generateDetailHistoryPDF([b], b.noUnit, currentUser, signatories);
       setPreviewPdfUrl(result.blobUrl);
@@ -521,7 +523,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
 
   // Handler Pratinjau Dokumen Rangkuman Riwayat Unit Terpadu (Seluruh MO Unit Terpilih)
   const handlePreviewUnitHistory = (targetUnitNo: string) => {
-    if (!canExport) return;
+    if (!canPrintPreview) return;
     if (!targetUnitNo) {
       alert('Silakan pilih nomor unit terlebih dahulu.');
       return;
@@ -533,7 +535,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
       setShowPdfPreview(true);
     } catch (e) {
       console.error('Error generating Unit History PDF preview', e);
-      exportUnitHistorySummaryToPDF(breakdowns, targetUnitNo, currentUser, signatories);
+      if (canExport) exportUnitHistorySummaryToPDF(breakdowns, targetUnitNo, currentUser, signatories);
     }
   };
 
@@ -642,41 +644,47 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
           </div>
 
           {/* Action Buttons */}
-          {canExport && (
+          {(canPrintPreview || canExport) && (
             <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
               {/* Tombol Pratinjau PDF Sebelum Download */}
-              <button
-                id="btn-preview-pdf-detail-breakdown"
-                type="button"
-                onClick={handlePreviewPDF}
-                disabled={filteredBreakdowns.length === 0}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
-                title="Buka Pratinjau (Preview) PDF untuk cek riwayat breakdown sebelum download"
-              >
-                <Eye className="w-4 h-4 text-amber-400" />
-                <span>Pratinjau PDF (Preview)</span>
-              </button>
+              {canPrintPreview && (
+                <button
+                  id="btn-preview-pdf-detail-breakdown"
+                  type="button"
+                  onClick={handlePreviewPDF}
+                  disabled={filteredBreakdowns.length === 0}
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition shadow disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                  title="Buka Pratinjau (Preview) PDF untuk cek riwayat breakdown"
+                >
+                  <Eye className="w-4 h-4 text-amber-400" />
+                  <span>Pratinjau PDF (Preview)</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={handleExportPDF}
-                disabled={filteredBreakdowns.length === 0}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold transition shadow-lg shadow-rose-600/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
-                title="Download Laporan Detail Riwayat Breakdown ke Format PDF Resmi"
-              >
-                <FileText className="w-4 h-4 text-white" />
-                <span>Export PDF (Head Office)</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                disabled={filteredBreakdowns.length === 0}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                title="Download Data ke Format CSV Excel"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                <span>Export CSV</span>
-              </button>
+              {canExport && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleExportPDF}
+                    disabled={filteredBreakdowns.length === 0}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold transition shadow-lg shadow-rose-600/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95"
+                    title="Download Laporan Detail Riwayat Breakdown ke Format PDF Resmi"
+                  >
+                    <FileText className="w-4 h-4 text-white" />
+                    <span>Export PDF (Head Office)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    disabled={filteredBreakdowns.length === 0}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-bold transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    title="Download Data ke Format CSV Excel"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <span>Export CSV</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1144,7 +1152,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
               )}
 
               {/* Tombol Print Unit Rangkuman Lengkap Semua MO */}
-              {canExport && (
+              {canPrintPreview && (
                 <button
                   type="button"
                   onClick={() => handlePreviewUnitHistory(selectedUnit)}
@@ -1343,7 +1351,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       {/* Tombol Aksi per Kartu */}
                       <div className="flex items-center gap-1.5 ml-auto flex-wrap">
                         {/* 1. Print MO Spesifik */}
-                        {canExport && (
+                        {canPrintPreview && (
                           <button
                             type="button"
                             onClick={() => handlePreviewSingleMO(b)}
@@ -1356,7 +1364,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                         )}
 
                         {/* 2. Print Unit (Rangkuman Seluruh Kejadian MO Unit Ini) */}
-                        {canExport && (
+                        {canPrintPreview && (
                           <button
                             type="button"
                             onClick={() => handlePreviewUnitHistory(b.noUnit)}
@@ -1911,7 +1919,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                       <td className="px-3.5 py-3 whitespace-nowrap text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           {/* Print Dokumen MO */}
-                          {canExport && (
+                          {canPrintPreview && (
                             <button
                               type="button"
                               onClick={() => handlePreviewSingleMO(b)}
@@ -1923,7 +1931,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                           )}
 
                           {/* Print Dokumen Riwayat Unit Lengkap */}
-                          {canExport && (
+                          {canPrintPreview && (
                             <button
                               type="button"
                               onClick={() => handlePreviewUnitHistory(b.noUnit)}
@@ -2521,7 +2529,7 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
         subtitle={`PT BATU KALI WELANG AMPUH • Unit ${selectedUnit || 'Semua Unit'}`}
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleExportPDF}
+        onDownload={canExport ? handleExportPDF : undefined}
       />
 
       {/* Datalist Opsi PIC Mekanik dari Modul 2 Manpower */}

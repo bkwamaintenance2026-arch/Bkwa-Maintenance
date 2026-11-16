@@ -26,7 +26,7 @@ import {
   ArrowLeft,
   ClipboardCheck
 } from 'lucide-react';
-import { canUserExportModule } from '../../utils/storage';
+import { canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 
 interface DashboardMaintenanceSubViewProps {
   breakdowns: BreakdownRecord[];
@@ -43,8 +43,9 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
   onBackToMainMenu,
   onOpenLaporanHarian,
 }) => {
-  // Cek hak akses export untuk Modul 3: Developer, Admin, dan Khusus memiliki izin export.
+  // Cek hak akses export & print preview untuk Modul 3: View bisa Print Preview, Export khusus izin Export.
   const canExport = canUserExportModule(currentUser || null, 3);
+  const canPrintPreview = canUserPrintPreviewModule(currentUser || null, 3);
 
   // Filter Tanggal, Bulan, Tahun
   const [filterStartDate, setFilterStartDate] = useState<string>('');
@@ -449,20 +450,22 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
 
           {/* MENU EXPORT (PDF/Word/Excel) & PRINT */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* 1. PRINT BUTTON (Aktif untuk hak akses View ke atas) */}
+            {canPrintPreview && (
+              <button
+                id="btn-print-maintenance"
+                type="button"
+                onClick={handlePrint}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold transition shadow"
+                title="Cetak Laporan Maintenance langsung"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-400" />
+                <span>Print</span>
+              </button>
+            )}
+
             {canExport ? (
               <>
-                {/* 1. PRINT BUTTON */}
-                <button
-                  id="btn-print-maintenance"
-                  type="button"
-                  onClick={handlePrint}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold transition shadow"
-                  title="Cetak Laporan Maintenance langsung"
-                >
-                  <Printer className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Print</span>
-                </button>
-
                 {/* 2. EXPORT PDF BUTTON */}
                 <button
                   id="btn-export-pdf-maintenance"
@@ -498,26 +501,26 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
                   <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Excel</span>
                 </button>
-
-                {/* 5. GOTO LAPORAN HARIAN (READY P2H & BREAKDOWN) */}
-                {onOpenLaporanHarian && (
-                  <button
-                    id="btn-goto-laporan-harian"
-                    type="button"
-                    onClick={onOpenLaporanHarian}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/80 hover:bg-teal-900/90 text-teal-200 border border-teal-800 text-xs font-bold transition shadow"
-                    title="Buka Menu Export Laporan Harian Unit Ready (P2H) & Breakdown"
-                  >
-                    <ClipboardCheck className="w-3.5 h-3.5 text-teal-400" />
-                    <span>Laporan Harian (P2H &amp; BD)</span>
-                  </button>
-                )}
               </>
             ) : (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800/80 border border-stone-700 text-stone-400 text-xs font-mono">
                 <Lock className="w-3.5 h-3.5 text-stone-500" />
-                <span>Export Terbatas (Hanya View)</span>
+                <span>Export File Terbatas (Mode View)</span>
               </div>
+            )}
+
+            {/* 5. GOTO LAPORAN HARIAN (READY P2H & BREAKDOWN) */}
+            {canPrintPreview && onOpenLaporanHarian && (
+              <button
+                id="btn-goto-laporan-harian"
+                type="button"
+                onClick={onOpenLaporanHarian}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-950/80 hover:bg-teal-900/90 text-teal-200 border border-teal-800 text-xs font-bold transition shadow"
+                title="Buka Menu Laporan Harian Unit Ready (P2H) & Breakdown"
+              >
+                <ClipboardCheck className="w-3.5 h-3.5 text-teal-400" />
+                <span>Laporan Harian (P2H &amp; BD)</span>
+              </button>
             )}
 
             <button

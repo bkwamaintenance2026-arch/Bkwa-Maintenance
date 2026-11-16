@@ -7,7 +7,7 @@ import {
   TyreRemoveRecord, 
   UserAccount 
 } from '../../types';
-import { isDeveloper, canUserEditModule, canUserDeleteModule, canUserExportModule } from '../../utils/storage';
+import { isDeveloper, canUserEditModule, canUserDeleteModule, canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 import { 
   BarChart3, 
   AlertTriangle, 
@@ -60,6 +60,7 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 7);
   const canDelete = isDev || canUserDeleteModule(currentUser, 7);
   const canExport = isDev || canUserExportModule(currentUser, 7);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 7);
 
   // Filter & Search
   const [searchTerm, setSearchTerm] = useState('');
@@ -257,31 +258,32 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {canExport ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
-                >
-                  <Download className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Export CSV</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
-                >
-                  <Printer className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Cetak Radar</span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-400" />
+                <span>Export CSV</span>
+              </button>
             ) : (
               <span className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-900 text-stone-500 border border-stone-800 text-xs font-mono">
                 <Lock className="w-3.5 h-3.5" />
-                <span>Print &amp; Export Terkunci</span>
+                <span>Export Terkunci</span>
               </span>
+            )}
+
+            {canPrintPreview && (
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-semibold shadow-md transition"
+              >
+                <Printer className="w-3.5 h-3.5 text-blue-400" />
+                <span>Cetak Radar</span>
+              </button>
             )}
           </div>
         </div>
@@ -407,8 +409,12 @@ export const TyreDashboardSubView: React.FC<TyreDashboardSubViewProps> = ({
               Delete {canDelete ? 'Aktif' : 'Terkunci'}
             </span>
             {' • '}
-            <span className={canExport ? 'text-blue-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
-              Print/Export {canExport ? 'Aktif' : 'Terkunci'}
+            <span className={canPrintPreview ? 'text-blue-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Print {canPrintPreview ? 'Aktif' : 'Terkunci'}
+            </span>
+            {' • '}
+            <span className={canExport ? 'text-emerald-300 font-semibold font-mono' : 'text-stone-500 font-mono'}>
+              Export {canExport ? 'Aktif' : 'Terkunci'}
             </span>
           </span>
         </div>

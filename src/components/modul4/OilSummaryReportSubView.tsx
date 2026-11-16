@@ -11,7 +11,7 @@ import { resolveOilSummarySignatories } from '../../utils/reportSignatories';
 import { generateOilSummaryReportPDF, exportOilSummaryReportToPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import { BkwaLogo } from '../BkwaLogo';
-import { isDeveloper, canUserEditModule, canUserExportModule } from '../../utils/storage';
+import { isDeveloper, canUserEditModule, canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 import { 
   Droplet, 
   Search, 
@@ -68,6 +68,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   const isDev = isDeveloper(currentUser);
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   // 1. Initial date presets (Default: Bulan Berjalan)
   const today = new Date();
@@ -339,7 +340,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
   // 8. Handler Preview & Export PDF
   const handlePreviewPDF = () => {
-    if (!canExport) return;
+    if (!canPrintPreview) return;
     try {
       const result = generateOilSummaryReportPDF({
         startDate: startDate || undefined,
@@ -394,7 +395,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
   // Browser Direct Print
   const handlePrintBrowser = () => {
-    if (!canExport) return;
+    if (!canPrintPreview) return;
     window.print();
   };
 
@@ -434,41 +435,47 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </p>
           </div>
 
-          {/* Action Export Buttons */}
-          {canExport && (
+          {/* Action Print Preview & Export Buttons */}
+          {(canPrintPreview || canExport) && (
             <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                id="btn-preview-print-oil-summary"
-                type="button"
-                onClick={() => setShowPrintModal(true)}
-                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-semibold transition shadow-sm active:scale-95"
-                title="Buka Lembar Pratinjau Cetak Lengkap (Kop Surat Resmi)"
-              >
-                <Printer className="w-4 h-4 text-emerald-400" />
-                <span>Preview Print (Cetak)</span>
-              </button>
+              {canPrintPreview && (
+                <>
+                  <button
+                    id="btn-preview-print-oil-summary"
+                    type="button"
+                    onClick={() => setShowPrintModal(true)}
+                    className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-mono font-semibold transition shadow-sm active:scale-95"
+                    title="Buka Lembar Pratinjau Cetak Lengkap (Kop Surat Resmi)"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-400" />
+                    <span>Preview Print (Cetak)</span>
+                  </button>
 
-              <button
-                id="btn-preview-pdf-oil-summary"
-                type="button"
-                onClick={handlePreviewPDF}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold transition shadow-sm active:scale-95"
-                title="Buka Pratinjau PDF interaktif untuk cek data sebelum download"
-              >
-                <Eye className="w-4 h-4 text-emerald-400" />
-                <span>Pratinjau PDF (Preview)</span>
-              </button>
+                  <button
+                    id="btn-preview-pdf-oil-summary"
+                    type="button"
+                    onClick={handlePreviewPDF}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-mono font-bold transition shadow-sm active:scale-95"
+                    title="Buka Pratinjau PDF interaktif untuk cek data & cetak"
+                  >
+                    <Eye className="w-4 h-4 text-emerald-400" />
+                    <span>Pratinjau PDF (Preview)</span>
+                  </button>
+                </>
+              )}
 
-              <button
-                id="btn-export-pdf-oil-summary"
-                type="button"
-                onClick={handleExportPDF}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 text-xs font-mono font-black transition shadow-lg shadow-emerald-500/25 active:scale-95"
-                title="Download Dokumen Resmi PDF ke Komputer (.pdf)"
-              >
-                <FileDown className="w-4 h-4" />
-                <span>Download PDF Resmi</span>
-              </button>
+              {canExport && (
+                <button
+                  id="btn-export-pdf-oil-summary"
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 text-xs font-mono font-black transition shadow-lg shadow-emerald-500/25 active:scale-95"
+                  title="Download Dokumen Resmi PDF ke Komputer (.pdf)"
+                >
+                  <FileDown className="w-4 h-4" />
+                  <span>Download PDF Resmi</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1268,25 +1275,25 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
               <div className="flex items-center gap-2">
                 {canExport && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleExportPDF}
-                      className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
-                    >
-                      <FileDown className="w-3.5 h-3.5" />
-                      <span>Download PDF</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={handleExportPDF}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-stone-950 font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
+                  >
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>Download PDF</span>
+                  </button>
+                )}
 
-                    <button
-                      type="button"
-                      onClick={handlePrintBrowser}
-                      className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold text-xs font-mono transition flex items-center gap-1.5 shadow"
-                    >
-                      <Printer className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Print Browser</span>
-                    </button>
-                  </>
+                {canPrintPreview && (
+                  <button
+                    type="button"
+                    onClick={handlePrintBrowser}
+                    className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-bold text-xs font-mono transition flex items-center gap-1.5 shadow"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Print Browser</span>
+                  </button>
                 )}
 
                 <button
@@ -1450,7 +1457,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
         subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleExportPDF}
+        onDownload={canExport ? handleExportPDF : undefined}
         signatoriesSummary={{
           pembuat: `${picFog} (${picFogJabatan})`,
           diperiksa: `${inventoryUser} (${inventoryJabatan})`,

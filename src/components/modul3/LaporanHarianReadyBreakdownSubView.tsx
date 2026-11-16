@@ -6,7 +6,7 @@ import {
   UserAccount,
   ManpowerData 
 } from '../../types';
-import { getAllP2HRecords, getAllManpower, isDeveloper, canUserExportModule } from '../../utils/storage';
+import { getAllP2HRecords, getAllManpower, isDeveloper, canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 import { 
   Calendar, 
   Search, 
@@ -196,10 +196,15 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
     });
   }, [resolvedSig]);
 
-  // Cek otorisasi export (Strict RBAC Modul 3)
+  // Cek otorisasi export & print preview (Strict RBAC Modul 3)
   const canExport = useMemo(() => {
     if (!currentUser) return false;
     return isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
+  }, [currentUser]);
+
+  const canPrintPreview = useMemo(() => {
+    if (!currentUser) return false;
+    return isDeveloper(currentUser) || canUserPrintPreviewModule(currentUser, 3);
   }, [currentUser]);
 
   // Daftar Pilihan Jenis Alat unik
@@ -580,10 +585,10 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewFilename, setPreviewFilename] = useState<string>('');
 
-  // Handler Pratinjau PDF Sebelum Download
+  // Handler Pratinjau PDF Sebelum Download / Print
   const handlePreviewPDF = () => {
-    if (!canExport) {
-      alert('Akses Ditolak: Anda tidak memiliki izin ekspor laporan.');
+    if (!canPrintPreview) {
+      alert('Akses Ditolak: Anda tidak memiliki izin melihat pratinjau laporan.');
       return;
     }
 
@@ -654,22 +659,38 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
           </p>
         </div>
 
-        {/* Action Export Buttons */}
+        {/* Action Export & Print Preview Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {canExport ? (
+          {canPrintPreview && (
             <>
-              {/* Tombol Pratinjau PDF Sebelum Download */}
+              {/* Tombol Pratinjau PDF Sebelum Download / Print */}
               <button
                 id="btn-preview-pdf-laporan-harian"
                 type="button"
                 onClick={handlePreviewPDF}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold font-mono transition shadow active:scale-95 cursor-pointer"
-                title="Buka Pratinjau (Preview) PDF untuk cek kop, data, & lembar pengesahan sebelum download"
+                title="Buka Pratinjau (Preview) PDF untuk cek kop, data, & lembar pengesahan"
               >
                 <Eye className="w-4 h-4 text-amber-400" />
                 <span>Pratinjau PDF (Preview)</span>
               </button>
 
+              {/* Tombol Pratinjau & Cetak */}
+              <button
+                id="btn-print-laporan-harian"
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold transition shadow"
+                title="Buka Pratinjau Cetak Resmi / Print"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pratinjau Cetak</span>
+              </button>
+            </>
+          )}
+
+          {canExport ? (
+            <>
               {/* Tombol Export PDF untuk Head Office */}
               <button
                 id="btn-export-pdf-laporan-harian"
@@ -680,18 +701,6 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               >
                 <FileText className="w-4 h-4 text-white" />
                 <span>Export PDF (Head Office)</span>
-              </button>
-
-              {/* Tombol Pratinjau & Cetak */}
-              <button
-                id="btn-print-laporan-harian"
-                type="button"
-                onClick={() => setShowPrintModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold transition shadow"
-                title="Buka Pratinjau Cetak Resmi / PDF"
-              >
-                <Printer className="w-3.5 h-3.5 text-amber-400" />
-                <span>Pratinjau Cetak</span>
               </button>
 
               {/* Tombol Export Excel */}
@@ -720,7 +729,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
             </>
           ) : (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800/80 border border-stone-700 text-stone-400 text-xs font-mono">
-              <span>Mode Viewer (Read-Only)</span>
+              <span>Mode View (Print Preview Aktif)</span>
             </div>
           )}
         </div>
@@ -1586,15 +1595,17 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportPDF}
-                  className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
-                  title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Download PDF Resmi</span>
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={handleExportPDF}
+                    className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs font-mono transition flex items-center gap-1.5 shadow"
+                    title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Download PDF Resmi</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handlePrint}
@@ -1819,7 +1830,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
         subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleExportPDF}
+        onDownload={canExport ? handleExportPDF : undefined}
         signatoriesSummary={{
           pembuat: `${signatories.pembuatName} (${signatories.pembuatJabatan})`,
           diketahui: `${signatories.diketahuiName} (${signatories.diketahuiJabatan})`,

@@ -128,7 +128,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               type="button"
               onClick={handlePrint}
               disabled={!pdfBlobUrl || isLoading}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-stone-300 text-xs font-mono transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 disabled:opacity-50 text-amber-300 border border-amber-500/30 text-xs font-mono font-bold transition"
               title="Print dokumen PDF"
             >
               <Printer className="w-3.5 h-3.5" />
@@ -194,7 +194,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-stone-500 hidden md:inline">
-              Periksa isi tabel dan lembar pengesahan sebelum mendownload file:
+              {onDownload
+                ? 'Periksa isi tabel dan lembar pengesahan sebelum mendownload file:'
+                : 'Mode View: Gunakan tombol Print atau Tab Baru di atas untuk mencetak dokumen.'}
             </span>
             {onDownload && (
               <button

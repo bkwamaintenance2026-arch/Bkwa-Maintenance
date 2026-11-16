@@ -38,6 +38,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
 } from '../../utils/storage';
 
 interface FuelDistributionSubViewProps {
@@ -72,6 +73,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canDelete = isDev || canUserDeleteModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'DEFAULT' | 'UNIT' | 'DATE'>('DEFAULT');
@@ -528,7 +530,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             </button>
           )}
 
-          {canExport && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && onOpenExportPDF && (
             <button
               id="btn-export-pdf-fuel-distribution"
               type="button"
@@ -541,10 +543,10 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                 });
               }}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Export Laporan PDF Distribusi Fuel Truck ke Unit (PT BATU KALI WELANG AMPUH)"
+              title="Buka Print Preview / Laporan PDF Distribusi Fuel Truck ke Unit (PT BATU KALI WELANG AMPUH)"
             >
               <FileDown className="w-4 h-4 text-orange-400" />
-              <span>Export PDF</span>
+              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
             </button>
           )}
 

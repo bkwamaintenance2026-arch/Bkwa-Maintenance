@@ -21,7 +21,7 @@ import {
 import {
   canUserEditModule,
   canUserDeleteModule,
-  canUserExportModule,
+  canUserPrintPreviewModule,
   isDeveloper
 } from '../../utils/storage';
 import { 
@@ -118,7 +118,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
   // Hak akses RBAC untuk Modul 3
   const canEdit = isDeveloper(currentUser) || canUserEditModule(currentUser, 3);
   const canDelete = isDeveloper(currentUser) || canUserDeleteModule(currentUser, 3);
-  const canExport = isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
+  const canPrintPreview = isDeveloper(currentUser) || canUserPrintPreviewModule(currentUser, 3);
 
   // Timer realtime untuk update kalkulasi downtime setiap 60 detik secara otomatis
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
@@ -863,7 +863,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
 
           <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
             {/* Tombol Print & Preview Laporan Monitoring (WYSIWYG) */}
-            {canExport && (
+            {canPrintPreview && (
               <button
                 id="btn-print-preview-monitoring"
                 type="button"
@@ -1199,7 +1199,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                             <span>{isExpanded ? 'Tutup' : 'Update'}</span>
                           </button>
 
-                          {canExport && (
+                          {canPrintPreview && (
                             <button
                               type="button"
                               onClick={() => setSinglePrintRecord(b)}
@@ -1238,7 +1238,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                               </div>
 
                               <div className="flex items-center gap-2">
-                                {canExport && (
+                                {canPrintPreview && (
                                   <button
                                     type="button"
                                     onClick={() => setSinglePrintRecord(b)}

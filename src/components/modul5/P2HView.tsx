@@ -8,7 +8,7 @@ import {
   P2HKelayakanStatus, 
   UserAccount 
 } from '../../types';
-import { canUserInsertModule, canUserEditModule, canUserDeleteModule, canUserExportModule, isDeveloper } from '../../utils/storage';
+import { canUserInsertModule, canUserEditModule, canUserDeleteModule, canUserExportModule, canUserPrintPreviewModule, isDeveloper } from '../../utils/storage';
 import { 
   ClipboardCheck, 
   CheckCircle2, 
@@ -151,6 +151,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 5);
   const canDelete = isDev || canUserDeleteModule(currentUser, 5);
   const canExport = isDev || canUserExportModule(currentUser, 5);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 5);
 
   const [activeTab, setActiveTab] = useState<'form' | 'riwayat'>('form');
 
@@ -529,7 +530,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
 
   // Cetak Dokumen P2H via Print Browser
   const handlePrintP2HRecord = (rec: P2HRecord) => {
-    if (!canExport) {
+    if (!canPrintPreview) {
       setFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak dokumen P2H.' });
       return;
     }
@@ -1561,7 +1562,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
                                 <Eye className="w-3.5 h-3.5" />
                               </button>
 
-                              {canExport && (
+                              {canPrintPreview && (
                                 <button
                                   type="button"
                                   onClick={() => handlePrintP2HRecord(rec)}
@@ -1629,7 +1630,7 @@ export const P2HView: React.FC<P2HViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
-                {canExport && (
+                {canPrintPreview && (
                   <button
                     type="button"
                     onClick={() => handlePrintP2HRecord(viewingRecord)}

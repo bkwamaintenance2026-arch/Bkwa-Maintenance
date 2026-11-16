@@ -570,6 +570,12 @@ export function canUserExportModule(user: UserAccount | null | undefined, module
   return false;
 }
 
+// Cek apakah user berhak menggunakan fitur Print Preview & Cetak dokumen pada modul tertentu.
+// Hak akses View secara otomatis mengizinkan Print Preview & Print tanpa perlu izin Edit/Export file.
+export function canUserPrintPreviewModule(user: UserAccount | null | undefined, moduleId: number): boolean {
+  return canUserViewModule(user, moduleId);
+}
+
 // Update Otorisasi Hak Akses Pengguna (Hanya dapat dipanggil oleh Developer)
 export function updateUserAccessLevel(
   userId: string,

@@ -42,6 +42,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
 } from '../../utils/storage';
 
 // Helper hitung durasi lembur / jam kerja otomatis
@@ -146,6 +147,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
   const canEdit = isDev || canUserEditModule(currentUser, 2);
   const canDelete = isDev || canUserDeleteModule(currentUser, 2);
   const canExport = isDev || canUserExportModule(currentUser, 2);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 2);
 
   // Tanggal Catatan aktif (Default: Hari ini YYYY-MM-DD)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -634,10 +636,10 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
 
   // Helper Cetak Langsung melalui Hidden iFrame (100% Anti-Blank & Bebas Konflik CSS Media Print)
   const handleDirectPrintElement = (containerId: string, docTitle: string) => {
-    if (!canExport) {
+    if (!canPrintPreview) {
       setFeedback({
         type: 'error',
-        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Export / Cetak pada Modul 2.',
+        message: 'Akses Ditolak: Akun Anda tidak memiliki izin Cetak pada Modul 2.',
       });
       return;
     }
@@ -1426,7 +1428,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
             )}
 
             {/* Tombol Cetak Dokumen SURAT PERINTAH LEMBUR */}
-            {canExport && (
+            {canPrintPreview && (
               <button
                 type="button"
                 onClick={() => setShowPrintModal(true)}
@@ -2094,7 +2096,7 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                   Tutup
                 </button>
 
-                {canExport && (
+                {canPrintPreview && (
                   <button
                     type="button"
                     onClick={() =>

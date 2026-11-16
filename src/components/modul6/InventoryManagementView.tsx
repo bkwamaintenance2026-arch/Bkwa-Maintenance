@@ -22,7 +22,8 @@ import {
   canUserInsertModule,
   canUserEditModule,
   canUserDeleteModule,
-  canUserExportModule 
+  canUserExportModule,
+  canUserPrintPreviewModule 
 } from '../../utils/storage';
 import { InputSparePartSubView } from './InputSparePartSubView';
 import { TransaksiSparePartSubView } from './TransaksiSparePartSubView';
@@ -66,6 +67,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
   const canEdit = isDev || canUserEditModule(currentUser, 6);
   const canDelete = isDev || canUserDeleteModule(currentUser, 6);
   const canExport = isDev || canUserExportModule(currentUser, 6);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 6);
 
   // Load data dari storage
   const loadData = () => {
@@ -318,6 +320,7 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
           canEdit={canEdit}
           canDelete={canDelete}
           canExport={canExport}
+          canPrintPreview={canPrintPreview}
           manpowerList={manpowerList}
           onRefreshData={() => {
             loadData();

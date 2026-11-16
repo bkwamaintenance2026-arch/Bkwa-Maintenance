@@ -5,7 +5,7 @@ import {
   UserAccount,
   ManpowerData 
 } from '../../types';
-import { getAllSparePartTransactions, getAllManpower, isDeveloper, canUserExportModule } from '../../utils/storage';
+import { getAllSparePartTransactions, getAllManpower, isDeveloper, canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 import { exportPartRequirementToPDF, generatePartRequirementPDF } from '../../utils/pdfGenerator';
 import { 
   resolveReportSignatories, 
@@ -51,6 +51,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
   if (!isOpen || !breakdown) return null;
 
   const canExport = isDeveloper(currentUser) || canUserExportModule(currentUser, 3);
+  const canPrintPreview = isDeveloper(currentUser) || canUserPrintPreviewModule(currentUser, 3);
   const moNumber = breakdown.noMaintenanceOrder || breakdown.noNotifikasi;
   const notifNumber = breakdown.noNotifikasi;
   const unitInfo = `${breakdown.noUnit}${breakdown.namaAlat ? ` - ${breakdown.namaAlat}` : ''}`;
@@ -384,7 +385,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {canExport && (
+            {canPrintPreview && (
               <>
                 {/* Tombol Pratinjau PDF */}
                 <button
@@ -392,22 +393,10 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
                   type="button"
                   onClick={handlePreviewPDF}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold text-xs shadow transition active:scale-95 cursor-pointer"
-                  title="Buka Pratinjau (Preview) PDF untuk cek daftar part & lembar pengesahan sebelum download"
+                  title="Buka Pratinjau (Preview) PDF untuk cek daftar part & lembar pengesahan"
                 >
                   <Eye className="w-4 h-4 text-amber-400" />
                   <span>Pratinjau PDF</span>
-                </button>
-
-                {/* Tombol Export PDF */}
-                <button
-                  id="btn-export-pdf-part-requirement"
-                  type="button"
-                  onClick={handleExportPDF}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95 cursor-pointer"
-                  title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office Malang"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Export PDF (Kirim ke Malang)</span>
                 </button>
 
                 {/* Tombol Print Langsung */}
@@ -419,6 +408,22 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
                 >
                   <Printer className="w-3.5 h-3.5 text-amber-400" />
                   <span>Cetak</span>
+                </button>
+              </>
+            )}
+
+            {canExport && (
+              <>
+                {/* Tombol Export PDF */}
+                <button
+                  id="btn-export-pdf-part-requirement"
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-xs shadow-lg shadow-rose-600/20 transition active:scale-95 cursor-pointer"
+                  title="Download File PDF Resmi (.pdf) untuk dikirim ke Head Office Malang"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Export PDF (Kirim ke Malang)</span>
                 </button>
 
                 {/* Tombol Export Word */}
@@ -908,7 +913,7 @@ export const PartRequirementModal: React.FC<PartRequirementModalProps> = ({
         subtitle={`PT BATU KALI WELANG AMPUH • Unit ${breakdown.noUnit}`}
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleExportPDF}
+        onDownload={canExport ? handleExportPDF : undefined}
         signatoriesSummary={{
           pembuat: `${signatories?.pembuatName || '-'} (${signatories?.pembuatJabatan || 'Administrasi'})`,
           diperiksa: `${signatories?.diperiksaName || '-'} (${signatories?.diperiksaJabatan || 'Administrasi'})`,

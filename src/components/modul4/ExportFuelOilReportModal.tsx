@@ -11,7 +11,7 @@ import {
 } from '../../types';
 import { exportFuelOilTransactionsToPDF, generateFuelOilTransactionsPDF } from '../../utils/pdfGenerator';
 import { resolveFogSignatories } from '../../utils/reportSignatories';
-import { getAllManpower } from '../../utils/storage';
+import { getAllManpower, isDeveloper, canUserExportModule, canUserPrintPreviewModule } from '../../utils/storage';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import {
   X,
@@ -81,6 +81,10 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   initialStartDate,
   initialEndDate,
 }) => {
+  const isDev = isDeveloper(currentUser);
+  const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
+
   // Category tab
   const [reportCategory, setReportCategory] = useState<
     'ALL' | 'TANGKI_UTAMA' | 'FUEL_TRUCK' | 'SPBU_LUAR' | 'OLI_PER_TIPE'
@@ -1583,37 +1587,43 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
               Batal
             </button>
 
-            <button
-              id="btn-print-laporan-fog"
-              type="button"
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-semibold text-xs font-mono transition shadow-sm"
-              title="Buka dialog cetak browser (Ctrl+P)"
-            >
-              <Printer className="w-4 h-4 text-stone-400" />
-              <span>Print Dokumen</span>
-            </button>
+            {canPrintPreview && (
+              <>
+                <button
+                  id="btn-print-laporan-fog"
+                  type="button"
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 font-semibold text-xs font-mono transition shadow-sm"
+                  title="Buka dialog cetak browser (Ctrl+P)"
+                >
+                  <Printer className="w-4 h-4 text-stone-400" />
+                  <span>Print Dokumen</span>
+                </button>
 
-            <button
-              id="btn-preview-pdf-fuel-oil-transactions"
-              type="button"
-              onClick={handlePreviewPDF}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs font-mono transition shadow-sm active:scale-95"
-              title="Buka Pratinjau (Preview) PDF untuk cek sebelum download"
-            >
-              <Eye className="w-4 h-4 text-amber-400" />
-              <span>Pratinjau PDF (Preview)</span>
-            </button>
+                <button
+                  id="btn-preview-pdf-fuel-oil-transactions"
+                  type="button"
+                  onClick={handlePreviewPDF}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs font-mono transition shadow-sm active:scale-95"
+                  title="Buka Pratinjau (Preview) PDF untuk cek & cetak"
+                >
+                  <Eye className="w-4 h-4 text-amber-400" />
+                  <span>Pratinjau PDF (Preview)</span>
+                </button>
+              </>
+            )}
 
-            <button
-              id="btn-export-pdf-fuel-oil-transactions"
-              type="button"
-              onClick={handleExportPDF}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-black text-xs font-mono transition shadow-lg shadow-amber-500/20 active:scale-95"
-            >
-              <FileDown className="w-4 h-4" />
-              <span>Download PDF Resmi (.pdf)</span>
-            </button>
+            {canExport && (
+              <button
+                id="btn-export-pdf-fuel-oil-transactions"
+                type="button"
+                onClick={handleExportPDF}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 font-black text-xs font-mono transition shadow-lg shadow-amber-500/20 active:scale-95"
+              >
+                <FileDown className="w-4 h-4" />
+                <span>Download PDF Resmi (.pdf)</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1626,7 +1636,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
         subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleExportPDF}
+        onDownload={canExport ? handleExportPDF : undefined}
         signatoriesSummary={{
           pembuat: `${petugasFog} (${petugasFogJabatan})`,
           diperiksa: `${petugasInventory} (${petugasInventoryJabatan})`,

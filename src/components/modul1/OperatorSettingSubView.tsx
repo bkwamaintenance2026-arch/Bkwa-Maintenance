@@ -44,6 +44,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
   updateUnitOperatorSetting,
   getAllBreakdowns,
 } from '../../utils/storage';
@@ -161,6 +162,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   const canEditPerm = currentUser ? isDev || canUserEditModule(currentUser, 1) : false;
   const canDelete = currentUser ? isDev || canUserDeleteModule(currentUser, 1) : false;
   const canExport = currentUser ? isDev || canUserExportModule(currentUser, 1) : false;
+  const canPrintPreview = currentUser ? isDev || canUserPrintPreviewModule(currentUser, 1) : false;
   const canEdit = canInsert || canEditPerm;
 
   // Fallback reactive breakdowns jika prop tidak dikirim langsung
@@ -896,6 +898,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
   // Handler Pratinjau Dokumen PDF Resmi
   const handleOpenPdfPreview = () => {
+    if (!canPrintPreview) return;
     if (displayedUnits.length === 0) {
       setFeedback({ type: 'error', message: 'Tidak ada data untuk ditampilkan pada Pratinjau Dokumen PDF.' });
       return;
@@ -1693,14 +1696,16 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenPdfPreview}
-            className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer self-start sm:self-auto"
-          >
-            <Eye className="w-3.5 h-3.5" />
-            <span>Lihat Hasil pada Print Preview &rarr;</span>
-          </button>
+          {canPrintPreview && (
+            <button
+              type="button"
+              onClick={handleOpenPdfPreview}
+              className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>Lihat Hasil pada Print Preview &rarr;</span>
+            </button>
+          )}
         </div>
       </section>
 
@@ -1758,28 +1763,28 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
             </div>
 
             {canExport && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-300 hover:text-amber-400 hover:border-amber-500/40 text-xs font-mono font-bold transition shadow cursor-pointer"
-                  title="Export data ke CSV"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Export CSV</span>
-                </button>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-300 hover:text-amber-400 hover:border-amber-500/40 text-xs font-mono font-bold transition shadow cursor-pointer"
+                title="Export data ke CSV"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Export CSV</span>
+              </button>
+            )}
 
-                <button
-                  type="button"
-                  onClick={handleOpenPdfPreview}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-stone-950 hover:bg-amber-400 text-xs font-mono font-black transition shadow-lg shadow-amber-500/20 cursor-pointer"
-                  title="Buka Dokumen Pratinjau PDF Resmi untuk Cetak & Download"
-                >
-                  <Eye className="w-3.5 h-3.5 text-stone-950" />
-                  <Printer className="w-3.5 h-3.5 text-stone-950" />
-                  <span>Print Preview</span>
-                </button>
-              </>
+            {canPrintPreview && (
+              <button
+                type="button"
+                onClick={handleOpenPdfPreview}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-stone-950 hover:bg-amber-400 text-xs font-mono font-black transition shadow-lg shadow-amber-500/20 cursor-pointer"
+                title="Buka Dokumen Pratinjau PDF Resmi untuk Cetak & Download"
+              >
+                <Eye className="w-3.5 h-3.5 text-stone-950" />
+                <Printer className="w-3.5 h-3.5 text-stone-950" />
+                <span>Print Preview</span>
+              </button>
             )}
           </div>
         </div>
@@ -2432,7 +2437,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         subtitle={`PT BATU KALI WELANG AMPUH • Site Quarry Purwosari • Total ${displayedUnits.length} Unit Armada`}
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleDownloadPdfDirect}
+        onDownload={canExport ? handleDownloadPdfDirect : undefined}
         signatoriesSummary={{
           pembuat: `${operatorSignatories.pembuatName || '-'} (${operatorSignatories.pembuatJabatan || 'Admin / Dispatcher'})`,
           diperiksa: `${operatorSignatories.disetujuiName || '-'} (${operatorSignatories.disetujuiJabatan || 'Kabag Workshop'})`,

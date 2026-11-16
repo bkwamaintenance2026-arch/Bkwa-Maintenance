@@ -20,7 +20,8 @@ import {
   canUserInsertModule,
   canUserEditModule,
   canUserDeleteModule,
-  canUserExportModule
+  canUserExportModule,
+  canUserPrintPreviewModule
 } from '../../utils/storage';
 import { 
   Truck, 
@@ -84,6 +85,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 5);
   const canDelete = isDev || canUserDeleteModule(currentUser, 5);
   const canExport = isDev || canUserExportModule(currentUser, 5);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 5);
 
   // State Fleet
   const [fleetList, setFleetList] = useState<FleetSettingRecord[]>(() => getAllFleetSettings());
@@ -797,7 +799,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
   // Open Print Preview & sinkronkan nama validasi manual dari data form atau record fleet
   const handleOpenPrintModal = () => {
-    if (!canExport) {
+    if (!canPrintPreview) {
       setInlineFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak laporan.' });
       return;
     }
@@ -809,7 +811,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
   };
 
   const handleOpenCheckerPrintModal = () => {
-    if (!canExport) {
+    if (!canPrintPreview) {
       setInlineFeedback({ type: 'error', message: 'Akses Ditolak: Anda tidak memiliki izin mencetak rekap checker.' });
       return;
     }
@@ -889,7 +891,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               </button>
             )}
 
-            {canExport && (
+            {canPrintPreview && (
               <button
                 type="button"
                 onClick={handleOpenPrintModal}
@@ -2040,7 +2042,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
 
           {/* Action buttons checker */}
           <div className="flex flex-wrap items-center gap-2">
-            {canExport && (
+            {canPrintPreview && (
               <button
                 type="button"
                 onClick={handleOpenCheckerPrintModal}
@@ -3324,7 +3326,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               >
                 Tutup
               </button>
-              {canExport && (
+              {canPrintPreview && (
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -3713,7 +3715,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
               >
                 Tutup
               </button>
-              {canExport && (
+              {canPrintPreview && (
                 <button
                   type="button"
                   onClick={() => window.print()}

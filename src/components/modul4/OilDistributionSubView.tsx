@@ -30,6 +30,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
 } from '../../utils/storage';
 
 interface OilDistributionSubViewProps {
@@ -61,6 +62,7 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canDelete = isDev || canUserDeleteModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -439,16 +441,16 @@ export const OilDistributionSubView: React.FC<OilDistributionSubViewProps> = ({
             </button>
           )}
 
-          {canExport && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && onOpenExportPDF && (
             <button
               id="btn-export-pdf-oil-distribution"
               type="button"
               onClick={onOpenExportPDF}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Export Laporan PDF Penggunaan Oli Setiap Tipe (PT BATU KALI WELANG AMPUH)"
+              title="Buka Print Preview / Laporan PDF Penggunaan Oli Setiap Tipe (PT BATU KALI WELANG AMPUH)"
             >
               <FileDown className="w-4 h-4 text-emerald-400" />
-              <span>Export PDF</span>
+              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
             </button>
           )}
 

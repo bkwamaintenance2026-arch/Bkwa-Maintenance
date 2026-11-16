@@ -35,6 +35,7 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
   updateUnitOperatorSetting,
   getAllBreakdowns
 } from '../../utils/storage';
@@ -102,6 +103,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 1);
   const canDelete = isDev || canUserDeleteModule(currentUser, 1);
   const canExport = isDev || canUserExportModule(currentUser, 1);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 1);
 
   // Sorting state untuk header kolom tabel Daftar Aset Unit
   const [sortField, setSortField] = useState<keyof AssetUnit>('cnNew');
@@ -351,7 +353,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
 
   // Print Preview PDF handler
   const handleOpenPdfPreview = () => {
-    if (!canExport) return;
+    if (!canPrintPreview) return;
     if (sortedUnits.length === 0) {
       setFeedback({ type: 'error', message: 'Tidak ada data asset unit untuk ditampilkan di Print Preview.' });
       return;
@@ -904,30 +906,30 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
               </button>
             )}
 
-            {canExport && (
-              <>
-                <button
-                  id="btn-print-preview-modul1"
-                  type="button"
-                  onClick={handleOpenPdfPreview}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-mono font-black transition shadow-md whitespace-nowrap cursor-pointer"
-                  title="Buka Print Preview PDF Daftar Asset Unit"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print Preview</span>
-                </button>
+            {canPrintPreview && (
+              <button
+                id="btn-print-preview-modul1"
+                type="button"
+                onClick={handleOpenPdfPreview}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-mono font-black transition shadow-md whitespace-nowrap cursor-pointer"
+                title="Buka Print Preview PDF Daftar Asset Unit"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Preview</span>
+              </button>
+            )}
 
-                <button
-                  id="btn-export-modul1-csv"
-                  type="button"
-                  onClick={handleExportCSV}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap cursor-pointer"
-                  title="Export seluruh daftar aset ke format CSV / Excel"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Export Excel</span>
-                </button>
-              </>
+            {canExport && (
+              <button
+                id="btn-export-modul1-csv"
+                type="button"
+                onClick={handleExportCSV}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md whitespace-nowrap cursor-pointer"
+                title="Export seluruh daftar aset ke format CSV / Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export Excel</span>
+              </button>
             )}
 
             <div className="w-full sm:w-64">
@@ -1434,7 +1436,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
         subtitle={`PT BATU KALI WELANG AMPUH (ETIKA09) • Total ${sortedUnits.length} Unit Armada`}
         pdfBlobUrl={previewPdfUrl}
         filename={previewFilename}
-        onDownload={handleDownloadAssetPdf}
+        onDownload={canExport ? handleDownloadAssetPdf : undefined}
       />
     </div>
   );
