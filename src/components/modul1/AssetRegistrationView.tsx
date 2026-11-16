@@ -4,7 +4,8 @@ import {
   OperationalStatus, 
   UserAccount,
   ManpowerData,
-  BarcodeFuelStatus 
+  BarcodeFuelStatus,
+  BreakdownRecord 
 } from '../../types';
 import { 
   Save, 
@@ -34,7 +35,8 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
-  updateUnitOperatorSetting
+  updateUnitOperatorSetting,
+  getAllBreakdowns
 } from '../../utils/storage';
 import { OperatorSettingSubView } from './OperatorSettingSubView';
 import { generateAssetListPDF, exportAssetListToPDF } from '../../utils/pdfGenerator';
@@ -43,6 +45,7 @@ import { PdfPreviewModal } from '../common/PdfPreviewModal';
 interface AssetRegistrationViewProps {
   units: AssetUnit[];
   manpowerList?: ManpowerData[];
+  breakdowns?: BreakdownRecord[];
   currentUser: UserAccount | null;
   onSaveUnit: (data: Omit<AssetUnit, 'id' | 'tanggalRegistrasi' | 'terakhirDiperbarui'>, existingId?: string | null) => {
     success: boolean;
@@ -83,6 +86,7 @@ const EMPTY_FORM = {
 export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
   units,
   manpowerList = [],
+  breakdowns,
   currentUser,
   onSaveUnit,
   onDeleteUnit,
@@ -533,6 +537,7 @@ export const AssetRegistrationView: React.FC<AssetRegistrationViewProps> = ({
         <OperatorSettingSubView
           units={units}
           manpowerList={manpowerList}
+          breakdowns={breakdowns ?? getAllBreakdowns()}
           currentUser={currentUser}
           onUpdateOperatorSetting={onUpdateOperatorSetting || updateUnitOperatorSetting}
         />

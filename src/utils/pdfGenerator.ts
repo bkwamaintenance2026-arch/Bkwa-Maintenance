@@ -3489,11 +3489,13 @@ export const exportOilSummaryReportToPDF = (params: ExportOilSummaryReportParams
 export interface GenerateOperatorSettingPdfParams {
   units: AssetUnit[];
   allUnits?: AssetUnit[];
+  modul3StatusMap?: Record<string, string>;
   currentUser?: UserAccount | null;
   filterInfo?: {
     jenisFilter?: string;
     barcodeFilter?: string;
     statusFilter?: string;
+    modul3StatusFilter?: string;
     viewMode?: string;
   };
   signatories?: {
@@ -3515,6 +3517,7 @@ export interface GenerateOperatorSettingPdfParams {
 export const generateOperatorSettingPDF = ({
   units,
   allUnits,
+  modul3StatusMap = {},
   currentUser,
   filterInfo,
   signatories,
@@ -3537,6 +3540,16 @@ export const generateOperatorSettingPDF = ({
   const jenisFilterLabel = filterInfo?.jenisFilter && filterInfo.jenisFilter !== 'ALL' ? filterInfo.jenisFilter : 'Semua Jenis';
   const barcodeFilterLabel = filterInfo?.barcodeFilter && filterInfo.barcodeFilter !== 'ALL' ? filterInfo.barcodeFilter : 'Semua Barcode';
   const statusFilterLabel = filterInfo?.statusFilter && filterInfo.statusFilter !== 'ALL' ? filterInfo.statusFilter : 'Semua Status';
+  const modul3FilterLabel =
+    filterInfo?.modul3StatusFilter && filterInfo.modul3StatusFilter !== 'ALL'
+      ? filterInfo.modul3StatusFilter === 'READY'
+        ? 'Ready'
+        : filterInfo.modul3StatusFilter === 'BREAKDOWN'
+        ? 'Breakdown'
+        : filterInfo.modul3StatusFilter === 'LIMIT OPERASI'
+        ? 'Limit Operasi'
+        : filterInfo.modul3StatusFilter
+      : 'Semua (M3)';
   const modeLabel = filterInfo?.viewMode === 'ALL_UNITS' ? 'Semua Armada Unit' : 'Hanya Unit Ditugaskan';
 
   const renderHeader = () => {
@@ -3559,10 +3572,10 @@ export const generateOperatorSettingPDF = ({
     doc.text('LAPORAN PENUGASAN OPERATOR & STATUS BARCODE FUEL ARMADA', 148.5, 23.5, { align: 'center' });
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(...grayTextColor);
     doc.text(
-      `Mode: ${modeLabel}   |   Status: ${statusFilterLabel}   |   Jenis: ${jenisFilterLabel}   |   Barcode: ${barcodeFilterLabel}   |   Total: ${units.length} Unit   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      `Mode: ${modeLabel}   |   Status M3: ${modul3FilterLabel}   |   Status Aset: ${statusFilterLabel}   |   Jenis: ${jenisFilterLabel}   |   Barcode: ${barcodeFilterLabel}   |   Total: ${units.length} Unit   |   Dicetak: ${nowStr}`,
       148.5,
       28,
       { align: 'center' }
@@ -3643,6 +3656,7 @@ export const generateOperatorSettingPDF = ({
     u.cnNew || '-',
     u.namaAlat || '-',
     u.jenis || '-',
+    modul3StatusMap[u.id] || 'Ready',
     u.loc || '-',
     u.operatorName || '-- Belum Ada --',
     u.operatorJabatan || '-',
@@ -3658,6 +3672,7 @@ export const generateOperatorSettingPDF = ({
       'No. Unit\n(CN New)',
       'Nama Alat',
       'Jenis Unit',
+      'Status Unit\n(Modul 3)',
       'Lokasi',
       'Nama Operator / Sopir\n(Reff Modul 2)',
       'Jabatan',
@@ -3671,28 +3686,41 @@ export const generateOperatorSettingPDF = ({
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 7.5,
+      fontSize: 7.2,
       halign: 'center',
       valign: 'middle',
-      cellPadding: 2,
+      cellPadding: 1.8,
     },
     bodyStyles: {
-      fontSize: 7.5,
-      cellPadding: 2,
+      fontSize: 7.2,
+      cellPadding: 1.8,
       textColor: [30, 41, 59],
       valign: 'middle',
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 9 },
-      1: { halign: 'center', fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 26 },
-      2: { cellWidth: 38 },
-      3: { cellWidth: 26 },
-      4: { halign: 'center', cellWidth: 18 },
-      5: { fontStyle: 'bold', cellWidth: 38 },
-      6: { cellWidth: 25 },
-      7: { cellWidth: 36 },
-      8: { halign: 'center', fontStyle: 'bold', cellWidth: 25 },
-      9: { cellWidth: 28 },
+      0: { halign: 'center', cellWidth: 8 },
+      1: { halign: 'center', fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 24 },
+      2: { cellWidth: 34 },
+      3: { cellWidth: 23 },
+      4: { halign: 'center', fontStyle: 'bold', cellWidth: 22 },
+      5: { halign: 'center', cellWidth: 17 },
+      6: { fontStyle: 'bold', cellWidth: 35 },
+      7: { cellWidth: 23 },
+      8: { cellWidth: 33 },
+      9: { halign: 'center', fontStyle: 'bold', cellWidth: 24 },
+      10: { cellWidth: 26 },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 4) {
+        const val = String(data.cell.raw || '').toUpperCase();
+        if (val.includes('BREAKDOWN')) {
+          data.cell.styles.textColor = [225, 29, 72];
+        } else if (val.includes('LIMIT')) {
+          data.cell.styles.textColor = [217, 119, 6];
+        } else {
+          data.cell.styles.textColor = [5, 150, 105];
+        }
+      }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],

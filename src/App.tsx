@@ -754,6 +754,7 @@ export default function App() {
           <AssetRegistrationView
             units={units}
             manpowerList={manpowerList}
+            breakdowns={breakdowns}
             currentUser={currentUser}
             onSaveUnit={handleSaveUnit}
             onDeleteUnit={handleDeleteUnit}

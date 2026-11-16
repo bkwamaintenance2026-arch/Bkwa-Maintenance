@@ -6,7 +6,8 @@ import {
   BarcodeFuelStatus, 
   BARCODE_FUEL_STATUS_OPTIONS,
   OperationalStatus,
-  ASSET_STATUS_OPTIONS 
+  ASSET_STATUS_OPTIONS,
+  BreakdownRecord 
 } from '../../types';
 import { 
   UserCheck, 
@@ -44,6 +45,7 @@ import {
   canUserDeleteModule,
   canUserExportModule,
   updateUnitOperatorSetting,
+  getAllBreakdowns,
 } from '../../utils/storage';
 import { generateOperatorSettingPDF, exportOperatorSettingToPDF } from '../../utils/pdfGenerator';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
@@ -59,11 +61,24 @@ export interface OperatorDocSignatories {
 
 export const STORAGE_KEY_OPERATOR_SIGNATORIES = 'bkwa_operator_setting_signatories_v1';
 
+export type Modul3UnitStatus = 'READY' | 'BREAKDOWN' | 'LIMIT OPERASI';
+
+export interface Modul3UnitStatusInfo {
+  status: Modul3UnitStatus;
+  label: 'Ready' | 'Breakdown' | 'Limit Operasi';
+  hasRecord: boolean;
+  moNumber?: string;
+  progress?: string;
+  detailProblem?: string;
+  updatedAt?: string;
+}
+
 export type OperatorSortField = 
   | 'cnNew' 
   | 'namaAlat' 
   | 'jenis' 
   | 'loc' 
+  | 'modul3Status'
   | 'status'
   | 'operatorName' 
   | 'operatorJabatan' 
@@ -74,6 +89,7 @@ export type OperatorSortField =
 interface OperatorSettingSubViewProps {
   units?: AssetUnit[];
   manpowerList?: ManpowerData[];
+  breakdowns?: BreakdownRecord[];
   currentUser?: UserAccount | null;
   onUpdateOperatorSetting: (
     unitId: string,
@@ -135,6 +151,7 @@ export const isBarcodeActive = (u?: AssetUnit | null): boolean => {
 export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   units = [],
   manpowerList = [],
+  breakdowns,
   currentUser = null,
   onUpdateOperatorSetting,
 }) => {
@@ -145,6 +162,21 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   const canDelete = currentUser ? isDev || canUserDeleteModule(currentUser, 1) : false;
   const canExport = currentUser ? isDev || canUserExportModule(currentUser, 1) : false;
   const canEdit = canInsert || canEditPerm;
+
+  // Fallback reactive breakdowns jika prop tidak dikirim langsung
+  const [localBreakdowns, setLocalBreakdowns] = useState<BreakdownRecord[]>(() => getAllBreakdowns());
+
+  useEffect(() => {
+    const syncBreakdowns = () => setLocalBreakdowns(getAllBreakdowns());
+    window.addEventListener('bkwa-firestore-synced', syncBreakdowns);
+    window.addEventListener('storage', syncBreakdowns);
+    return () => {
+      window.removeEventListener('bkwa-firestore-synced', syncBreakdowns);
+      window.removeEventListener('storage', syncBreakdowns);
+    };
+  }, []);
+
+  const effectiveBreakdowns = breakdowns !== undefined ? breakdowns : localBreakdowns;
 
   // Feedback banner state
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -166,6 +198,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   // Filter & Search states untuk Tabel List di bawah
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [tableFilterJenis, setTableFilterJenis] = useState<string>('ALL');
+  const [tableFilterModul3Status, setTableFilterModul3Status] = useState<'ALL' | Modul3UnitStatus>('ALL');
   const [tableFilterStatus, setTableFilterStatus] = useState<string>('ALL');
   const [tableFilterBarcode, setTableFilterBarcode] = useState<string>('ALL');
   const [viewMode, setViewMode] = useState<'ASSIGNED_ONLY' | 'ALL_UNITS'>('ASSIGNED_ONLY');
@@ -173,6 +206,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
   // Filter per-kolom di header tabel (mudah cari & edit)
   const [colFilterCn, setColFilterCn] = useState<string>('');
   const [colFilterJenis, setColFilterJenis] = useState<string>('ALL');
+  const [colFilterModul3Status, setColFilterModul3Status] = useState<'ALL' | Modul3UnitStatus>('ALL');
   const [colFilterStatus, setColFilterStatus] = useState<string>('ALL');
   const [colFilterOperator, setColFilterOperator] = useState<string>('');
   const [colFilterJob, setColFilterJob] = useState<string>('');
@@ -344,6 +378,100 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         return 'bg-stone-800 text-stone-300 border-stone-700';
     }
   };
+
+  // Helper styling badge status unit otomatis dari Modul 3 (Ready, Breakdown, Limit Operasi)
+  const getModul3StatusBadge = (status: Modul3UnitStatus) => {
+    switch (status) {
+      case 'BREAKDOWN':
+        return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+      case 'LIMIT OPERASI':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      case 'READY':
+      default:
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+    }
+  };
+
+  // Sinkronisasi Otomatis Status Unit (Ready / Breakdown / Limit Operasi) berdasarkan Update Modul 3
+  const modul3StatusByUnitId = useMemo(() => {
+    const normCn = (s: string = '') => s.toLowerCase().replace(/[\s\-_]/g, '').trim();
+
+    const getLatestBreakdownUpdate = (b: BreakdownRecord) => {
+      const updates = b.riwayatUpdate;
+      if (!updates || updates.length === 0) return null;
+      if (updates.length === 1) return updates[0];
+      return [...updates].sort((x, y) => {
+        const timeX = x.createdAt || `${x.startJob || x.tanggal || ''} ${x.jamStart || '00:00'}`;
+        const timeY = y.createdAt || `${y.startJob || y.tanggal || ''} ${y.jamStart || '00:00'}`;
+        return timeY.localeCompare(timeX);
+      })[0];
+    };
+
+    const byNormCn = new Map<string, BreakdownRecord[]>();
+    (effectiveBreakdowns || []).forEach((b) => {
+      if (!b) return;
+      const key = normCn(b.noUnit || '');
+      if (!key) return;
+      const list = byNormCn.get(key) || [];
+      list.push(b);
+      byNormCn.set(key, list);
+    });
+
+    const result: Record<string, Modul3UnitStatusInfo> = {};
+
+    (units || []).forEach((u) => {
+      if (!u) return;
+      const key = normCn(u.cnNew || '');
+      const matching = key ? byNormCn.get(key) || [] : [];
+
+      if (matching.length === 0) {
+        result[u.id] = {
+          status: 'READY',
+          label: 'Ready',
+          hasRecord: false,
+        };
+        return;
+      }
+
+      const sortedRecords = [...matching].sort((a, b) => {
+        const latA = getLatestBreakdownUpdate(a);
+        const latB = getLatestBreakdownUpdate(b);
+        const timeA = latA?.createdAt || a.createdAt || `${a.tanggal || ''}T${a.jamBreakdown || '00:00'}` || a.updatedAt || '';
+        const timeB = latB?.createdAt || b.createdAt || `${b.tanggal || ''}T${b.jamBreakdown || '00:00'}` || b.updatedAt || '';
+        return timeB.localeCompare(timeA);
+      });
+
+      const latestRec = sortedRecords[0];
+      const latestUpd = getLatestBreakdownUpdate(latestRec);
+      const rawStatus = (latestUpd?.statusUnit || latestRec.statusUnit || 'BREAKDOWN').toUpperCase().trim();
+
+      let normalizedStatus: Modul3UnitStatus = 'BREAKDOWN';
+      let label: 'Ready' | 'Breakdown' | 'Limit Operasi' = 'Breakdown';
+
+      if (rawStatus === 'READY' || rawStatus === 'COMPLETED') {
+        normalizedStatus = 'READY';
+        label = 'Ready';
+      } else if (rawStatus === 'LIMIT OPERASI') {
+        normalizedStatus = 'LIMIT OPERASI';
+        label = 'Limit Operasi';
+      } else {
+        normalizedStatus = 'BREAKDOWN';
+        label = 'Breakdown';
+      }
+
+      result[u.id] = {
+        status: normalizedStatus,
+        label,
+        hasRecord: true,
+        moNumber: latestRec.noMaintenanceOrder || latestRec.noNotifikasi || undefined,
+        progress: latestUpd?.progress || latestRec.progress || undefined,
+        detailProblem: latestUpd?.detailKerusakan || latestRec.detailProblem || undefined,
+        updatedAt: latestUpd?.createdAt || latestRec.updatedAt || undefined,
+      };
+    });
+
+    return result;
+  }, [units, effectiveBreakdowns]);
 
   // Unit yang tersedia berdasarkan Jenis yang dipilih pada form step 1
   const unitsOfSelectedJenis = useMemo(() => {
@@ -576,6 +704,12 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         return false;
       }
 
+      // Filter Status Unit Otomatis Modul 3 (Ready, Breakdown, Limit Operasi)
+      const m3Info = modul3StatusByUnitId[u.id] || { status: 'READY' as Modul3UnitStatus, label: 'Ready' as const, hasRecord: false };
+      if (tableFilterModul3Status !== 'ALL' && m3Info.status !== tableFilterModul3Status) {
+        return false;
+      }
+
       // Filter Status Unit pada tabel (dari Registrasi Asset)
       if (tableFilterStatus !== 'ALL' && (u.status || '').trim().toLowerCase() !== tableFilterStatus.trim().toLowerCase()) {
         return false;
@@ -605,6 +739,9 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         return false;
       }
       if (colFilterJenis !== 'ALL' && (u.jenis || '').trim().toLowerCase() !== colFilterJenis.trim().toLowerCase()) {
+        return false;
+      }
+      if (colFilterModul3Status !== 'ALL' && m3Info.status !== colFilterModul3Status) {
         return false;
       }
       if (colFilterStatus !== 'ALL' && (u.status || '').trim().toLowerCase() !== colFilterStatus.trim().toLowerCase()) {
@@ -643,6 +780,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
         const cn = (u.cnNew || '').toLowerCase();
         const nama = (u.namaAlat || '').toLowerCase();
         const jenis = (u.jenis || '').toLowerCase();
+        const m3Label = m3Info.label.toLowerCase();
         const status = (u.status || '').toLowerCase();
         const op = (u.operatorName || '').toLowerCase();
         const job = (u.operatorJob || '').toLowerCase();
@@ -653,6 +791,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           cn.includes(q) ||
           nama.includes(q) ||
           jenis.includes(q) ||
+          m3Label.includes(q) ||
           status.includes(q) ||
           op.includes(q) ||
           job.includes(q) ||
@@ -666,8 +805,14 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
 
     // Urutkan (Sorting) secara dinamis sesuai sortField dan sortOrder
     return [...filtered].sort((a, b) => {
-      let aVal = (a[sortField] || '').toString().toLowerCase();
-      let bVal = (b[sortField] || '').toString().toLowerCase();
+      const aVal =
+        sortField === 'modul3Status'
+          ? (modul3StatusByUnitId[a.id]?.label || 'Ready').toLowerCase()
+          : (a[sortField] || '').toString().toLowerCase();
+      const bVal =
+        sortField === 'modul3Status'
+          ? (modul3StatusByUnitId[b.id]?.label || 'Ready').toLowerCase()
+          : (b[sortField] || '').toString().toLowerCase();
 
       if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
@@ -675,12 +820,15 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     });
   }, [
     units, 
+    modul3StatusByUnitId,
     viewMode, 
     tableFilterJenis, 
+    tableFilterModul3Status,
     tableFilterStatus, 
     tableFilterBarcode, 
     colFilterCn, 
     colFilterJenis, 
+    colFilterModul3Status,
     colFilterStatus, 
     colFilterOperator, 
     colFilterJob, 
@@ -698,6 +846,9 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
     let barcodeActiveCount = 0;
     let barcodeIssueCount = 0;
     let barcodeBelumAdaCount = 0;
+    let modul3ReadyCount = 0;
+    let modul3BreakdownCount = 0;
+    let modul3LimitOperasiCount = 0;
 
     (units || []).forEach((u) => {
       if (!u) return;
@@ -709,6 +860,15 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       } else {
         barcodeBelumAdaCount++;
       }
+
+      const m3 = modul3StatusByUnitId[u.id]?.status || 'READY';
+      if (m3 === 'BREAKDOWN') {
+        modul3BreakdownCount++;
+      } else if (m3 === 'LIMIT OPERASI') {
+        modul3LimitOperasiCount++;
+      } else {
+        modul3ReadyCount++;
+      }
     });
 
     return {
@@ -718,8 +878,21 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       barcodeActiveCount,
       barcodeIssueCount,
       barcodeBelumAdaCount,
+      modul3ReadyCount,
+      modul3BreakdownCount,
+      modul3LimitOperasiCount,
     };
-  }, [units]);
+  }, [units, modul3StatusByUnitId]);
+
+  const modul3StatusMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    (units || []).forEach((u) => {
+      if (u) {
+        map[u.id] = modul3StatusByUnitId[u.id]?.label || 'Ready';
+      }
+    });
+    return map;
+  }, [units, modul3StatusByUnitId]);
 
   // Handler Pratinjau Dokumen PDF Resmi
   const handleOpenPdfPreview = () => {
@@ -731,10 +904,12 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       const result = generateOperatorSettingPDF({
         units: displayedUnits,
         allUnits: units,
+        modul3StatusMap,
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
           statusFilter: tableFilterStatus,
+          modul3StatusFilter: tableFilterModul3Status,
           barcodeFilter: tableFilterBarcode,
           viewMode,
         },
@@ -770,10 +945,12 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       exportOperatorSettingToPDF({
         units: displayedUnits,
         allUnits: units,
+        modul3StatusMap,
         currentUser,
         filterInfo: {
           jenisFilter: tableFilterJenis,
           statusFilter: tableFilterStatus,
+          modul3StatusFilter: tableFilterModul3Status,
           barcodeFilter: tableFilterBarcode,
           viewMode,
         },
@@ -807,7 +984,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       'NAMA ALAT',
       'JENIS',
       'LOKASI',
-      'STATUS UNIT',
+      'STATUS UNIT (MODUL 3)',
+      'STATUS ASET (MODUL 1)',
       'OPERATOR/SOPIR',
       'JABATAN',
       'JOB (PEKERJAAN)',
@@ -822,6 +1000,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
       `"${(u.namaAlat || '').replace(/"/g, '""')}"`,
       `"${(u.jenis || '').replace(/"/g, '""')}"`,
       `"${(u.loc || '').replace(/"/g, '""')}"`,
+      `"${modul3StatusByUnitId[u.id]?.label || 'Ready'}"`,
       `"${u.status || ''}"`,
       `"${(u.operatorName || '').replace(/"/g, '""')}"`,
       `"${(u.operatorJabatan || '').replace(/"/g, '""')}"`,
@@ -1005,22 +1184,36 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                 </option>
                 {unitsOfSelectedJenis.map((u, uIdx) => {
                   const hasOp = u.operatorName && u.operatorName.trim();
+                  const m3 = modul3StatusByUnitId[u.id];
                   return (
                     <option key={`${u.id}_${uIdx}`} value={u.id}>
-                      {u.cnNew} - {u.namaAlat} {hasOp ? `✓ [Op: ${u.operatorName}]` : '[Belum Ada Operator]'}
+                      {u.cnNew} - {u.namaAlat} [{m3?.label || 'Ready'}] {hasOp ? `✓ [Op: ${u.operatorName}]` : '[Belum Ada Operator]'}
                     </option>
                   );
                 })}
               </select>
 
               {currentSelectedUnit ? (
-                <div className="flex items-center justify-between text-[10px] font-mono text-stone-400 pt-0.5">
-                  <span className="truncate max-w-[170px]" title={currentSelectedUnit.namaAlat}>
+                <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-stone-400 pt-0.5 flex-wrap">
+                  <span className="truncate max-w-[150px]" title={currentSelectedUnit.namaAlat}>
                     {currentSelectedUnit.namaAlat}
                   </span>
-                  <span className="text-amber-400 font-bold shrink-0">
-                    {currentSelectedUnit.status || 'Operasi'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {(() => {
+                      const m3 = modul3StatusByUnitId[currentSelectedUnit.id] || { status: 'READY' as Modul3UnitStatus, label: 'Ready' as const, hasRecord: false };
+                      return (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9.5px] font-bold border ${getModul3StatusBadge(m3.status)}`}
+                          title={m3.moNumber ? `Auto Modul 3 • MO #${m3.moNumber}` : 'Status Otomatis Modul 3'}
+                        >
+                          ● {m3.label}
+                        </span>
+                      );
+                    })()}
+                    <span className="text-amber-400 font-bold">
+                      {currentSelectedUnit.status || 'Operasi'}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <p className="text-[10px] text-stone-500 font-mono">
@@ -1600,6 +1793,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               setViewMode('ALL_UNITS');
               setTableFilterBarcode('ALL');
               setTableFilterJenis('ALL');
+              setTableFilterModul3Status('ALL');
               setTableFilterStatus('ALL');
             }}
             className="p-3 rounded-2xl bg-stone-950/80 border border-stone-800 hover:border-stone-700 text-left transition cursor-pointer group"
@@ -1716,6 +1910,60 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
           </button>
         </div>
 
+        {/* Strip Ringkasan Status Unit Otomatis dari Update Modul 3 (Ready, Breakdown, Limit Operasi) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-stone-950/70 border border-stone-800 text-xs font-mono">
+          <div className="flex items-center gap-2 text-stone-400">
+            <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-300">
+              Status Unit Auto (Modul 3):
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTableFilterModul3Status(tableFilterModul3Status === 'READY' ? 'ALL' : 'READY')}
+              className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                tableFilterModul3Status === 'READY'
+                  ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 ring-1 ring-emerald-500/40'
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+              }`}
+            >
+              ● Ready ({stats.modul3ReadyCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableFilterModul3Status(tableFilterModul3Status === 'BREAKDOWN' ? 'ALL' : 'BREAKDOWN')}
+              className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                tableFilterModul3Status === 'BREAKDOWN'
+                  ? 'bg-rose-500/25 border-rose-400 text-rose-200 ring-1 ring-rose-500/40'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20'
+              }`}
+            >
+              ● Breakdown ({stats.modul3BreakdownCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTableFilterModul3Status(tableFilterModul3Status === 'LIMIT OPERASI' ? 'ALL' : 'LIMIT OPERASI')}
+              className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                tableFilterModul3Status === 'LIMIT OPERASI'
+                  ? 'bg-amber-500/25 border-amber-400 text-amber-200 ring-1 ring-amber-500/40'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+              }`}
+            >
+              ● Limit Operasi ({stats.modul3LimitOperasiCount})
+            </button>
+            {tableFilterModul3Status !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setTableFilterModul3Status('ALL')}
+                className="text-[11px] text-stone-400 hover:text-white underline px-1.5 cursor-pointer"
+              >
+                Semua
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Notifikasi Filter Aktif Khusus Barcode Rusak / Hilang */}
         {tableFilterBarcode === 'RUSAK_HILANG' && (
           <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-xs font-mono text-rose-200 flex items-center justify-between animate-fade-in">
@@ -1763,7 +2011,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                 <option value="cnNew" className="bg-stone-900 text-stone-200">No. Unit (CN New)</option>
                 <option value="namaAlat" className="bg-stone-900 text-stone-200">Nama Alat</option>
                 <option value="jenis" className="bg-stone-900 text-stone-200">Jenis Unit</option>
-                <option value="status" className="bg-stone-900 text-stone-200">Status Unit (Registrasi)</option>
+                <option value="modul3Status" className="bg-stone-900 text-stone-200">Status Unit (Modul 3)</option>
+                <option value="status" className="bg-stone-900 text-stone-200">Status Aset (Registrasi)</option>
                 <option value="operatorName" className="bg-stone-900 text-stone-200">Nama Operator</option>
                 <option value="operatorJob" className="bg-stone-900 text-stone-200">Job (Pekerjaan)</option>
                 <option value="barcodeFuelStatus" className="bg-stone-900 text-stone-200">Status Barcode</option>
@@ -1791,6 +2040,20 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               ))}
             </select>
 
+            {/* Filter Status Unit Otomatis dari Modul 3 */}
+            <select
+              id="filter-status-unit-modul3"
+              value={tableFilterModul3Status}
+              onChange={(e) => setTableFilterModul3Status(e.target.value as 'ALL' | Modul3UnitStatus)}
+              className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-emerald-300 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
+              title="Filter berdasarkan status unit otomatis dari Update Modul 3 (Ready, Breakdown, Limit Operasi)"
+            >
+              <option value="ALL" className="bg-stone-900 text-stone-200">Semua Status (Modul 3)</option>
+              <option value="READY" className="bg-stone-900 text-emerald-400">● Ready ({stats.modul3ReadyCount})</option>
+              <option value="BREAKDOWN" className="bg-stone-900 text-rose-400">● Breakdown ({stats.modul3BreakdownCount})</option>
+              <option value="LIMIT OPERASI" className="bg-stone-900 text-amber-400">● Limit Operasi ({stats.modul3LimitOperasiCount})</option>
+            </select>
+
             {/* Filter Status Unit dari Data Registrasi Asset */}
             <select
               id="filter-status-unit-registrasi"
@@ -1799,7 +2062,7 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
               className="bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none cursor-pointer"
               title="Filter unit berdasarkan Status Operasional dari data Registrasi Asset"
             >
-              <option value="ALL" className="bg-stone-900 text-stone-200">Semua Status (Registrasi Asset)</option>
+              <option value="ALL" className="bg-stone-900 text-stone-200">Semua Status Aset (M1)</option>
               {uniqueStatusList.map((st) => (
                 <option key={st} value={st} className="bg-stone-900 text-stone-200">
                   Status: {st}
@@ -1861,7 +2124,8 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                     <th className="px-3.5 py-3 w-10 text-center">No</th>
                     {renderSortHeader('No. Unit (CN New)', 'cnNew', 'min-w-[170px]')}
                     {renderSortHeader('Jenis Unit', 'jenis', 'min-w-[130px]')}
-                    {renderSortHeader('Status Unit', 'status', 'min-w-[140px]')}
+                    {renderSortHeader('Status Unit (Modul 3)', 'modul3Status', 'min-w-[150px]')}
+                    {renderSortHeader('Status Aset (M1)', 'status', 'min-w-[135px]')}
                     {renderSortHeader('Nama Operator / Sopir', 'operatorName', 'min-w-[200px]')}
                     {renderSortHeader('Job (Pekerjaan)', 'operatorJob', 'min-w-[180px]')}
                     {renderSortHeader('Status Barcode Fuel', 'barcodeFuelStatus', 'min-w-[150px]')}
@@ -1871,12 +2135,13 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                   {/* BARIS FILTER PER KOLOM HEADER (Filter Cepat) */}
                   <tr className="bg-stone-900/90 border-b border-stone-800/80 text-[10px] font-mono lowercase">
                     <th className="p-1.5 text-center">
-                      {(colFilterCn || colFilterJenis !== 'ALL' || colFilterStatus !== 'ALL' || colFilterOperator || colFilterJob || colFilterBarcode !== 'ALL' || colFilterRemark) ? (
+                      {(colFilterCn || colFilterJenis !== 'ALL' || colFilterModul3Status !== 'ALL' || colFilterStatus !== 'ALL' || colFilterOperator || colFilterJob || colFilterBarcode !== 'ALL' || colFilterRemark) ? (
                         <button
                           type="button"
                           onClick={() => {
                             setColFilterCn('');
                             setColFilterJenis('ALL');
+                            setColFilterModul3Status('ALL');
                             setColFilterStatus('ALL');
                             setColFilterOperator('');
                             setColFilterJob('');
@@ -1915,7 +2180,20 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                         ))}
                       </select>
                     </th>
-                    {/* Filter Status */}
+                    {/* Filter Status Unit (Modul 3) */}
+                    <th className="p-1.5">
+                      <select
+                        value={colFilterModul3Status}
+                        onChange={(e) => setColFilterModul3Status(e.target.value as 'ALL' | Modul3UnitStatus)}
+                        className="w-full bg-stone-950 border border-stone-700/80 rounded px-1 py-1 text-xs text-stone-200 focus:outline-none focus:ring-1 focus:ring-amber-500 font-mono cursor-pointer"
+                      >
+                        <option value="ALL">Semua</option>
+                        <option value="READY">Ready</option>
+                        <option value="BREAKDOWN">Breakdown</option>
+                        <option value="LIMIT OPERASI">Limit Operasi</option>
+                      </select>
+                    </th>
+                    {/* Filter Status Aset */}
                     <th className="p-1.5">
                       <select
                         value={colFilterStatus}
@@ -2016,9 +2294,39 @@ export const OperatorSettingSubView: React.FC<OperatorSettingSubViewProps> = ({
                           </span>
                         </td>
 
-                        {/* Status Unit (dari Registrasi Asset) */}
+                        {/* Status Unit Otomatis dari Update Modul 3 */}
                         <td className="px-3.5 py-3">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getAssetStatusBadge(u.status)} font-mono`}>
+                          {(() => {
+                            const m3 = modul3StatusByUnitId[u.id] || {
+                              status: 'READY' as Modul3UnitStatus,
+                              label: 'Ready' as const,
+                              hasRecord: false,
+                            };
+                            return (
+                              <div className="space-y-1">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getModul3StatusBadge(m3.status)} font-mono whitespace-nowrap`}
+                                  title={
+                                    m3.hasRecord
+                                      ? `Auto Modul 3${m3.moNumber ? ` • MO #${m3.moNumber}` : ''}${m3.detailProblem ? ` — ${m3.detailProblem}` : ''}`
+                                      : 'Auto Modul 3 • Tidak ada catatan breakdown aktif'
+                                  }
+                                >
+                                  ● {m3.label}
+                                </span>
+                                {m3.hasRecord && m3.moNumber && (
+                                  <div className="text-[9px] text-stone-400 font-mono truncate max-w-[140px]" title={m3.detailProblem || ''}>
+                                    MO #{m3.moNumber}{m3.progress ? ` • ${m3.progress}` : ''}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
+
+                        {/* Status Aset (dari Registrasi Asset) */}
+                        <td className="px-3.5 py-3">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${getAssetStatusBadge(u.status)} font-mono whitespace-nowrap`}>
                             ● {u.status || 'Operasi'}
                           </span>
                         </td>
