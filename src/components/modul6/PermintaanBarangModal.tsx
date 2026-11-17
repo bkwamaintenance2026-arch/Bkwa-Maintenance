@@ -22,6 +22,8 @@ interface PermintaanBarangModalProps {
   noMaintenanceOrder?: string;
   noUnit?: string;
   namaAlat?: string;
+  defaultAlasan?: string;
+  refLabel?: string;
   initialItems?: Array<{
     partNumber: string;
     namaBarang: string;
@@ -35,6 +37,7 @@ interface PermintaanBarangModalProps {
     message: string;
     request?: PurchaseRequest;
   };
+  onPrintPR?: (pr: PurchaseRequest) => void;
 }
 
 export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
@@ -43,9 +46,12 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
   noMaintenanceOrder = '',
   noUnit = '',
   namaAlat = '',
+  defaultAlasan = 'Stok gudang tidak mencukupi untuk perbaikan breakdown unit.',
+  refLabel = 'Reff No. Maintenance Order',
   initialItems = [],
   currentUser,
   onSubmitPR,
+  onPrintPR,
 }) => {
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
@@ -56,7 +62,7 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
     pemohon: currentUser.fullName || currentUser.username,
     jabatanPemohon: currentUser.department || 'Mekanik / Logistik',
     urgensi: 'NORMAL' as 'NORMAL' | 'URGENT' | 'EMERGENCY',
-    alasanPermintaan: 'Stok gudang tidak mencukupi untuk perbaikan breakdown unit.',
+    alasanPermintaan: defaultAlasan,
   });
 
   const [items, setItems] = useState<Array<{
@@ -85,7 +91,12 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
         ]
   );
 
-  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string; prNo?: string } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+    prNo?: string;
+    createdRequest?: PurchaseRequest;
+  } | null>(null);
 
   if (!isOpen) return null;
 
@@ -150,6 +161,7 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
         type: 'success',
         message: res.message,
         prNo: res.request.noPermintaan,
+        createdRequest: res.request,
       });
     } else {
       setFeedback({
@@ -205,11 +217,21 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
                 <div>
                   <p className="text-xs font-bold font-mono">{feedback.message}</p>
                   {feedback.prNo && (
-                    <div className="mt-2 flex items-center gap-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <span className="text-[11px] text-stone-300">Nomor Form SPB:</span>
                       <span className="px-2.5 py-1 rounded bg-amber-500 text-stone-950 font-mono font-black text-xs">
                         {feedback.prNo}
                       </span>
+                      {onPrintPR && feedback.createdRequest && (
+                        <button
+                          type="button"
+                          onClick={() => onPrintPR(feedback.createdRequest!)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-300 border border-amber-500/40 text-xs font-mono font-bold transition"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print Preview SPB</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -236,7 +258,7 @@ export const PermintaanBarangModal: React.FC<PermintaanBarangModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 rounded-xl bg-stone-950/60 border border-stone-800 text-xs font-mono">
               <div>
                 <label className="text-stone-400 block text-[10px] uppercase font-bold mb-1">
-                  Reff No. Maintenance Order
+                  {refLabel}
                 </label>
                 <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-stone-900 border border-amber-500/40 text-amber-400 font-bold">
                   <Hash className="w-3.5 h-3.5 text-amber-500" />

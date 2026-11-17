@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   AssetUnit,
   MasterPartItem,
+  PurchaseRequest,
   RplPackage,
   RplPackageItem,
   RPL_INTERVAL_OPTIONS,
@@ -11,6 +12,7 @@ import {
   getAllRplPackages,
   addOrUpdateRplPackage,
   deleteRplPackage,
+  createPurchaseRequest,
   getAllManpower,
   isDeveloper,
   canUserInsertModule,
@@ -19,9 +21,13 @@ import {
   canUserExportModule,
   canUserPrintPreviewModule,
 } from '../../utils/storage';
-import { generateRplPackagePDF } from '../../utils/pdfGenerator';
+import {
+  generateRplPackagePDF,
+  generatePurchaseRequestPDF,
+} from '../../utils/pdfGenerator';
 import { resolveReportSignatories } from '../../utils/reportSignatories';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { PermintaanBarangModal } from '../modul6/PermintaanBarangModal';
 import {
   Package,
   Plus,
@@ -39,6 +45,7 @@ import {
   Layers,
   Lock,
   ArrowRightLeft,
+  FileText,
 } from 'lucide-react';
 
 interface RplSubViewProps {
@@ -58,6 +65,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const canDelete = canUserDeleteModule(currentUser, 8) || isDev;
   const canExport = canUserExportModule(currentUser, 8) || isDev;
   const canPrintPreview = canUserPrintPreviewModule(currentUser, 8) || isDev;
+  const canCreateSpb =
+    canInsert || canUserInsertModule(currentUser, 6) || isDev;
 
   const [packages, setPackages] = useState<RplPackage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,6 +91,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
+    createdPr?: PurchaseRequest;
   } | null>(null);
 
   // Quick package caller state
@@ -95,7 +105,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [listSearch, setListSearch] = useState('');
   const [listIntervalFilter, setListIntervalFilter] = useState('ALL');
 
-  // Form create/edit state
+  // Form create/edit state (1. PN Paket RPL, 2. Nama Paket Service, 3. Interval Service, 4. JENIS, 5. NO UNIT, 6. Catatan Paket)
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
   const [packagePn, setPackagePn] = useState('');
@@ -106,10 +116,10 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [packageNotes, setPackageNotes] = useState<string>('');
   const [draftItems, setDraftItems] = useState<RplPackageItem[]>([]);
 
-  // Master Part Picker inside form
+  // Secondary filter on filtered Master Part catalog list inside Form RPL
   const [pickerSearch, setPickerSearch] = useState('');
-  const [pickerJenisFilter, setPickerJenisFilter] = useState('');
   const [pickerKategoriFilter, setPickerKategoriFilter] = useState('ALL');
+  const [includeNonUnitInPicker, setIncludeNonUnitInPicker] = useState(false);
 
   // Delete confirmation modal state
   const [deletingPkg, setDeletingPkg] = useState<{
@@ -117,6 +127,31 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     pn: string;
     name: string;
   } | null>(null);
+
+  // Create SPB Modal state
+  const [spbModalState, setSpbModalState] = useState<{
+    isOpen: boolean;
+    key: number;
+    noMaintenanceOrder: string;
+    noUnit: string;
+    namaAlat: string;
+    defaultAlasan: string;
+    items: Array<{
+      partNumber: string;
+      namaBarang: string;
+      qtyDiminta: number;
+      satuan: string;
+      keterangan?: string;
+    }>;
+  }>({
+    isOpen: false,
+    key: 0,
+    noMaintenanceOrder: '',
+    noUnit: '',
+    namaAlat: '',
+    defaultAlasan: '',
+    items: [],
+  });
 
   // PDF Preview state
   const [pdfPreview, setPdfPreview] = useState<{
@@ -138,16 +173,37 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     return map;
   }, [masterParts]);
 
-  const availableJenisOptions = useMemo(() => {
-    const set = new Set<string>();
+  // Pengelompokan JENIS berdasarkan Modul 1
+  const jenisCountsModul1 = useMemo(() => {
+    const map = new Map<string, number>();
     units.forEach((u) => {
-      if (u.jenis && u.jenis.trim()) set.add(u.jenis.trim());
+      const j = (u.jenis || '').trim();
+      if (j) map.set(j, (map.get(j) || 0) + 1);
     });
+    return map;
+  }, [units]);
+
+  const availableJenisOptions = useMemo(() => {
+    const set = new Set<string>(Array.from(jenisCountsModul1.keys()));
     masterParts.forEach((p) => {
-      if (p.jenisUnit && p.jenisUnit.trim()) set.add(p.jenisUnit.trim());
+      if (p.jenisUnit && p.jenisUnit.trim() && p.jenisUnit.trim() !== 'Non Unit') {
+        set.add(p.jenisUnit.trim());
+      }
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [units, masterParts]);
+  }, [jenisCountsModul1, masterParts]);
+
+  // Pengelompokan NO UNIT berdasarkan Modul 1 sesuai JENIS terpilih
+  const groupedNoUnitsModul1 = useMemo(() => {
+    if (targetJenisUnit === 'Non Unit') return [];
+    const list =
+      targetJenisUnit === 'Semua Unit'
+        ? units
+        : units.filter(
+            (u) => (u.jenis || '').trim().toLowerCase() === targetJenisUnit.toLowerCase()
+          );
+    return [...list].sort((a, b) => (a.cnNew || '').localeCompare(b.cnNew || ''));
+  }, [units, targetJenisUnit]);
 
   const matchingCallerPackages = useMemo(() => {
     const q = callerQuery.trim().toLowerCase();
@@ -189,22 +245,60 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     });
   }, [packages, listIntervalFilter, listSearch]);
 
+  // List Katalog Master Part Terdaftar yang sudah terfilter sesuai JENIS (#4) dan NO UNIT (#5)
   const filteredMasterPickerParts = useMemo(() => {
     return masterParts.filter((p) => {
-      if (pickerJenisFilter && (p.jenisUnit || '').toLowerCase() !== pickerJenisFilter.toLowerCase()) {
-        return false;
+      const partJenis = (p.jenisUnit || '').trim().toLowerCase();
+      const partNoUnit = (p.noUnit || '').trim().toLowerCase();
+      const isPartNonUnit = partJenis === 'non unit' || partNoUnit === 'non-unit';
+
+      // Filter berdasar 4. JENIS & 5. NO UNIT
+      if (targetJenisUnit === 'Non Unit') {
+        if (!isPartNonUnit) return false;
+      } else if (targetJenisUnit !== 'Semua Unit') {
+        const matchesJenis = partJenis === targetJenisUnit.toLowerCase();
+        if (!(matchesJenis || (includeNonUnitInPicker && isPartNonUnit))) {
+          return false;
+        }
+        if (targetNoUnit.trim() && !(includeNonUnitInPicker && isPartNonUnit)) {
+          if (partNoUnit !== targetNoUnit.trim().toLowerCase()) {
+            return false;
+          }
+        }
+      } else if (targetNoUnit.trim()) {
+        // Semua Unit, tapi user memilih spesifik No Unit
+        if (partNoUnit !== targetNoUnit.trim().toLowerCase() && !(includeNonUnitInPicker && isPartNonUnit)) {
+          return false;
+        }
       }
+
       if (pickerKategoriFilter !== 'ALL' && p.kategori !== pickerKategoriFilter) {
         return false;
       }
       if (pickerSearch.trim()) {
         const q = pickerSearch.toLowerCase();
-        const hay = `${p.pn} ${p.namaPart} ${p.merk} ${p.noUnit} ${p.jenisUnit}`.toLowerCase();
+        const subText = (p.interchangeParts || [])
+          .map((s) => `${s.pn} ${s.namaPart} ${s.merk}`)
+          .join(' ');
+        const hay = `${p.pn} ${p.namaPart} ${p.merk} ${p.noUnit} ${p.jenisUnit} ${p.modelUnit || ''} ${subText}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [masterParts, pickerSearch, pickerJenisFilter, pickerKategoriFilter]);
+  }, [
+    masterParts,
+    targetJenisUnit,
+    targetNoUnit,
+    includeNonUnitInPicker,
+    pickerSearch,
+    pickerKategoriFilter,
+  ]);
+
+  const draftItemsMap = useMemo(() => {
+    const map = new Map<string, RplPackageItem>();
+    draftItems.forEach((item) => map.set(item.masterPartId, item));
+    return map;
+  }, [draftItems]);
 
   const resetBuilderForm = () => {
     setEditingPkgId(null);
@@ -216,6 +310,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setPackageNotes('');
     setDraftItems([]);
     setPickerSearch('');
+    setPickerKategoriFilter('ALL');
+    setIncludeNonUnitInPicker(false);
   };
 
   const handleOpenNewBuilder = () => {
@@ -237,16 +333,11 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setShowBuilder(true);
   };
 
-  const handleAddMasterPartToDraft = (part: MasterPartItem) => {
+  const handleToggleMasterPartCheckbox = (part: MasterPartItem) => {
     setDraftItems((prev) => {
-      const existingIdx = prev.findIndex((i) => i.masterPartId === part.id);
-      if (existingIdx !== -1) {
-        const updated = [...prev];
-        updated[existingIdx] = {
-          ...updated[existingIdx],
-          qtyNeeded: updated[existingIdx].qtyNeeded + 1,
-        };
-        return updated;
+      const exists = prev.some((i) => i.masterPartId === part.id);
+      if (exists) {
+        return prev.filter((i) => i.masterPartId !== part.id);
       }
       return [
         ...prev,
@@ -267,20 +358,64 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     });
   };
 
-  const handleUpdateDraftItem = (
-    idx: number,
+  const handleToggleAllFilteredCheckboxes = () => {
+    if (filteredMasterPickerParts.length === 0) return;
+    const allFilteredChecked = filteredMasterPickerParts.every((p) =>
+      draftItemsMap.has(p.id)
+    );
+    if (allFilteredChecked) {
+      const filteredSet = new Set(filteredMasterPickerParts.map((p) => p.id));
+      setDraftItems((prev) => prev.filter((item) => !filteredSet.has(item.masterPartId)));
+    } else {
+      setDraftItems((prev) => {
+        const existingSet = new Set(prev.map((i) => i.masterPartId));
+        const additions: RplPackageItem[] = filteredMasterPickerParts
+          .filter((p) => !existingSet.has(p.id))
+          .map((part, idx) => ({
+            id: `RPLI-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+            masterPartId: part.id,
+            pn: part.pn || '-',
+            namaPart: part.namaPart,
+            merk: part.merk || 'Universal',
+            kategori: part.kategori,
+            jenisPart: part.jenisPart,
+            fungsi: part.fungsi,
+            satuan: part.satuan || 'Pcs',
+            qtyNeeded: 1,
+            notes: '',
+          }));
+        return [...prev, ...additions];
+      });
+    }
+  };
+
+  const handleUpdateDraftItemByMasterId = (
+    masterPartId: string,
     field: 'qtyNeeded' | 'notes',
     value: number | string
   ) => {
-    setDraftItems((prev) => {
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: value };
-      return copy;
-    });
+    setDraftItems((prev) =>
+      prev.map((item) =>
+        item.masterPartId === masterPartId ? { ...item, [field]: value } : item
+      )
+    );
   };
 
-  const handleRemoveDraftItem = (idx: number) => {
-    setDraftItems((prev) => prev.filter((_, i) => i !== idx));
+  const buildDraftPreviewPackage = (): RplPackage => {
+    const now = new Date().toISOString();
+    return {
+      id: editingPkgId || 'DRAFT-RPL',
+      packagePn: packagePn.trim().toUpperCase() || 'DRAFT-RPL',
+      packageName: packageName.trim() || `Paket Service Periodic ${serviceInterval}`,
+      serviceInterval,
+      jenisUnit: targetJenisUnit || 'Semua Unit',
+      noUnit: targetNoUnit.trim(),
+      notes: packageNotes.trim(),
+      items: draftItems,
+      createdBy: currentUser.fullName || currentUser.username,
+      createdAt: now,
+      updatedAt: now,
+    };
   };
 
   const handleSavePackage = (e: React.FormEvent) => {
@@ -293,6 +428,14 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     }
     if (!editingPkgId && !canInsert) {
       setFeedback({ type: 'error', message: 'Akses ditolak: Anda tidak memiliki izin Buat Paket RPL.' });
+      return;
+    }
+
+    if (draftItems.length === 0) {
+      setFeedback({
+        type: 'error',
+        message: 'Centang minimal 1 part dari Katalog Master Part terlebih dahulu sebelum menyimpan RPL!',
+      });
       return;
     }
 
@@ -370,6 +513,96 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       title: `Print Preview RPL — ${pkg.packagePn}`,
       downloadFn: pdfRes.download,
     });
+  };
+
+  const handlePrintSpbDocument = (pr: PurchaseRequest) => {
+    if (!canPrintPreview) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses ditolak: Anda tidak memiliki izin Print Preview pada Modul 8.',
+      });
+      return;
+    }
+    const manpower = getAllManpower();
+    const signatories = resolveReportSignatories(manpower, currentUser);
+    const pdfRes = generatePurchaseRequestPDF({
+      pr,
+      currentUser,
+      signatories,
+    });
+    setSpbModalState((prev) => ({ ...prev, isOpen: false }));
+    setPdfPreview({
+      isOpen: true,
+      blobUrl: pdfRes.blobUrl,
+      filename: pdfRes.filename,
+      title: `Print Preview SPB — ${pr.noPermintaan}`,
+      downloadFn: pdfRes.download,
+    });
+  };
+
+  const handleOpenCreateSpbFromPackage = (pkg: RplPackage) => {
+    if (!canCreateSpb) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses ditolak: Anda tidak memiliki izin membuat SPB (Modul 6 / Modul 8).',
+      });
+      return;
+    }
+    if (!pkg.items || pkg.items.length === 0) {
+      setFeedback({
+        type: 'error',
+        message: 'Centang atau pilih minimal 1 part di paket RPL sebelum membuat SPB.',
+      });
+      return;
+    }
+
+    const matchedUnit = pkg.noUnit
+      ? units.find((u) => (u.cnNew || '').toLowerCase() === pkg.noUnit!.toLowerCase())
+      : undefined;
+
+    const resolvedNoUnit = pkg.noUnit || (pkg.jenisUnit === 'Non Unit' ? 'NON-UNIT' : pkg.jenisUnit || 'ALL');
+    const resolvedNamaAlat = matchedUnit
+      ? `${matchedUnit.namaAlat}${matchedUnit.modelUnit ? ` (${matchedUnit.modelUnit})` : ''}`
+      : `${pkg.jenisUnit || 'Service Periodic'} — ${pkg.serviceInterval}`;
+
+    setSpbModalState({
+      isOpen: true,
+      key: Date.now(),
+      noMaintenanceOrder: `${pkg.packagePn} (${pkg.serviceInterval})`,
+      noUnit: resolvedNoUnit,
+      namaAlat: resolvedNamaAlat,
+      defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Paket RPL ${pkg.packagePn} (${pkg.packageName}).`,
+      items: pkg.items.map((item) => {
+        const live = masterPartsMap.get(item.masterPartId);
+        return {
+          partNumber: live?.pn || item.pn || '-',
+          namaBarang: live?.namaPart || item.namaPart,
+          qtyDiminta: Math.max(1, Number(item.qtyNeeded) || 1),
+          satuan: live?.satuan || item.satuan || 'Pcs',
+          keterangan: item.notes || `Paket ${pkg.packagePn} (${pkg.serviceInterval})`,
+        };
+      }),
+    });
+  };
+
+  const handleSubmitSpb = (
+    data: Omit<PurchaseRequest, 'id' | 'noPermintaan' | 'createdAt' | 'status'>
+  ) => {
+    if (!canCreateSpb) {
+      return {
+        success: false,
+        message: 'Akses ditolak: Anda tidak memiliki izin membuat SPB.',
+      };
+    }
+    const res = createPurchaseRequest(data);
+    if (res.success && res.request) {
+      setFeedback({
+        type: 'success',
+        message: `${res.message} Tersimpan juga ke Modul 6 (Inventory Management).`,
+        createdPr: res.request,
+      });
+    }
+    return res;
   };
 
   const handleClosePdfPreview = () => {
@@ -453,11 +686,17 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setExpandedInterchangePartIds({});
   };
 
+  const allFilteredChecked =
+    filteredMasterPickerParts.length > 0 &&
+    filteredMasterPickerParts.every((p) => draftItemsMap.has(p.id));
+
+  const totalDraftQty = draftItems.reduce((a, b) => a + (Number(b.qtyNeeded) || 0), 0);
+
   return (
     <div className="space-y-6">
       {feedback && (
         <div
-          className={`p-3.5 rounded-lg flex items-center justify-between text-sm ${
+          className={`p-3.5 rounded-lg flex flex-wrap items-center justify-between gap-3 text-sm ${
             feedback.type === 'success'
               ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
               : 'bg-red-950/60 border border-red-800 text-red-300'
@@ -471,13 +710,26 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
             )}
             <span>{feedback.message}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setFeedback(null)}
-            className="text-stone-400 hover:text-stone-200"
-          >
-            <X className="w-4 h-4" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {feedback.createdPr && canPrintPreview && (
+              <button
+                type="button"
+                onClick={() => handlePrintSpbDocument(feedback.createdPr!)}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-amber-500 text-stone-950 hover:bg-amber-400 rounded-md transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print SPB ({feedback.createdPr.noPermintaan})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="text-stone-400 hover:text-stone-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -636,6 +888,17 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                     <Printer className="w-3.5 h-3.5" />
                     <span>Print Preview</span>
                   </button>
+
+                  {canCreateSpb && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateSpbFromPackage(activePackage)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30 transition-colors whitespace-nowrap"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Create SPB</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -836,7 +1099,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         </div>
       </div>
 
-      {/* SECTION 2: FORM BUAT / EDIT PAKET RPL */}
+      {/* SECTION 2: FORM BUAT / EDIT PAKET RPL BARU (1-6 + KATALOG TERFILTER DENGAN KOTAK CENTANG SISI KIRI) */}
       {showBuilder && (canInsert || canEdit) && (
         <form
           onSubmit={handleSavePackage}
@@ -846,7 +1109,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
             <div className="flex items-center gap-2 text-stone-100 font-semibold text-sm">
               <Layers className="w-4 h-4 text-amber-500" />
               <span>
-                {editingPkgId ? `Edit Paket RPL — ${packagePn}` : 'Buat Paket RPL (Recommended Part List) Baru'}
+                {editingPkgId
+                  ? `Edit Paket RPL — ${packagePn}`
+                  : 'Buat Paket RPL (Recommended Part List) Baru'}
               </span>
             </div>
             <button
@@ -862,301 +1127,396 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
           </div>
 
           <div className="p-5 space-y-5">
-            {/* Metadata Paket */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  PN Paket RPL <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={packagePn}
-                  onChange={(e) => setPackagePn(e.target.value.toUpperCase())}
-                  placeholder="Misal: RPL-EX200-250HM"
-                  className="w-full bg-stone-950 border border-stone-700 text-amber-400 font-mono text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                  required
-                />
-              </div>
+            {/* 6 Field Metadata Paket RPL Sesuai Urutan Spesifikasi */}
+            <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 1. PN Paket RPL */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    1. PN Paket RPL <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={packagePn}
+                    onChange={(e) => setPackagePn(e.target.value.toUpperCase())}
+                    placeholder="Misal: RPL-EX200-250HM"
+                    className="w-full bg-stone-900 border border-stone-700 text-amber-400 font-mono text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
 
-              <div className="lg:col-span-2">
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Nama Paket Service <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={packageName}
-                  onChange={(e) => setPackageName(e.target.value)}
-                  placeholder="Misal: Paket Service Periodic 250 HM Komatsu PC200"
-                  className="w-full bg-stone-950 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                  required
-                />
-              </div>
+                {/* 2. Nama Paket Service */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    2. Nama Paket Service <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={packageName}
+                    onChange={(e) => setPackageName(e.target.value)}
+                    placeholder="Misal: Paket Service Periodic 250 HM PC200-8"
+                    className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                    required
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Interval Service <span className="text-red-400">*</span>
-                </label>
-                <select
-                  value={serviceInterval}
-                  onChange={(e) => setServiceInterval(e.target.value)}
-                  className="w-full bg-stone-950 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                >
-                  {RPL_INTERVAL_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Target Jenis Unit
-                </label>
-                <select
-                  value={targetJenisUnit}
-                  onChange={(e) => setTargetJenisUnit(e.target.value)}
-                  className="w-full bg-stone-950 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="Semua Unit">Semua Unit</option>
-                  <option value="Non Unit">Non Unit</option>
-                  {availableJenisOptions
-                    .filter((j) => j !== 'Non Unit')
-                    .map((j) => (
-                      <option key={j} value={j}>
-                        {j}
+                {/* 3. Interval Service */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    3. Interval Service <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    value={serviceInterval}
+                    onChange={(e) => setServiceInterval(e.target.value)}
+                    className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                  >
+                    {RPL_INTERVAL_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
                       </option>
                     ))}
-                </select>
-              </div>
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  No Unit / Model Spesifik (Opsional)
-                </label>
-                <input
-                  type="text"
-                  value={targetNoUnit}
-                  onChange={(e) => setTargetNoUnit(e.target.value)}
-                  placeholder="Misal: EX-01 / PC200-8"
-                  className="w-full bg-stone-950 border border-stone-700 text-stone-200 font-mono text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                />
-              </div>
+                {/* 4. JENIS (Dikelompokkan dari Modul 1) */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    4. JENIS (Modul 1)
+                  </label>
+                  <select
+                    value={targetJenisUnit}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTargetJenisUnit(val);
+                      setTargetNoUnit(val === 'Non Unit' ? 'NON-UNIT' : '');
+                    }}
+                    className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Semua Unit">Semua Jenis Unit ({units.length} unit)</option>
+                    <option value="Non Unit">Non Unit (Umum / Workshop)</option>
+                    {availableJenisOptions.map((j) => (
+                      <option key={j} value={j}>
+                        {j} ({jenisCountsModul1.get(j) || 0} unit)
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="lg:col-span-4">
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Catatan Paket (Opsional)
-                </label>
-                <input
-                  type="text"
-                  value={packageNotes}
-                  onChange={(e) => setPackageNotes(e.target.value)}
-                  placeholder="Keterangan tambahan mengenai service periodic paket ini..."
-                  className="w-full bg-stone-950 border border-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
-                />
+                {/* 5. NO UNIT (Dikelompokkan dari Modul 1 berdasar JENIS) */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    5. NO UNIT (Modul 1)
+                  </label>
+                  <select
+                    value={targetNoUnit}
+                    onChange={(e) => setTargetNoUnit(e.target.value)}
+                    disabled={targetJenisUnit === 'Non Unit'}
+                    className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-mono ${
+                      targetJenisUnit === 'Non Unit'
+                        ? 'border-stone-800 text-sky-300 cursor-not-allowed'
+                        : 'border-stone-700 text-stone-100 focus:border-amber-500'
+                    }`}
+                  >
+                    {targetJenisUnit === 'Non Unit' ? (
+                      <option value="NON-UNIT">NON-UNIT (Umum / Workshop)</option>
+                    ) : (
+                      <>
+                        <option value="">
+                          Semua No Unit ({groupedNoUnitsModul1.length} unit)
+                        </option>
+                        {groupedNoUnitsModul1.map((u) => (
+                          <option key={u.id} value={u.cnNew}>
+                            {u.cnNew} — {u.namaAlat || u.jenis} ({u.modelUnit || '-'})
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                {/* 6. Catatan Paket (Opsional) */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    6. Catatan Paket (Opsional)
+                  </label>
+                  <input
+                    type="text"
+                    value={packageNotes}
+                    onChange={(e) => setPackageNotes(e.target.value)}
+                    placeholder="Keterangan tambahan mengenai paket service ini..."
+                    className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Split Grid: Master Part Picker (Kiri) & Item Terpilih (Kanan) */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-              {/* Picker Master Part Terdaftar */}
-              <div className="lg:col-span-6 border border-stone-800 rounded-xl bg-stone-950/70 flex flex-col overflow-hidden">
-                <div className="p-3 border-b border-stone-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-stone-200">
-                      Pilih Part dari Katalog Master Part Terdaftar
+            {/* List Katalog Master Terdaftar Sesuai Filtrasi dengan Kotak Centang di Sisi Kiri */}
+            <div className="border border-stone-800 rounded-xl bg-stone-950/70 overflow-hidden">
+              <div className="p-4 border-b border-stone-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-stone-100 uppercase tracking-wider">
+                      Daftar Katalog Master Part Terdaftar
                     </span>
-                    <span className="text-[11px] font-mono text-stone-400">
-                      {filteredMasterPickerParts.length} Part
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300">
+                      {filteredMasterPickerParts.length} Part Tampil
+                    </span>
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                      {draftItems.length} Part Dicentang · Total Qty: {totalDraftQty}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-stone-500 absolute left-2.5 top-2" />
-                      <input
-                        type="text"
-                        value={pickerSearch}
-                        onChange={(e) => setPickerSearch(e.target.value)}
-                        placeholder="Cari PN / Nama Part..."
-                        className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded pl-8 pr-2 py-1.5 focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                    <select
-                      value={pickerJenisFilter}
-                      onChange={(e) => setPickerJenisFilter(e.target.value)}
-                      className="bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="">Semua Jenis Unit</option>
-                      {availableJenisOptions.map((j) => (
-                        <option key={j} value={j}>
-                          {j}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={pickerKategoriFilter}
-                      onChange={(e) => setPickerKategoriFilter(e.target.value)}
-                      className="bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-amber-500"
-                    >
-                      <option value="ALL">Semua Kategori</option>
-                      <option value="Fast Moving">Fast Moving</option>
-                      <option value="Slow Moving">Slow Moving</option>
-                      <option value="Death Stock">Death Stock</option>
-                    </select>
-                  </div>
+                  <p className="text-[11px] text-stone-400 mt-1">
+                    Menampilkan part sesuai filter <strong className="text-stone-200">{targetJenisUnit}</strong>
+                    {targetNoUnit ? ` (${targetNoUnit})` : ''}. Centang kotak di sisi kiri untuk memasukkan part ke paket RPL.
+                  </p>
                 </div>
 
-                <div className="max-h-72 overflow-y-auto divide-y divide-stone-800/60">
-                  {filteredMasterPickerParts.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-stone-500">
-                      Tidak ada part di Katalog Master Part yang cocok. Daftarkan part terlebih dahulu di Tab Katalog Master Part.
-                    </div>
-                  ) : (
-                    filteredMasterPickerParts.map((part) => {
-                      const alreadyAdded = draftItems.some((i) => i.masterPartId === part.id);
-                      return (
-                        <div
-                          key={part.id}
-                          className="p-2.5 flex items-center justify-between gap-2 hover:bg-stone-900/50 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="font-mono font-bold text-amber-400 shrink-0">
-                                {part.pn || '-'}
-                              </span>
-                              <span className="font-medium text-stone-100 truncate">
-                                {part.namaPart}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-stone-400 flex flex-wrap items-center gap-1.5 mt-0.5">
-                              <span>{part.noUnit}</span>
-                              <span>·</span>
-                              <span>{part.merk || '-'}</span>
-                              <span>·</span>
-                              <span>Stok: {part.qty} {part.satuan || 'Pcs'}</span>
-                              <span>·</span>
-                              <span>{part.partRelationType || 'In Line'}</span>
-                            </div>
-                          </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-stone-500 absolute left-2.5 top-2" />
+                    <input
+                      type="text"
+                      value={pickerSearch}
+                      onChange={(e) => setPickerSearch(e.target.value)}
+                      placeholder="Cari PN / Nama Part..."
+                      className="bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded-lg pl-8 pr-2.5 py-1.5 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleAddMasterPartToDraft(part)}
-                            className={`px-2.5 py-1 text-[11px] font-semibold rounded border transition-colors whitespace-nowrap shrink-0 ${
-                              alreadyAdded
-                                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800 hover:bg-emerald-900/60'
-                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                  <select
+                    value={pickerKategoriFilter}
+                    onChange={(e) => setPickerKategoriFilter(e.target.value)}
+                    className="bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="ALL">Semua Kategori</option>
+                    <option value="Fast Moving">Fast Moving</option>
+                    <option value="Slow Moving">Slow Moving</option>
+                    <option value="Death Stock">Death Stock</option>
+                  </select>
+
+                  {targetJenisUnit !== 'Semua Unit' && targetJenisUnit !== 'Non Unit' && (
+                    <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-stone-900 border border-stone-700 text-xs text-stone-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeNonUnitInPicker}
+                        onChange={(e) => setIncludeNonUnitInPicker(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-amber-500 cursor-pointer"
+                      />
+                      <span>Sertakan Non Unit</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="max-h-96 overflow-auto">
+                <table className="w-full text-left text-xs border-collapse min-w-[980px]">
+                  <thead className="sticky top-0 z-10 bg-stone-900 text-stone-300 border-b border-stone-800 font-mono">
+                    <tr>
+                      <th className="py-2.5 px-3 w-12 text-center">
+                        <input
+                          type="checkbox"
+                          checked={allFilteredChecked}
+                          onChange={handleToggleAllFilteredCheckboxes}
+                          disabled={filteredMasterPickerParts.length === 0}
+                          title="Centang / Batal Centang Semua Part Tampil"
+                          className="w-4 h-4 accent-amber-500 cursor-pointer"
+                        />
+                      </th>
+                      <th className="py-2.5 px-2 w-10 text-center">No</th>
+                      <th className="py-2.5 px-3 w-28">No Unit / Jenis</th>
+                      <th className="py-2.5 px-3 w-36">Part Number (PN)</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">Nama Part</th>
+                      <th className="py-2.5 px-3 w-28">Merk</th>
+                      <th className="py-2.5 px-3 w-32">Kategori &amp; Jenis</th>
+                      <th className="py-2.5 px-3 w-28">Tipe</th>
+                      <th className="py-2.5 px-3 w-24 text-center">Stok Master</th>
+                      <th className="py-2.5 px-3 w-24 text-center">Qty Paket</th>
+                      <th className="py-2.5 px-3 w-44">Catatan Item</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-800/60">
+                    {filteredMasterPickerParts.length === 0 ? (
+                      <tr>
+                        <td colSpan={11} className="py-10 text-center text-stone-500 text-xs">
+                          Tidak ada part terdaftar di Katalog Master Part untuk filter{' '}
+                          <strong className="text-stone-300">{targetJenisUnit}</strong>
+                          {targetNoUnit ? ` (${targetNoUnit})` : ''}. Daftarkan part terlebih dahulu di Tab Katalog Master Part.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredMasterPickerParts.map((part, idx) => {
+                        const selectedItem = draftItemsMap.get(part.id);
+                        const isChecked = Boolean(selectedItem);
+                        const tipe = part.partRelationType || 'In Line';
+
+                        return (
+                          <tr
+                            key={part.id}
+                            className={`transition-colors ${
+                              isChecked ? 'bg-amber-500/10' : 'hover:bg-stone-900/50'
                             }`}
                           >
-                            {alreadyAdded ? '+1 Qty' : '+ Pilih'}
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Daftar Part Dalam Paket */}
-              <div className="lg:col-span-6 border border-stone-800 rounded-xl bg-stone-950/70 flex flex-col overflow-hidden">
-                <div className="p-3 border-b border-stone-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-stone-200">
-                    Daftar Part dalam Paket ({draftItems.length} PN)
-                  </span>
-                  <span className="text-[11px] font-mono text-amber-400">
-                    Total Qty: {draftItems.reduce((a, b) => a + (Number(b.qtyNeeded) || 0), 0)}
-                  </span>
-                </div>
-
-                <div className="max-h-72 overflow-y-auto">
-                  {draftItems.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-stone-500">
-                      Pilih satu atau beberapa item dari panel Katalog Master Part di sebelah kiri.
-                    </div>
-                  ) : (
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-stone-900 text-stone-400 border-b border-stone-800 font-mono">
-                          <th className="py-2 px-2.5">PN & Nama Part</th>
-                          <th className="py-2 px-2 w-20 text-center">Qty</th>
-                          <th className="py-2 px-2 w-32">Catatan</th>
-                          <th className="py-2 px-2 w-10 text-center">Hapus</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-800/60">
-                        {draftItems.map((item, idx) => (
-                          <tr key={item.id}>
-                            <td className="py-2 px-2.5">
-                              <span className="font-mono text-amber-400 font-semibold block">
-                                {item.pn}
-                              </span>
-                              <span className="text-stone-200 block text-[11px]">
-                                {item.namaPart} ({item.satuan})
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 text-center">
+                            {/* Kotak Centang di Sisi Kiri */}
+                            <td className="py-2.5 px-3 text-center">
                               <input
-                                type="number"
-                                min={1}
-                                value={item.qtyNeeded}
-                                onChange={(e) =>
-                                  handleUpdateDraftItem(
-                                    idx,
-                                    'qtyNeeded',
-                                    Math.max(1, Number(e.target.value) || 1)
-                                  )
-                                }
-                                className="w-16 bg-stone-900 border border-stone-700 text-stone-100 text-center rounded px-1.5 py-1 font-mono text-xs focus:outline-none focus:border-amber-500"
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleToggleMasterPartCheckbox(part)}
+                                className="w-4 h-4 accent-amber-500 cursor-pointer"
                               />
                             </td>
-                            <td className="py-2 px-2">
-                              <input
-                                type="text"
-                                value={item.notes || ''}
-                                onChange={(e) =>
-                                  handleUpdateDraftItem(idx, 'notes', e.target.value)
-                                }
-                                placeholder="Catatan..."
-                                className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
-                              />
+                            <td className="py-2.5 px-2 text-center font-mono text-stone-400 tabular-nums">
+                              {idx + 1}
                             </td>
-                            <td className="py-2 px-2 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDraftItem(idx)}
-                                className="p-1 text-stone-400 hover:text-red-400 transition-colors"
-                                title="Keluarkan dari paket"
+                            <td className="py-2.5 px-3">
+                              <span className="font-mono font-bold text-amber-400 block">
+                                {part.noUnit || '-'}
+                              </span>
+                              <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
+                                {part.jenisUnit}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-semibold text-amber-300">
+                              {part.pn || '-'}
+                            </td>
+                            <td
+                              onClick={() => handleToggleMasterPartCheckbox(part)}
+                              className="py-2.5 px-3 font-medium text-stone-100 cursor-pointer"
+                            >
+                              {part.namaPart}
+                            </td>
+                            <td className="py-2.5 px-3 text-stone-300">{part.merk || '-'}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="block text-stone-200">{part.kategori}</span>
+                              <span className="text-[10px] text-stone-400 block">{part.jenisPart}</span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span
+                                className={`text-[11px] font-medium ${
+                                  tipe === 'Interchange' ? 'text-sky-300' : 'text-stone-400'
+                                }`}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                {tipe}
+                                {tipe === 'Interchange' && part.interchangeParts?.length
+                                  ? ` (${part.interchangeParts.length})`
+                                  : ''}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono tabular-nums text-stone-200">
+                              {part.qty}{' '}
+                              <span className="text-[10px] text-stone-400">{part.satuan || 'Pcs'}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              {isChecked && selectedItem ? (
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={selectedItem.qtyNeeded}
+                                  onChange={(e) =>
+                                    handleUpdateDraftItemByMasterId(
+                                      part.id,
+                                      'qtyNeeded',
+                                      Math.max(1, Number(e.target.value) || 1)
+                                    )
+                                  }
+                                  className="w-16 bg-stone-900 border border-amber-500/60 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
+                                />
+                              ) : (
+                                <span className="text-stone-600 font-mono">-</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              {isChecked && selectedItem ? (
+                                <input
+                                  type="text"
+                                  value={selectedItem.notes || ''}
+                                  onChange={(e) =>
+                                    handleUpdateDraftItemByMasterId(part.id, 'notes', e.target.value)
+                                  }
+                                  placeholder="Catatan item..."
+                                  className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                                />
+                              ) : (
+                                <span className="text-stone-600">-</span>
+                              )}
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-stone-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBuilder(false);
-                  resetBuilderForm();
-                }}
-                className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-5 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-lg transition-colors"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{editingPkgId ? 'Simpan Perubahan Paket' : 'Simpan Paket RPL'}</span>
-              </button>
+            {/* Footer: Setelah Centang -> Simpan RPL, Print Preview, Create SPB */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-stone-800">
+              <div className="text-xs text-stone-400">
+                {draftItems.length === 0 ? (
+                  <span className="text-amber-400">
+                    Centang minimal 1 part di sisi kiri tabel katalog untuk mengaktifkan Simpan RPL, Print, dan Create SPB.
+                  </span>
+                ) : (
+                  <span>
+                    <strong className="text-emerald-400 font-mono">{draftItems.length} Part</strong> dipilih{' '}
+                    (Total Qty: <strong className="text-amber-400 font-mono">{totalDraftQty}</strong>) — siap disimpan, dicetak, atau dibuatkan SPB.
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBuilder(false);
+                    resetBuilderForm();
+                  }}
+                  className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200"
+                >
+                  Batal
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePrintRplPackage(buildDraftPreviewPackage())}
+                  disabled={draftItems.length === 0 || !canPrintPreview}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                    draftItems.length > 0 && canPrintPreview
+                      ? 'bg-stone-800 text-amber-300 border-amber-500/40 hover:bg-stone-700'
+                      : 'bg-stone-900 text-stone-600 border-stone-800 cursor-not-allowed'
+                  }`}
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print Preview</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenCreateSpbFromPackage(buildDraftPreviewPackage())}
+                  disabled={draftItems.length === 0 || !canCreateSpb}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                    draftItems.length > 0 && canCreateSpb
+                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
+                      : 'bg-stone-900 text-stone-600 border-stone-800 cursor-not-allowed'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Create SPB</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={draftItems.length === 0}
+                  className={`flex items-center gap-2 px-5 py-2 text-xs font-bold rounded-lg transition-colors ${
+                    draftItems.length > 0
+                      ? 'bg-amber-500 hover:bg-amber-400 text-stone-950'
+                      : 'bg-stone-800 text-stone-500 cursor-not-allowed'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{editingPkgId ? 'Simpan Perubahan RPL' : 'Simpan Paket RPL'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </form>
@@ -1213,7 +1573,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse min-w-[880px]">
+          <table className="w-full text-left text-xs border-collapse min-w-[920px]">
             <thead>
               <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                 <th className="py-3 px-3 w-12 text-center">No</th>
@@ -1223,7 +1583,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 <th className="py-3 px-3 w-40">Target Unit</th>
                 <th className="py-3 px-3 w-24 text-center">Jumlah PN</th>
                 <th className="py-3 px-3 w-24 text-center">Total Qty</th>
-                <th className="py-3 px-3 w-48 text-center">Aksi</th>
+                <th className="py-3 px-3 w-56 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60">
@@ -1286,6 +1646,16 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                           >
                             Panggil
                           </button>
+                          {canCreateSpb && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCreateSpbFromPackage(pkg)}
+                              className="px-2 py-1 text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 rounded transition-colors whitespace-nowrap"
+                              title="Buat Surat Permintaan Barang (SPB) dari Paket RPL ini"
+                            >
+                              SPB
+                            </button>
+                          )}
                           {canPrintPreview && (
                             <button
                               type="button"
@@ -1374,6 +1744,24 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Create SPB (Surat Permintaan Barang) dari Paket RPL */}
+      {spbModalState.isOpen && (
+        <PermintaanBarangModal
+          key={spbModalState.key}
+          isOpen={spbModalState.isOpen}
+          onClose={() => setSpbModalState((prev) => ({ ...prev, isOpen: false }))}
+          noMaintenanceOrder={spbModalState.noMaintenanceOrder}
+          noUnit={spbModalState.noUnit}
+          namaAlat={spbModalState.namaAlat}
+          defaultAlasan={spbModalState.defaultAlasan}
+          refLabel="Reff Paket RPL / Service"
+          initialItems={spbModalState.items}
+          currentUser={currentUser}
+          onSubmitPR={handleSubmitSpb}
+          onPrintPR={canPrintPreview ? handlePrintSpbDocument : undefined}
+        />
       )}
 
       {/* Modal Print Preview PDF Resmi */}

@@ -15,7 +15,8 @@ import {
   InventoryPeriodBalance,
   ManpowerData,
   RplPackage,
-  MasterPartItem
+  MasterPartItem,
+  PurchaseRequest
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
 
@@ -4574,6 +4575,179 @@ export const generateRplPackagePDF = ({
 
   return { doc, blob, blobUrl, filename, download };
 };
+
+export interface GeneratePurchaseRequestPdfParams {
+  pr: PurchaseRequest;
+  currentUser?: UserAccount;
+  signatories?: Partial<ReportSignatories>;
+}
+
+export const generatePurchaseRequestPDF = ({
+  pr,
+  currentUser,
+  signatories,
+}: GeneratePurchaseRequestPdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const nowStr = new Date().toLocaleString('id-ID');
+  const exporterName = currentUser?.fullName || currentUser?.username || pr.pemohon || 'Admin Workshop';
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & LOGISTIK WORKSHOP • QUARRY PURWOSARI', 14, 13);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text(`SURAT PERMINTAAN BARANG (SPB) • ${pr.urgensi}`, 196, 13, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH (ETIKA09)', 105, 20, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text(`FORMULIR SURAT PERMINTAAN BARANG — ${pr.noPermintaan}`, 105, 26, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Tanggal: ${pr.tanggal} ${pr.jam || ''}  |  Status: ${pr.status}  |  Dicetak: ${nowStr}`,
+      105,
+      31,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.5);
+    doc.line(14, 34, 196, 34);
+  };
+
+  renderHeader();
+
+  autoTable(doc, {
+    startY: 38,
+    theme: 'plain',
+    styles: { fontSize: 8.5, cellPadding: 1.5, textColor: darkTextColor },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 36, textColor: grayTextColor },
+      1: { cellWidth: 55 },
+      2: { fontStyle: 'bold', cellWidth: 36, textColor: grayTextColor },
+      3: { cellWidth: 55 },
+    },
+    body: [
+      ['No. Form SPB', pr.noPermintaan, 'Reff Paket RPL / MO', pr.noMaintenanceOrder || '-'],
+      ['No. Unit (CN)', pr.noUnit || '-', 'Nama Alat', pr.namaAlat || '-'],
+      ['Pemohon', `${pr.pemohon} (${pr.jabatanPemohon || '-'})`, 'Urgensi', pr.urgensi],
+      ['Alasan / Keperluan', pr.alasanPermintaan || '-', 'Dicetak Oleh', exporterName],
+    ],
+    margin: { left: 14, right: 14 },
+  });
+
+  let curY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 4 : 66;
+
+  autoTable(doc, {
+    startY: curY,
+    head: [['No', 'Part Number (PN)', 'Nama Barang / Suku Cadang', 'Qty', 'Satuan', 'Keterangan / Spesifikasi']],
+    body: pr.items.map((item, idx) => [
+      String(item.no || idx + 1),
+      item.partNumber || '-',
+      item.namaBarang || '-',
+      String(item.qtyDiminta || 0),
+      item.satuan || 'Pcs',
+      item.keterangan || '-',
+    ]),
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'center',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      cellPadding: 2,
+      textColor: darkTextColor,
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 34 },
+      2: { fontStyle: 'bold', cellWidth: 56 },
+      3: { halign: 'center', fontStyle: 'bold', cellWidth: 16 },
+      4: { halign: 'center', cellWidth: 18 },
+      5: { cellWidth: 'auto' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 140;
+  if (finalY > 235) {
+    doc.addPage();
+    renderHeader();
+    finalY = 40;
+  } else {
+    finalY += 12;
+  }
+
+  const colWidth = 54;
+  const sigCols = [
+    {
+      title: 'Pemohon / Dibuat Oleh :',
+      name: signatories?.pembuatName || pr.pemohon || exporterName,
+      role: signatories?.pembuatJabatan || pr.jabatanPemohon || 'Administrasi / Mekanik',
+      x: 14,
+    },
+    {
+      title: 'Diperiksa Oleh :',
+      name: signatories?.diperiksaName || 'Staff Inventory',
+      role: signatories?.diperiksaJabatan || 'Administrasi',
+      x: 14 + colWidth + 9,
+    },
+    {
+      title: 'Disetujui Oleh :',
+      name: signatories?.disetujuiName || 'Dodik Mariyadi',
+      role: signatories?.disetujuiJabatan || 'Kabag Workshop',
+      x: 14 + (colWidth + 9) * 2,
+    },
+  ];
+
+  sigCols.forEach((sc) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sc.title, sc.x + colWidth / 2, finalY, { align: 'center' });
+    doc.line(sc.x + 6, finalY + 18, sc.x + colWidth - 6, finalY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sc.name, sc.x + colWidth / 2, finalY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sc.role, sc.x + colWidth / 2, finalY + 26, { align: 'center' });
+  });
+
+  const cleanNo = (pr.noPermintaan || 'SPB').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${cleanNo}_${pr.tanggal || new Date().toISOString().split('T')[0]}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
 
 
 

@@ -4464,6 +4464,8 @@ export function createPurchaseRequest(
 
     requests.unshift(newRequest);
     savePurchaseRequests(requests);
+    syncItemToFirestore('purchase_requests', newRequest.id, newRequest);
+    window.dispatchEvent(new CustomEvent('bkwa-purchase-requests-changed'));
 
     logActivity({
       aksi: 'REGISTRASI',
@@ -4494,6 +4496,8 @@ export function updatePurchaseRequestStatus(
     requests[idx].status = status;
     if (approver) requests[idx].disetujuiOleh = approver;
     savePurchaseRequests(requests);
+    syncItemToFirestore('purchase_requests', requests[idx].id, requests[idx]);
+    window.dispatchEvent(new CustomEvent('bkwa-purchase-requests-changed'));
 
     logActivity({
       aksi: 'UPDATE',

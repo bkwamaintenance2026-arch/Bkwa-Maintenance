@@ -157,41 +157,115 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     };
   }, []);
 
-  // --- UNIT SELECTION (JENIS DAHULU, BARU NO UNIT) ---
-  const availableJenisList = useMemo(() => {
-    const set = new Set<string>();
+  // --- CASCADING GROUPED UNIT SELECTION DARI MODUL 1 (1. JENIS -> 2. BRAND -> 3. MODEL UNIT -> 4. NO UNIT CENTANG) ---
+  const jenisCounts = useMemo<Map<string, number>>(() => {
+    const map = new Map<string, number>();
     units.forEach((u) => {
-      if (u.jenis && u.jenis.trim()) {
-        set.add(u.jenis.trim());
-      }
+      const j = (u.jenis || '').trim();
+      if (j) map.set(j, (map.get(j) || 0) + 1);
     });
-    return Array.from(set).sort();
+    return map;
   }, [units]);
 
+  const availableJenisList = useMemo<string[]>(() => {
+    return Array.from(jenisCounts.keys()).sort((a: string, b: string) => a.localeCompare(b));
+  }, [jenisCounts]);
+
   const [selectedJenis, setSelectedJenis] = useState<string>('');
-  const [selectedNoUnit, setSelectedNoUnit] = useState<string>('');
+  const [selectedBrand, setSelectedBrand] = useState<string>('ALL');
+  const [selectedModelUnit, setSelectedModelUnit] = useState<string>('ALL');
+  const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>([]);
   const isNonUnitSelected = selectedJenis === NON_UNIT_JENIS;
 
-  // Filter unit yang sesuai jenis terpilih
-  const filteredUnits = useMemo(() => {
-    if (!selectedJenis || selectedJenis === NON_UNIT_JENIS) return [];
+  // Step 2: Kelompok Brand berdasarkan Jenis terpilih (Modul 1)
+  const unitsByJenis = useMemo(() => {
+    if (!selectedJenis || isNonUnitSelected) return [];
     return units.filter((u) => (u.jenis || '').trim().toLowerCase() === selectedJenis.toLowerCase());
-  }, [units, selectedJenis]);
+  }, [units, selectedJenis, isNonUnitSelected]);
 
-  // Object unit yang sedang terpilih
-  const activeUnit = useMemo(() => {
-    if (!selectedNoUnit || selectedJenis === NON_UNIT_JENIS) return null;
-    return units.find((u) => (u.cnNew || u.nomorLambung || u.kodeUnit || '') === selectedNoUnit) || null;
-  }, [units, selectedNoUnit, selectedJenis]);
+  const brandGroups = useMemo(() => {
+    const map = new Map<string, number>();
+    unitsByJenis.forEach((u) => {
+      const b = (u.brandMerk || '').trim() || 'Tanpa Brand';
+      map.set(b, (map.get(b) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([brand, count]) => ({ brand, count }))
+      .sort((a, b) => a.brand.localeCompare(b.brand));
+  }, [unitsByJenis]);
 
-  // Reset / Auto-fill No Unit saat Jenis berubah
+  // Step 3: Kelompok Model Unit berdasarkan Jenis & Brand terpilih (Modul 1)
+  const unitsByJenisAndBrand = useMemo(() => {
+    if (!selectedJenis || isNonUnitSelected) return [];
+    if (!selectedBrand || selectedBrand === 'ALL') return unitsByJenis;
+    return unitsByJenis.filter(
+      (u) => ((u.brandMerk || '').trim() || 'Tanpa Brand').toLowerCase() === selectedBrand.toLowerCase()
+    );
+  }, [unitsByJenis, selectedJenis, selectedBrand, isNonUnitSelected]);
+
+  const modelGroups = useMemo(() => {
+    const map = new Map<string, number>();
+    unitsByJenisAndBrand.forEach((u) => {
+      const m = (u.modelUnit || '').trim() || '-';
+      map.set(m, (map.get(m) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([model, count]) => ({ model, count }))
+      .sort((a, b) => a.model.localeCompare(b.model));
+  }, [unitsByJenisAndBrand]);
+
+  // Step 4: Daftar No Unit (Opsi Centang) berdasarkan Jenis, Brand & Model Unit (Modul 1)
+  const filteredUnitsForCheckboxes = useMemo(() => {
+    if (!selectedJenis || isNonUnitSelected) return [];
+    const list =
+      !selectedModelUnit || selectedModelUnit === 'ALL'
+        ? unitsByJenisAndBrand
+        : unitsByJenisAndBrand.filter(
+            (u) => ((u.modelUnit || '').trim() || '-').toLowerCase() === selectedModelUnit.toLowerCase()
+          );
+    return [...list].sort((a, b) => (a.cnNew || '').localeCompare(b.cnNew || ''));
+  }, [unitsByJenisAndBrand, selectedJenis, selectedModelUnit, isNonUnitSelected]);
+
+  const checkedUnits = useMemo(() => {
+    if (isNonUnitSelected) return [];
+    const idSet = new Set(selectedUnitIds);
+    return filteredUnitsForCheckboxes.filter((u) => idSet.has(u.id));
+  }, [filteredUnitsForCheckboxes, selectedUnitIds, isNonUnitSelected]);
+
   const handleJenisChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedJenis(val);
-    if (val === NON_UNIT_JENIS) {
-      setSelectedNoUnit(NON_UNIT_CODE);
+    setSelectedBrand('ALL');
+    setSelectedModelUnit('ALL');
+    setSelectedUnitIds([]);
+  };
+
+  const handleBrandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedBrand(val);
+    setSelectedModelUnit('ALL');
+    setSelectedUnitIds([]);
+  };
+
+  const handleModelUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setSelectedModelUnit(val);
+    setSelectedUnitIds([]);
+  };
+
+  const handleToggleUnitCheckbox = (unitId: string) => {
+    setSelectedUnitIds((prev) =>
+      prev.includes(unitId) ? prev.filter((id) => id !== unitId) : [...prev, unitId]
+    );
+  };
+
+  const handleToggleAllUnitCheckboxes = () => {
+    const visibleIds = filteredUnitsForCheckboxes.map((u) => u.id);
+    const allChecked = visibleIds.length > 0 && visibleIds.every((id) => selectedUnitIds.includes(id));
+    if (allChecked) {
+      setSelectedUnitIds([]);
     } else {
-      setSelectedNoUnit('');
+      setSelectedUnitIds(visibleIds);
     }
   };
 
@@ -297,12 +371,15 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     }
 
     if (!selectedJenis) {
-      setFeedback({ type: 'error', message: 'Silakan pilih Jenis Unit atau Non Unit terlebih dahulu!' });
+      setFeedback({ type: 'error', message: 'Silakan pilih 1. Jenis Unit atau Non Unit terlebih dahulu!' });
       return;
     }
-    const resolvedNoUnit = isNonUnitSelected ? (selectedNoUnit || NON_UNIT_CODE) : selectedNoUnit;
-    if (!resolvedNoUnit) {
-      setFeedback({ type: 'error', message: 'Silakan pilih No Unit (CN New) terlebih dahulu!' });
+
+    if (!isNonUnitSelected && checkedUnits.length === 0) {
+      setFeedback({
+        type: 'error',
+        message: 'Silakan centang minimal satu No Unit (CN New) pada langkah 4!',
+      });
       return;
     }
 
@@ -317,60 +394,97 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     }
 
     const now = new Date().toISOString();
-    const payloadItems = validRows.map((r, idx) => {
-      const validSubs: MasterPartInterchangeItem[] =
-        r.partRelationType === 'Interchange'
-          ? (r.interchangeDrafts || [])
-              .filter((sub) => sub.namaPart.trim() !== '' || sub.pn.trim() !== '')
-              .map((sub, subIdx) => ({
-                id: `MPINT-${Date.now()}-${idx}-${subIdx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-                noUrut: sub.noUrut || subIdx + 1,
-                kategori: sub.kategori,
-                jenisPart: sub.jenisPart,
-                merk: sub.merk.trim() || 'Universal',
-                fungsi: sub.fungsi,
-                namaPart: sub.namaPart.trim() || 'Part Interchange',
-                pn: sub.pn.trim() || '-',
-                qty: Number(sub.qty) || 1,
-                minStock: Math.max(0, Number(sub.minStock) || 0),
-                satuan: sub.satuan || 'Pcs',
-                remark: sub.remark.trim() || '',
-                createdAt: now,
-                updatedAt: now,
-              }))
-          : [];
+    const targetUnits: Array<{
+      unitId: string;
+      jenisUnit: string;
+      noUnit: string;
+      namaAlat: string;
+      modelUnit: string;
+      brandMerk: string;
+    }> = isNonUnitSelected
+      ? [
+          {
+            unitId: NON_UNIT_CODE,
+            jenisUnit: NON_UNIT_JENIS,
+            noUnit: NON_UNIT_CODE,
+            namaAlat: 'Non Unit / Material Umum',
+            modelUnit: '-',
+            brandMerk: 'Universal',
+          },
+        ]
+      : checkedUnits.map((u) => ({
+          unitId: u.id,
+          jenisUnit: u.jenis || selectedJenis,
+          noUnit: u.cnNew || u.id,
+          namaAlat: u.namaAlat || '',
+          modelUnit: u.modelUnit || '-',
+          brandMerk: u.brandMerk || '',
+        }));
 
-      return {
-        unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || resolvedNoUnit),
-        jenisUnit: selectedJenis,
-        noUnit: resolvedNoUnit,
-        namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
-        modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
-        noUrut: r.noUrut || idx + 1,
-        kategori: r.kategori,
-        jenisPart: r.jenisPart,
-        merk: r.merk.trim() || (isNonUnitSelected ? 'Universal' : activeUnit?.brandMerk || 'Universal'),
-        fungsi: r.fungsi,
-        namaPart: r.namaPart.trim() || 'Part Tanpa Nama',
-        pn: r.pn.trim() || '-',
-        qty: Number(r.qty) || 1,
-        minStock: Math.max(0, Number(r.minStock) || 0),
-        satuan: r.satuan || 'Pcs',
-        partRelationType: r.partRelationType || 'In Line',
-        interchangeParts: validSubs,
-        remark: r.remark.trim() || '',
-      };
+    const payloadItems: Omit<MasterPartItem, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+    targetUnits.forEach((unitTarget, uIdx) => {
+      validRows.forEach((r, idx) => {
+        const validSubs: MasterPartInterchangeItem[] =
+          r.partRelationType === 'Interchange'
+            ? (r.interchangeDrafts || [])
+                .filter((sub) => sub.namaPart.trim() !== '' || sub.pn.trim() !== '')
+                .map((sub, subIdx) => ({
+                  id: `MPINT-${Date.now()}-${uIdx}-${idx}-${subIdx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+                  noUrut: sub.noUrut || subIdx + 1,
+                  kategori: sub.kategori,
+                  jenisPart: sub.jenisPart,
+                  merk: sub.merk.trim() || 'Universal',
+                  fungsi: sub.fungsi,
+                  namaPart: sub.namaPart.trim() || 'Part Interchange',
+                  pn: sub.pn.trim() || '-',
+                  qty: Number(sub.qty) || 1,
+                  minStock: Math.max(0, Number(sub.minStock) || 0),
+                  satuan: sub.satuan || 'Pcs',
+                  remark: sub.remark.trim() || '',
+                  createdAt: now,
+                  updatedAt: now,
+                }))
+            : [];
+
+        payloadItems.push({
+          unitId: unitTarget.unitId,
+          jenisUnit: unitTarget.jenisUnit,
+          noUnit: unitTarget.noUnit,
+          namaAlat: unitTarget.namaAlat,
+          modelUnit: unitTarget.modelUnit,
+          brandMerk: unitTarget.brandMerk,
+          noUrut: r.noUrut || idx + 1,
+          kategori: r.kategori,
+          jenisPart: r.jenisPart,
+          merk:
+            r.merk.trim() ||
+            (isNonUnitSelected
+              ? 'Universal'
+              : unitTarget.brandMerk || (selectedBrand !== 'ALL' ? selectedBrand : 'Universal')),
+          fungsi: r.fungsi,
+          namaPart: r.namaPart.trim() || 'Part Tanpa Nama',
+          pn: r.pn.trim() || '-',
+          qty: Number(r.qty) || 1,
+          minStock: Math.max(0, Number(r.minStock) || 0),
+          satuan: r.satuan || 'Pcs',
+          partRelationType: r.partRelationType || 'In Line',
+          interchangeParts: validSubs,
+          remark: r.remark.trim() || '',
+        });
+      });
     });
 
     const result = batchAddMasterParts(payloadItems);
     if (result.success) {
+      const unitNames = targetUnits.map((u) => u.noUnit).join(', ');
       setFeedback({
         type: 'success',
         message: isNonUnitSelected
-          ? `Berhasil menyimpan ${result.count} item Master Part kategori Non Unit (${resolvedNoUnit})!`
-          : `Berhasil menyimpan ${result.count} item Master Part untuk unit ${resolvedNoUnit}!`,
+          ? `Berhasil menyimpan ${result.count} item Master Part kategori Non Unit (${NON_UNIT_CODE})!`
+          : `Berhasil menyimpan ${validRows.length} part × ${targetUnits.length} unit (${result.count} item Master Part) untuk: ${unitNames}!`,
       });
-      setDraftRows([createEmptyDraftRow(1, activeUnit?.brandMerk || '')]);
+      const defaultBrand = selectedBrand !== 'ALL' ? selectedBrand : checkedUnits[0]?.brandMerk || '';
+      setDraftRows([createEmptyDraftRow(1, defaultBrand)]);
       loadParts();
     } else {
       setFeedback({ type: 'error', message: result.message });
@@ -402,6 +516,10 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           (item.pn || '') +
           ' ' +
           (item.merk || '') +
+          ' ' +
+          (item.brandMerk || '') +
+          ' ' +
+          (item.modelUnit || '') +
           ' ' +
           (item.noUnit || '') +
           ' ' +
@@ -824,23 +942,57 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         }
 
         if (namaPart) {
-          itemsToImport.push({
-            unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || selectedNoUnit || 'ALL'),
-            jenisUnit: selectedJenis || 'Alat Berat',
-            noUnit: isNonUnitSelected ? NON_UNIT_CODE : (selectedNoUnit || 'UNIT-ALL'),
-            namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
-            modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
-            noUrut,
-            kategori,
-            jenisPart,
-            merk,
-            fungsi,
-            namaPart,
-            pn,
-            qty,
-            minStock,
-            satuan,
-            remark,
+          const importTargets = isNonUnitSelected
+            ? [
+                {
+                  unitId: NON_UNIT_CODE,
+                  jenisUnit: NON_UNIT_JENIS,
+                  noUnit: NON_UNIT_CODE,
+                  namaAlat: 'Non Unit / Material Umum',
+                  modelUnit: '-',
+                  brandMerk: 'Universal',
+                },
+              ]
+            : checkedUnits.length > 0
+            ? checkedUnits.map((u) => ({
+                unitId: u.id,
+                jenisUnit: u.jenis || selectedJenis || 'Alat Berat',
+                noUnit: u.cnNew || u.id,
+                namaAlat: u.namaAlat || '',
+                modelUnit: u.modelUnit || '-',
+                brandMerk: u.brandMerk || '',
+              }))
+            : [
+                {
+                  unitId: 'ALL',
+                  jenisUnit: selectedJenis || 'Alat Berat',
+                  noUnit: 'UNIT-ALL',
+                  namaAlat: '',
+                  modelUnit: '-',
+                  brandMerk: selectedBrand !== 'ALL' ? selectedBrand : '',
+                },
+              ];
+
+          importTargets.forEach((tgt) => {
+            itemsToImport.push({
+              unitId: tgt.unitId,
+              jenisUnit: tgt.jenisUnit,
+              noUnit: tgt.noUnit,
+              namaAlat: tgt.namaAlat,
+              modelUnit: tgt.modelUnit,
+              brandMerk: tgt.brandMerk,
+              noUrut,
+              kategori,
+              jenisPart,
+              merk,
+              fungsi,
+              namaPart,
+              pn,
+              qty,
+              minStock,
+              satuan,
+              remark,
+            });
           });
         }
       });
@@ -1001,7 +1153,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             <Wrench className="w-4 h-4 text-amber-500" />
             <span>Form Registrasi Master Part per Unit / Non Unit</span>
             <span className="text-xs text-stone-400 font-normal">
-              (Pilih Jenis Unit dahulu &rarr; No Unit, atau pilih Non Unit)
+              (1. Jenis &rarr; 2. Brand &rarr; 3. Model Unit &rarr; 4. Centang No Unit)
             </span>
           </div>
 
@@ -1031,14 +1183,14 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           </div>
         ) : (
           <form onSubmit={handleSaveDraftParts} className="p-5 space-y-5">
-          {/* Unit Selection Card (Mirip Input Breakdown Modul 3) */}
-          <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* 1. Pilih Jenis Unit */}
+          {/* Cascading Grouped Unit Selection Card dari Modul 1 */}
+          <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 1. JENIS (Dikelompokkan dari Modul 1) */}
               <div>
                 <label className="block text-xs font-semibold text-stone-300 mb-1 flex items-center gap-1">
                   <Layers className="w-3.5 h-3.5 text-amber-500" />
-                  1. Pilih Jenis Unit / Kategori <span className="text-red-400">*</span>
+                  1. JENIS <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={selectedJenis}
@@ -1046,106 +1198,190 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 font-medium"
                   required
                 >
-                  <option value="">-- Pilih Jenis Dahulu --</option>
+                  <option value="">-- Pilih Jenis Unit (Modul 1) --</option>
                   <option value={NON_UNIT_JENIS}>Non Unit (Umum / Workshop / General)</option>
                   {availableJenisList.map((j) => (
                     <option key={j} value={j}>
-                      {j}
+                      {j} ({jenisCounts.get(j) || 0} unit)
                     </option>
                   ))}
                 </select>
                 <span className="text-[10px] text-stone-400 mt-1 block">
                   {isNonUnitSelected
                     ? 'Kategori Non Unit aktif untuk material/part umum'
-                    : 'Data unit diambil dari Registrasi Aset Modul 1'}
+                    : 'Dikelompokkan otomatis dari Registrasi Aset Modul 1'}
                 </span>
               </div>
 
-              {/* 2. Pilih No Unit (CN New) */}
+              {/* 2. BRAND (Dikelompokkan dari Modul 1 berdasar Jenis) */}
               <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1 flex items-center gap-1">
-                  <Truck className="w-3.5 h-3.5 text-amber-500" />
-                  2. Pilih No Unit (CN NEW) <span className="text-red-400">*</span>
+                <label className="block text-xs font-semibold text-stone-300 mb-1">
+                  2. BRAND <span className="text-red-400">*</span>
                 </label>
                 <select
-                  value={selectedNoUnit}
-                  onChange={(e) => setSelectedNoUnit(e.target.value)}
-                  disabled={!selectedJenis}
-                  className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-mono font-medium ${
-                    !selectedJenis
-                      ? 'border-stone-800 text-stone-600 cursor-not-allowed'
-                      : isNonUnitSelected
-                      ? 'border-sky-700/80 text-sky-300 focus:border-sky-500'
+                  value={isNonUnitSelected ? 'Universal' : selectedBrand}
+                  onChange={handleBrandChange}
+                  disabled={!selectedJenis || isNonUnitSelected}
+                  className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-medium ${
+                    !selectedJenis || isNonUnitSelected
+                      ? 'border-stone-800 text-stone-500 cursor-not-allowed'
                       : 'border-stone-700 text-stone-100 focus:border-amber-500'
                   }`}
-                  required
                 >
-                  <option value="">
-                    {!selectedJenis ? '-- Pilih Jenis Dahulu --' : '-- Pilih No Unit --'}
-                  </option>
                   {isNonUnitSelected ? (
-                    <option value={NON_UNIT_CODE}>NON-UNIT — Umum / Workshop / Support</option>
+                    <option value="Universal">Universal / General</option>
                   ) : (
-                    filteredUnits.map((u, idx) => {
-                      const cn = u.cnNew || u.nomorLambung || u.kodeUnit || '';
-                      return (
-                        <option key={`${u.id}_${idx}`} value={cn}>
-                          {cn} {u.namaAlat ? `— ${u.namaAlat}` : ''} {u.modelUnit ? `(${u.modelUnit})` : ''}
+                    <>
+                      <option value="ALL">
+                        Semua Brand ({unitsByJenis.length} unit)
+                      </option>
+                      {brandGroups.map((bg) => (
+                        <option key={bg.brand} value={bg.brand}>
+                          {bg.brand} ({bg.count} unit)
                         </option>
-                      );
-                    })
+                      ))}
+                    </>
                   )}
                 </select>
                 <span className="text-[10px] text-stone-400 mt-1 block">
                   {isNonUnitSelected
-                    ? 'Otomatis terisi NON-UNIT (tidak terikat CN alat berat)'
-                    : `${filteredUnits.length} unit terdaftar untuk ${selectedJenis || 'kategori ini'}`}
+                    ? 'Otomatis Universal untuk Non Unit'
+                    : `${brandGroups.length} brand tersedia pada ${selectedJenis || 'jenis ini'}`}
                 </span>
               </div>
 
-              {/* 3. Detail Alat (Auto Filled) */}
+              {/* 3. MODEL UNIT (Dikelompokkan dari Modul 1 berdasar Jenis & Brand) */}
               <div>
                 <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Nama Alat & Model
+                  3. MODEL UNIT <span className="text-red-400">*</span>
                 </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={
-                    isNonUnitSelected
-                      ? 'Non Unit / Material Umum Workshop'
-                      : activeUnit
-                      ? `${activeUnit.namaAlat || '-'} / ${activeUnit.modelUnit || '-'}`
-                      : '-'
-                  }
-                  className="w-full bg-stone-900/50 border border-stone-800 text-stone-300 text-sm rounded-lg px-3 py-2 cursor-default"
-                />
+                <select
+                  value={isNonUnitSelected ? '-' : selectedModelUnit}
+                  onChange={handleModelUnitChange}
+                  disabled={!selectedJenis || isNonUnitSelected}
+                  className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-medium ${
+                    !selectedJenis || isNonUnitSelected
+                      ? 'border-stone-800 text-stone-500 cursor-not-allowed'
+                      : 'border-stone-700 text-stone-100 focus:border-amber-500'
+                  }`}
+                >
+                  {isNonUnitSelected ? (
+                    <option value="-">Material Umum / Non Unit</option>
+                  ) : (
+                    <>
+                      <option value="ALL">
+                        Semua Model Unit ({unitsByJenisAndBrand.length} unit)
+                      </option>
+                      {modelGroups.map((mg) => (
+                        <option key={mg.model} value={mg.model}>
+                          {mg.model} ({mg.count} unit)
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  {isNonUnitSelected ? 'Otomatis untuk item Non Unit' : 'Otomatis terisi dari Aset'}
+                  {isNonUnitSelected
+                    ? 'Tidak terikat model alat berat'
+                    : `${modelGroups.length} model unit sesuai filter Brand`}
                 </span>
+              </div>
+            </div>
+
+            {/* 4. NO UNIT (Opsi Centang karena ada beberapa unit yang sama) */}
+            <div className="pt-3 border-t border-stone-800/80">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <label className="text-xs font-semibold text-stone-300 flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5 text-amber-500" />
+                  <span>4. NO UNIT — Opsi Centang (Modul 1)</span>
+                  <span className="text-red-400">*</span>
+                  {selectedJenis && !isNonUnitSelected && (
+                    <span className="ml-1 font-mono text-[11px] text-amber-400">
+                      ({checkedUnits.length} dari {filteredUnitsForCheckboxes.length} unit dicentang)
+                    </span>
+                  )}
+                </label>
+
+                {selectedJenis && !isNonUnitSelected && filteredUnitsForCheckboxes.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleToggleAllUnitCheckboxes}
+                      className="px-2.5 py-1 text-[11px] font-semibold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded transition-colors"
+                    >
+                      {filteredUnitsForCheckboxes.every((u) => selectedUnitIds.includes(u.id))
+                        ? 'Batal Centang Semua'
+                        : 'Centang Semua Unit Ini'}
+                    </button>
+                    {checkedUnits.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUnitIds([])}
+                        className="px-2.5 py-1 text-[11px] font-medium text-stone-400 hover:text-stone-200 bg-stone-900 border border-stone-700 rounded transition-colors"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* 4. Brand / Merek Unit (Auto Filled) */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-300 mb-1">
-                  Merek Pabrikan Unit
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={
-                    isNonUnitSelected
-                      ? 'Universal / General'
-                      : activeUnit
-                      ? `${activeUnit.brandMerk || 'Standar'} (SN: ${activeUnit.serialNumber || '-'})`
-                      : '-'
-                  }
-                  className="w-full bg-stone-900/50 border border-stone-800 text-stone-300 text-sm rounded-lg px-3 py-2 cursor-default"
-                />
-                <span className="text-[10px] text-stone-400 mt-1 block">
-                  Referensi suku cadang unit
-                </span>
-              </div>
+              {!selectedJenis ? (
+                <div className="p-3 rounded-lg bg-stone-900/60 border border-dashed border-stone-800 text-xs text-stone-500">
+                  Pilih <strong>1. JENIS</strong> terlebih dahulu untuk menampilkan daftar No Unit (opsi centang) dari Modul 1.
+                </div>
+              ) : isNonUnitSelected ? (
+                <div className="p-3 rounded-lg bg-sky-950/30 border border-sky-800/60 flex items-center gap-3 text-xs">
+                  <input
+                    type="checkbox"
+                    checked
+                    readOnly
+                    className="w-4 h-4 accent-sky-400"
+                  />
+                  <div>
+                    <span className="font-mono font-bold text-sky-300">NON-UNIT</span>
+                    <span className="text-stone-300 ml-2">— Material Umum / Consumable / Workshop Support</span>
+                  </div>
+                </div>
+              ) : filteredUnitsForCheckboxes.length === 0 ? (
+                <div className="p-3 rounded-lg bg-stone-900/60 border border-dashed border-stone-800 text-xs text-stone-500">
+                  Tidak ada No Unit terdaftar di Modul 1 untuk kombinasi Jenis, Brand, dan Model Unit tersebut.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {filteredUnitsForCheckboxes.map((u) => {
+                    const isChecked = selectedUnitIds.includes(u.id);
+                    return (
+                      <label
+                        key={u.id}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-amber-500/15 border-amber-500/60 text-stone-100'
+                            : 'bg-stone-900/80 border-stone-800 text-stone-300 hover:border-stone-700'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleUnitCheckbox(u.id)}
+                          className="w-4 h-4 mt-0.5 accent-amber-500 cursor-pointer shrink-0"
+                        />
+                        <div className="min-w-0 leading-tight">
+                          <span className="font-mono font-bold text-xs text-amber-400 block">
+                            {u.cnNew}
+                          </span>
+                          <span className="text-[11px] text-stone-200 block truncate">
+                            {u.namaAlat || u.jenis}
+                          </span>
+                          <span className="text-[10px] text-stone-400 block truncate">
+                            {u.brandMerk || '-'} · {u.modelUnit || '-'}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -2504,7 +2740,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               <span className="text-[11px] text-stone-400">
                 Unit target:{' '}
                 <strong className={isNonUnitSelected ? 'text-sky-400' : 'text-amber-400'}>
-                  {isNonUnitSelected ? 'Non Unit (NON-UNIT)' : selectedNoUnit || 'Semua Unit'}
+                  {isNonUnitSelected
+                    ? 'Non Unit (NON-UNIT)'
+                    : checkedUnits.length > 0
+                    ? checkedUnits.map((u) => u.cnNew).join(', ')
+                    : 'Semua Unit'}
                 </strong>
               </span>
 
