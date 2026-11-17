@@ -5941,6 +5941,7 @@ export function addOrUpdateMasterPart(
     const updated: MasterPartItem = {
       ...currentList[index],
       ...data,
+      minStock: Math.max(0, Number(data.minStock ?? currentList[index].minStock ?? 0) || 0),
       updatedAt: now,
     };
     currentList[index] = updated;
@@ -5961,6 +5962,7 @@ export function addOrUpdateMasterPart(
   // Generate ID baru
   const newPart: MasterPartItem = {
     ...data,
+    minStock: Math.max(0, Number(data.minStock ?? 0) || 0),
     id: `MPART-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
     createdAt: now,
     updatedAt: now,
@@ -5997,6 +5999,7 @@ export function batchAddMasterParts(
     addedCount++;
     return {
       ...item,
+      minStock: Math.max(0, Number(item.minStock ?? 0) || 0),
       id: `MPART-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       createdAt: now,
       updatedAt: now,

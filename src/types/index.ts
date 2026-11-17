@@ -1224,6 +1224,7 @@ export interface MasterPartItem {
   namaPart: string;                  // Nama dari part tersebut
   pn: string;                        // Part Number (PN)
   qty: number;                       // Jumlah Part
+  minStock?: number;                 // Minimum Stock (Safety Stock)
   satuan?: string;                   // Pcs, Set, Unit, Liter, Box, dll.
   remark?: string;                   // Remark / Catatan
   createdAt: string;

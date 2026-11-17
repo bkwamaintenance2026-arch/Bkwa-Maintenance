@@ -57,11 +57,14 @@ interface DraftPartRow {
   namaPart: string;
   pn: string;
   qty: number;
+  minStock: number;
   satuan: string;
   remark: string;
 }
 
 const COMMON_SATUAN_OPTIONS = ['Pcs', 'Set', 'Ea', 'Assy', 'Roll', 'Unit', 'Box', 'Liter', 'Can'];
+const NON_UNIT_JENIS = 'Non Unit';
+const NON_UNIT_CODE = 'NON-UNIT';
 
 export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUser }) => {
   const isDev = isDeveloper(currentUser);
@@ -106,24 +109,29 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
   const [selectedJenis, setSelectedJenis] = useState<string>('');
   const [selectedNoUnit, setSelectedNoUnit] = useState<string>('');
+  const isNonUnitSelected = selectedJenis === NON_UNIT_JENIS;
 
   // Filter unit yang sesuai jenis terpilih
   const filteredUnits = useMemo(() => {
-    if (!selectedJenis) return [];
+    if (!selectedJenis || selectedJenis === NON_UNIT_JENIS) return [];
     return units.filter((u) => (u.jenis || '').trim().toLowerCase() === selectedJenis.toLowerCase());
   }, [units, selectedJenis]);
 
   // Object unit yang sedang terpilih
   const activeUnit = useMemo(() => {
-    if (!selectedNoUnit) return null;
+    if (!selectedNoUnit || selectedJenis === NON_UNIT_JENIS) return null;
     return units.find((u) => (u.cnNew || u.nomorLambung || u.kodeUnit || '') === selectedNoUnit) || null;
-  }, [units, selectedNoUnit]);
+  }, [units, selectedNoUnit, selectedJenis]);
 
-  // Reset No Unit saat Jenis berubah
+  // Reset / Auto-fill No Unit saat Jenis berubah
   const handleJenisChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     setSelectedJenis(val);
-    setSelectedNoUnit('');
+    if (val === NON_UNIT_JENIS) {
+      setSelectedNoUnit(NON_UNIT_CODE);
+    } else {
+      setSelectedNoUnit('');
+    }
   };
 
   // --- MULTI-ROW DRAFT PARTS INPUT ---
@@ -137,6 +145,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       namaPart: '',
       pn: '',
       qty: 1,
+      minStock: 0,
       satuan: 'Pcs',
       remark: '',
     },
@@ -159,6 +168,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         namaPart: '',
         pn: '',
         qty: 1,
+        minStock: 0,
         satuan: 'Pcs',
         remark: '',
       },
@@ -190,6 +200,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           namaPart: '',
           pn: '',
           qty: 1,
+          minStock: 0,
           satuan: 'Pcs',
           remark: '',
         },
@@ -222,10 +233,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     }
 
     if (!selectedJenis) {
-      setFeedback({ type: 'error', message: 'Silakan pilih Jenis Alat terlebih dahulu!' });
+      setFeedback({ type: 'error', message: 'Silakan pilih Jenis Unit atau Non Unit terlebih dahulu!' });
       return;
     }
-    if (!selectedNoUnit) {
+    const resolvedNoUnit = isNonUnitSelected ? (selectedNoUnit || NON_UNIT_CODE) : selectedNoUnit;
+    if (!resolvedNoUnit) {
       setFeedback({ type: 'error', message: 'Silakan pilih No Unit (CN New) terlebih dahulu!' });
       return;
     }
@@ -241,19 +253,20 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     }
 
     const payloadItems = validRows.map((r, idx) => ({
-      unitId: activeUnit?.id || selectedNoUnit,
+      unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || resolvedNoUnit),
       jenisUnit: selectedJenis,
-      noUnit: selectedNoUnit,
-      namaAlat: activeUnit?.namaAlat || '',
-      modelUnit: activeUnit?.modelUnit || '',
+      noUnit: resolvedNoUnit,
+      namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
+      modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
       noUrut: r.noUrut || idx + 1,
       kategori: r.kategori,
       jenisPart: r.jenisPart,
-      merk: r.merk.trim() || activeUnit?.brandMerk || 'Universal',
+      merk: r.merk.trim() || (isNonUnitSelected ? 'Universal' : activeUnit?.brandMerk || 'Universal'),
       fungsi: r.fungsi,
       namaPart: r.namaPart.trim() || 'Part Tanpa Nama',
       pn: r.pn.trim() || '-',
       qty: Number(r.qty) || 1,
+      minStock: Math.max(0, Number(r.minStock) || 0),
       satuan: r.satuan || 'Pcs',
       remark: r.remark.trim() || '',
     }));
@@ -262,7 +275,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     if (result.success) {
       setFeedback({
         type: 'success',
-        message: `Berhasil menyimpan ${result.count} item Master Part untuk unit ${selectedNoUnit}!`,
+        message: isNonUnitSelected
+          ? `Berhasil menyimpan ${result.count} item Master Part kategori Non Unit (${resolvedNoUnit})!`
+          : `Berhasil menyimpan ${result.count} item Master Part untuk unit ${resolvedNoUnit}!`,
       });
       // Reset rows to single empty
       setDraftRows([
@@ -275,6 +290,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           namaPart: '',
           pn: '',
           qty: 1,
+          minStock: 0,
           satuan: 'Pcs',
           remark: '',
         },
@@ -346,7 +362,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     filterFungsi,
   ]);
 
-  // Units list found in master parts for table filtering
+  // Units list & jenis list found in master parts for table filtering
   const uniqueMasterUnits = useMemo(() => {
     const map = new Map<string, string>();
     masterParts.forEach((p) => {
@@ -354,6 +370,21 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     });
     return Array.from(map.entries()).map(([noUnit, jenis]) => ({ noUnit, jenis }));
   }, [masterParts]);
+
+  const catalogJenisOptions = useMemo(() => {
+    const set = new Set<string>(availableJenisList);
+    set.add(NON_UNIT_JENIS);
+    masterParts.forEach((p) => {
+      if (p.jenisUnit && p.jenisUnit.trim()) {
+        set.add(p.jenisUnit.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => {
+      if (a === NON_UNIT_JENIS) return -1;
+      if (b === NON_UNIT_JENIS) return 1;
+      return a.localeCompare(b);
+    });
+  }, [availableJenisList, masterParts]);
 
   // --- STATS SUMMARY ---
   const stats = useMemo(() => {
@@ -387,7 +418,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     if (!canEdit) return;
     setEditError(null);
     setEditingPart(part);
-    setEditFormData({ ...part });
+    setEditFormData({ ...part, minStock: Number(part.minStock ?? 0) });
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -400,8 +431,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         unitId: editFormData.unitId || editingPart.unitId,
         jenisUnit: editFormData.jenisUnit || editingPart.jenisUnit,
         noUnit: editFormData.noUnit || editingPart.noUnit,
-        namaAlat: editFormData.namaAlat || editingPart.namaAlat,
-        modelUnit: editFormData.modelUnit || editingPart.modelUnit,
+        namaAlat: editFormData.namaAlat ?? editingPart.namaAlat,
+        modelUnit: editFormData.modelUnit ?? editingPart.modelUnit,
         noUrut: Number(editFormData.noUrut) || editingPart.noUrut,
         kategori: (editFormData.kategori as MasterPartKategori) || editingPart.kategori,
         jenisPart: (editFormData.jenisPart as MasterPartJenis) || editingPart.jenisPart,
@@ -410,6 +441,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         namaPart: editFormData.namaPart || editingPart.namaPart,
         pn: editFormData.pn || editingPart.pn,
         qty: Number(editFormData.qty) || editingPart.qty,
+        minStock: Math.max(0, Number(editFormData.minStock ?? 0) || 0),
         satuan: editFormData.satuan || editingPart.satuan,
         remark: editFormData.remark || '',
       },
@@ -466,6 +498,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       'Nama Part',
       'Part Number (PN)',
       'Qty',
+      'Min Stock',
       'Satuan',
       'Remark',
     ];
@@ -482,6 +515,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       `"${p.namaPart.replace(/"/g, '""')}"`,
       `"${p.pn.replace(/"/g, '""')}"`,
       p.qty,
+      Number(p.minStock ?? 0),
       `"${p.satuan || ''}"`,
       `"${(p.remark || '').replace(/"/g, '""')}"`,
     ]);
@@ -541,8 +575,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         const cols = line.split(sep).map((c) => c.trim().replace(/^"(.*)"$/, '$1'));
 
         // Format yang didukung:
-        // 1. Kategori, Jenis Part, Merk, Fungsi, Nama Part, PN, Qty, Satuan, Remark
-        // 2. Atau No, Kategori, Jenis Part, Merk, Fungsi, Nama Part, PN, Qty, Satuan, Remark
+        // 1. Kategori, Jenis Part, Merk, Fungsi, Nama Part, PN, Qty, Satuan, [Min Stock], Remark
+        // 2. Atau No, Kategori, Jenis Part, Merk, Fungsi, Nama Part, PN, Qty, Satuan, [Min Stock], Remark
         let noUrut = idx + 1;
         let kategori: MasterPartKategori = 'Fast Moving';
         let jenisPart: MasterPartJenis = 'Genuine Part';
@@ -551,6 +585,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         let namaPart = '';
         let pn = '-';
         let qty = 1;
+        let minStock = 0;
         let satuan = 'Pcs';
         let remark = '';
 
@@ -581,23 +616,31 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           pn = cols[offset + 5] || '-';
           qty = Number(cols[offset + 6]) || 1;
           satuan = cols[offset + 7] || 'Pcs';
-          remark = cols[offset + 8] || '';
+
+          // Jika tersedia kolom Min Stock (format 10+ kolom setelah No)
+          if (cols.length >= offset + 10) {
+            minStock = Math.max(0, Number(cols[offset + 8]) || 0);
+            remark = cols[offset + 9] || '';
+          } else {
+            remark = cols[offset + 8] || '';
+          }
         } else if (cols.length >= 2) {
-          // Minimal format: Nama Part, PN
+          // Minimal format: Nama Part, PN, [Qty], [Satuan], [Merk], [Min Stock]
           namaPart = cols[0];
           pn = cols[1];
           if (cols[2]) qty = Number(cols[2]) || 1;
           if (cols[3]) satuan = cols[3];
           if (cols[4]) merk = cols[4];
+          if (cols[5]) minStock = Math.max(0, Number(cols[5]) || 0);
         }
 
         if (namaPart) {
           itemsToImport.push({
-            unitId: activeUnit?.id || selectedNoUnit || 'ALL',
+            unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || selectedNoUnit || 'ALL'),
             jenisUnit: selectedJenis || 'Alat Berat',
-            noUnit: selectedNoUnit || 'UNIT-ALL',
-            namaAlat: activeUnit?.namaAlat || '',
-            modelUnit: activeUnit?.modelUnit || '',
+            noUnit: isNonUnitSelected ? NON_UNIT_CODE : (selectedNoUnit || 'UNIT-ALL'),
+            namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
+            modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
             noUrut,
             kategori,
             jenisPart,
@@ -606,6 +649,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             namaPart,
             pn,
             qty,
+            minStock,
             satuan,
             remark,
           });
@@ -711,9 +755,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         <div className="p-4 border-b border-stone-800 bg-stone-900/80 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-stone-200 font-semibold text-sm">
             <Wrench className="w-4 h-4 text-amber-500" />
-            <span>Form Registrasi Master Part per Unit</span>
+            <span>Form Registrasi Master Part per Unit / Non Unit</span>
             <span className="text-xs text-stone-400 font-normal">
-              (Pilih Jenis dahulu &rarr; kemudian No Unit)
+              (Pilih Jenis Unit dahulu &rarr; No Unit, atau pilih Non Unit)
             </span>
           </div>
 
@@ -750,7 +794,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               <div>
                 <label className="block text-xs font-semibold text-stone-300 mb-1 flex items-center gap-1">
                   <Layers className="w-3.5 h-3.5 text-amber-500" />
-                  1. Pilih Jenis Unit <span className="text-red-400">*</span>
+                  1. Pilih Jenis Unit / Kategori <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={selectedJenis}
@@ -759,6 +803,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   required
                 >
                   <option value="">-- Pilih Jenis Dahulu --</option>
+                  <option value={NON_UNIT_JENIS}>Non Unit (Umum / Workshop / General)</option>
                   {availableJenisList.map((j) => (
                     <option key={j} value={j}>
                       {j}
@@ -766,7 +811,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   ))}
                 </select>
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  Data diambil dari Registrasi Aset Modul 1
+                  {isNonUnitSelected
+                    ? 'Kategori Non Unit aktif untuk material/part umum'
+                    : 'Data unit diambil dari Registrasi Aset Modul 1'}
                 </span>
               </div>
 
@@ -783,6 +830,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-mono font-medium ${
                     !selectedJenis
                       ? 'border-stone-800 text-stone-600 cursor-not-allowed'
+                      : isNonUnitSelected
+                      ? 'border-sky-700/80 text-sky-300 focus:border-sky-500'
                       : 'border-stone-700 text-stone-100 focus:border-amber-500'
                   }`}
                   required
@@ -790,17 +839,23 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   <option value="">
                     {!selectedJenis ? '-- Pilih Jenis Dahulu --' : '-- Pilih No Unit --'}
                   </option>
-                  {filteredUnits.map((u, idx) => {
-                    const cn = u.cnNew || u.nomorLambung || u.kodeUnit || '';
-                    return (
-                      <option key={`${u.id}_${idx}`} value={cn}>
-                        {cn} {u.namaAlat ? `— ${u.namaAlat}` : ''} {u.modelUnit ? `(${u.modelUnit})` : ''}
-                      </option>
-                    );
-                  })}
+                  {isNonUnitSelected ? (
+                    <option value={NON_UNIT_CODE}>NON-UNIT — Umum / Workshop / Support</option>
+                  ) : (
+                    filteredUnits.map((u, idx) => {
+                      const cn = u.cnNew || u.nomorLambung || u.kodeUnit || '';
+                      return (
+                        <option key={`${u.id}_${idx}`} value={cn}>
+                          {cn} {u.namaAlat ? `— ${u.namaAlat}` : ''} {u.modelUnit ? `(${u.modelUnit})` : ''}
+                        </option>
+                      );
+                    })
+                  )}
                 </select>
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  {filteredUnits.length} unit terdaftar untuk {selectedJenis || 'kategori ini'}
+                  {isNonUnitSelected
+                    ? 'Otomatis terisi NON-UNIT (tidak terikat CN alat berat)'
+                    : `${filteredUnits.length} unit terdaftar untuk ${selectedJenis || 'kategori ini'}`}
                 </span>
               </div>
 
@@ -812,11 +867,17 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 <input
                   type="text"
                   readOnly
-                  value={activeUnit ? `${activeUnit.namaAlat || '-'} / ${activeUnit.modelUnit || '-'}` : '-'}
+                  value={
+                    isNonUnitSelected
+                      ? 'Non Unit / Material Umum Workshop'
+                      : activeUnit
+                      ? `${activeUnit.namaAlat || '-'} / ${activeUnit.modelUnit || '-'}`
+                      : '-'
+                  }
                   className="w-full bg-stone-900/50 border border-stone-800 text-stone-300 text-sm rounded-lg px-3 py-2 cursor-default"
                 />
                 <span className="text-[10px] text-stone-400 mt-1 block">
-                  Otomatis terisi dari Aset
+                  {isNonUnitSelected ? 'Otomatis untuk item Non Unit' : 'Otomatis terisi dari Aset'}
                 </span>
               </div>
 
@@ -828,7 +889,13 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 <input
                   type="text"
                   readOnly
-                  value={activeUnit ? `${activeUnit.brandMerk || 'Standar'} (SN: ${activeUnit.serialNumber || '-'})` : '-'}
+                  value={
+                    isNonUnitSelected
+                      ? 'Universal / General'
+                      : activeUnit
+                      ? `${activeUnit.brandMerk || 'Standar'} (SN: ${activeUnit.serialNumber || '-'})`
+                      : '-'
+                  }
                   className="w-full bg-stone-900/50 border border-stone-800 text-stone-300 text-sm rounded-lg px-3 py-2 cursor-default"
                 />
                 <span className="text-[10px] text-stone-400 mt-1 block">
@@ -866,7 +933,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
             {/* Responsive Table Container */}
             <div className="overflow-x-auto border border-stone-800 rounded-xl bg-stone-950/80">
-              <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[1080px]">
                 <thead>
                   <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                     <th className="py-2.5 px-3 w-14 text-center">No</th>
@@ -876,7 +943,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                     <th className="py-2.5 px-3 w-32">Fungsi</th>
                     <th className="py-2.5 px-3 min-w-[200px]">Nama Part <span className="text-red-400">*</span></th>
                     <th className="py-2.5 px-3 w-36">Part Number (PN)</th>
-                    <th className="py-2.5 px-3 w-24 text-center">Qty & Satuan</th>
+                    <th className="py-2.5 px-3 w-28 text-center">Qty & Satuan</th>
+                    <th className="py-2.5 px-3 w-24 text-center">Min Stock</th>
                     <th className="py-2.5 px-3 w-40">Remark / Keterangan</th>
                     <th className="py-2.5 px-3 w-16 text-center">Aksi</th>
                   </tr>
@@ -998,6 +1066,19 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                         </div>
                       </td>
 
+                      {/* Min Stock */}
+                      <td className="py-2 px-3 text-center">
+                        <input
+                          type="number"
+                          value={row.minStock}
+                          onChange={(e) => handleDraftChange(idx, 'minStock', Math.max(0, Number(e.target.value) || 0))}
+                          className="w-16 bg-stone-900 border border-stone-700 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
+                          min="0"
+                          placeholder="0"
+                          title="Minimum Stock (Safety Stock)"
+                        />
+                      </td>
+
                       {/* Remark */}
                       <td className="py-2 px-3">
                         <input
@@ -1060,6 +1141,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                       namaPart: '',
                       pn: '',
                       qty: 1,
+                      minStock: 0,
                       satuan: 'Pcs',
                       remark: '',
                     },
@@ -1153,7 +1235,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               className="w-full bg-stone-900 border border-stone-800 text-stone-200 text-xs rounded-lg px-2.5 py-2 focus:outline-none focus:border-amber-500"
             >
               <option value="">Semua Jenis Unit</option>
-              {availableJenisList.map((j) => (
+              {catalogJenisOptions.map((j) => (
                 <option key={j} value={j}>
                   {j}
                 </option>
@@ -1214,7 +1296,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
         {/* Master Part Data Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse min-w-[1050px]">
+          <table className="w-full text-left text-xs border-collapse min-w-[1140px]">
             <thead>
               <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                 <th className="py-3 px-3 w-12 text-center">No</th>
@@ -1226,6 +1308,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 <th className="py-3 px-4 min-w-[220px]">Nama Part</th>
                 <th className="py-3 px-3 w-36">Part Number (PN)</th>
                 <th className="py-3 px-3 w-20 text-center">Qty</th>
+                <th className="py-3 px-3 w-24 text-center">Min Stock</th>
                 <th className="py-3 px-3 w-36">Remark</th>
                 <th className="py-3 px-3 w-24 text-center">Aksi</th>
               </tr>
@@ -1233,7 +1316,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             <tbody className="divide-y divide-stone-800/60">
               {filteredMasterParts.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-stone-500">
+                  <td colSpan={12} className="py-12 text-center text-stone-500">
                     <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30 text-stone-400" />
                     <p className="text-sm font-medium">Belum ada data Master Part yang sesuai.</p>
                     <p className="text-xs text-stone-600 mt-1">
@@ -1259,6 +1342,12 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                       ? 'bg-purple-950/60 text-purple-300 border-purple-800/70'
                       : 'bg-stone-800 text-stone-300 border-stone-700';
 
+                  const isItemNonUnit =
+                    (item.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
+                    (item.noUnit || '').toUpperCase() === NON_UNIT_CODE;
+                  const minStockVal = Number(item.minStock ?? 0);
+                  const isLowStock = minStockVal > 0 && Number(item.qty || 0) <= minStockVal;
+
                   return (
                     <tr key={item.id} className="hover:bg-stone-900/40 transition-colors">
                       {/* No Urut */}
@@ -1268,7 +1357,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
                       {/* No Unit */}
                       <td className="py-3 px-3">
-                        <span className="font-mono font-bold text-amber-400 block">
+                        <span
+                          className={`font-mono font-bold block ${
+                            isItemNonUnit ? 'text-sky-400' : 'text-amber-400'
+                          }`}
+                        >
                           {item.noUnit || '-'}
                         </span>
                         <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
@@ -1309,7 +1402,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                         <span className="font-semibold text-stone-100 block">
                           {item.namaPart}
                         </span>
-                        {item.modelUnit && (
+                        {item.modelUnit && item.modelUnit !== '-' && (
                           <span className="text-[10px] text-stone-400 block">
                             Model: {item.modelUnit}
                           </span>
@@ -1325,8 +1418,23 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
                       {/* Qty & Satuan */}
                       <td className="py-3 px-3 text-center font-mono">
-                        <span className="font-bold text-stone-200">{item.qty}</span>{' '}
+                        <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-stone-200'}`}>
+                          {item.qty}
+                        </span>{' '}
                         <span className="text-stone-400 text-[10px]">{item.satuan}</span>
+                      </td>
+
+                      {/* Min Stock */}
+                      <td className="py-3 px-3 text-center font-mono">
+                        <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-amber-300'}`}>
+                          {minStockVal}
+                        </span>{' '}
+                        <span className="text-stone-400 text-[10px]">{item.satuan || 'Pcs'}</span>
+                        {isLowStock && (
+                          <span className="block text-[9px] text-red-400 font-semibold mt-0.5">
+                            Stok Min
+                          </span>
+                        )}
                       </td>
 
                       {/* Remark */}
@@ -1400,6 +1508,40 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* Toggle Non Unit */}
+                <div className="sm:col-span-2 flex items-center justify-between bg-stone-950/70 border border-stone-800 rounded-lg px-3 py-2">
+                  <div>
+                    <span className="font-semibold text-stone-200 block">Kategori Non Unit (Umum / Workshop)</span>
+                    <span className="text-[10px] text-stone-400">Aktifkan jika material/part ini tidak terikat nomor unit alat berat</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={
+                      (editFormData.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
+                      (editFormData.noUnit || '').toUpperCase() === NON_UNIT_CODE
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setEditFormData({
+                          ...editFormData,
+                          unitId: NON_UNIT_CODE,
+                          jenisUnit: NON_UNIT_JENIS,
+                          noUnit: NON_UNIT_CODE,
+                          namaAlat: 'Non Unit / Material Umum',
+                          modelUnit: '-',
+                        });
+                      } else {
+                        setEditFormData({
+                          ...editFormData,
+                          jenisUnit: editingPart.jenisUnit === NON_UNIT_JENIS ? '' : editingPart.jenisUnit,
+                          noUnit: editingPart.noUnit === NON_UNIT_CODE ? '' : editingPart.noUnit,
+                        });
+                      }
+                    }}
+                    className="w-4 h-4 accent-amber-500 cursor-pointer"
+                  />
+                </div>
+
                 {/* No Unit & Jenis */}
                 <div>
                   <label className="block text-stone-400 mb-1">No Unit</label>
@@ -1516,26 +1658,44 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   />
                 </div>
 
-                {/* Qty & Satuan */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Qty</label>
-                  <input
-                    type="number"
-                    value={editFormData.qty || 1}
-                    onChange={(e) => setEditFormData({ ...editFormData, qty: Math.max(1, Number(e.target.value)) })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
-                    min="1"
-                  />
-                </div>
+                {/* Qty, Min Stock & Satuan */}
+                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-stone-400 mb-1">Qty</label>
+                    <input
+                      type="number"
+                      value={editFormData.qty || 1}
+                      onChange={(e) => setEditFormData({ ...editFormData, qty: Math.max(1, Number(e.target.value)) })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
+                      min="1"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-stone-400 mb-1">Satuan</label>
-                  <input
-                    type="text"
-                    value={editFormData.satuan || 'Pcs'}
-                    onChange={(e) => setEditFormData({ ...editFormData, satuan: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  />
+                  <div>
+                    <label className="block text-stone-400 mb-1">Min Stock</label>
+                    <input
+                      type="number"
+                      value={editFormData.minStock ?? 0}
+                      onChange={(e) =>
+                        setEditFormData({
+                          ...editFormData,
+                          minStock: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      className="w-full bg-stone-950 border border-stone-700 text-amber-300 rounded p-2 font-mono"
+                      min="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-400 mb-1">Satuan</label>
+                    <input
+                      type="text"
+                      value={editFormData.satuan || 'Pcs'}
+                      onChange={(e) => setEditFormData({ ...editFormData, satuan: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    />
+                  </div>
                 </div>
 
                 {/* Remark */}
@@ -1601,11 +1761,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               <div className="bg-stone-950 p-2.5 rounded border border-stone-800 font-mono text-[11px] text-stone-300">
                 Contoh urutan kolom:<br />
                 <span className="text-amber-400">
-                  No, Kategori Part, Jenis Part, Merk Part, Fungsi, Nama Part, PN, Qty, Satuan, Remark
+                  No, Kategori Part, Jenis Part, Merk Part, Fungsi, Nama Part, PN, Qty, Satuan, Min Stock, Remark
                 </span>
                 <br />
                 <span className="text-stone-400">
-                  1,Fast Moving,Genuine Part,Komatsu,Part Service,Oil Filter,600-185-5100,2,Pcs,Standar
+                  1,Fast Moving,Genuine Part,Komatsu,Part Service,Oil Filter,600-185-5100,2,Pcs,1,Standar
                 </span>
               </div>
             </div>
@@ -1626,7 +1786,10 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
             <div className="flex justify-between items-center pt-2 border-t border-stone-800">
               <span className="text-[11px] text-stone-400">
-                Unit target: <strong className="text-amber-400">{selectedNoUnit || 'Semua Unit'}</strong>
+                Unit target:{' '}
+                <strong className={isNonUnitSelected ? 'text-sky-400' : 'text-amber-400'}>
+                  {isNonUnitSelected ? 'Non Unit (NON-UNIT)' : selectedNoUnit || 'Semua Unit'}
+                </strong>
               </span>
 
               <div className="flex items-center gap-2">
