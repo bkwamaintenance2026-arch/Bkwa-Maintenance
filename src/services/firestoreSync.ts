@@ -152,6 +152,10 @@ export function getDeterministicDocId(collectionName: string, item: any): string
     const id = (item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return id ? `mpart_${id}` : `mpart_${Date.now()}`;
   }
+  if (collectionName === 'rpl_packages') {
+    const id = (item.id || item.packagePn || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return id ? `rpl_${id}` : `rpl_${Date.now()}`;
+  }
 
   return String(item.id || Date.now());
 }
@@ -567,6 +571,17 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
     return Array.from(map.values());
   }
 
+  if (collectionName === 'rpl_packages') {
+    const map = new Map<string, any>();
+    list.forEach((item) => {
+      if (!item) return;
+      const key = String(item.id || item.packagePn || '').trim().toLowerCase();
+      if (!key) return;
+      map.set(key, item);
+    });
+    return Array.from(map.values());
+  }
+
   // Default: deduplikasi berdasarkan id
   const map = new Map<string, any>();
   list.forEach((item) => {
@@ -617,6 +632,7 @@ export function cleanLocalDuplicates(): void {
     cleanKey('bkwa_inventory_grease_stocks_v1', 'grease_stocks');
     cleanKey('bkwa_inventory_grease_dist_v1', 'grease_distributions');
     cleanKey('bkwa_master_parts_v1', 'master_parts');
+    cleanKey('bkwa_rpl_packages_v1', 'rpl_packages');
   } catch (e) {
     console.warn('Error saat membersihkan duplikat lokal:', e);
   }
@@ -724,8 +740,9 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
     // 9. Activity Logs
     await uploadCollectionFromKey('bkwa_activity_logs_v2', 'activity_logs', 'activity_logs');
 
-    // 10. Modul 8: Master Part & Material Katalog
+    // 10. Modul 8: Master Part & Material Katalog + RPL Packages
     await uploadCollectionFromKey('bkwa_master_parts_v1', 'master_parts', 'master_parts');
+    await uploadCollectionFromKey('bkwa_rpl_packages_v1', 'rpl_packages', 'rpl_packages');
 
     updateStatus({
       connected: true,
@@ -827,8 +844,9 @@ export async function downloadAllFirestoreDataToLocal(): Promise<{
     // 9. Activity Logs
     await pullCollection('activity_logs', 'bkwa_activity_logs_v2', 'activity_logs');
 
-    // 10. Modul 8: Master Part & Material Katalog
+    // 10. Modul 8: Master Part & Material Katalog + RPL Packages
     await pullCollection('master_parts', 'bkwa_master_parts_v1', 'master_parts');
+    await pullCollection('rpl_packages', 'bkwa_rpl_packages_v1', 'rpl_packages');
 
     updateStatus({
       connected: true,
@@ -880,6 +898,7 @@ export async function checkFirestoreDatabaseCounts(): Promise<{
     { module: 'Modul 6', name: 'Purchase Request (PR)', collection: 'purchase_requests' },
     { module: 'Modul 7', name: 'Registrasi Master Tyre (Ban)', collection: 'tyre_records' },
     { module: 'Modul 8', name: 'Master Part & Material Katalog', collection: 'master_parts' },
+    { module: 'Modul 8', name: 'Paket RPL Service Periodic', collection: 'rpl_packages' },
     { module: 'Sistem', name: 'Akun Pengguna & Hak Akses', collection: 'users' },
   ];
 
@@ -1009,8 +1028,9 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
   // 9. Activity Logs
   attachListener('activity_logs', 'bkwa_activity_logs_v2', 'activity_logs');
 
-  // 10. Modul 8: Master Part & Material Katalog
+  // 10. Modul 8: Master Part & Material Katalog + RPL Packages
   attachListener('master_parts', 'bkwa_master_parts_v1', 'master_parts');
+  attachListener('rpl_packages', 'bkwa_rpl_packages_v1', 'rpl_packages');
 
   return () => {
     unsubscribes.forEach((unsub) => unsub());

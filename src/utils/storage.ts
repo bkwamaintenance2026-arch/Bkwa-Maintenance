@@ -53,7 +53,11 @@ import {
   MasterPartItem,
   MasterPartKategori,
   MasterPartJenis,
-  MasterPartFungsi
+  MasterPartFungsi,
+  MasterPartRelationType,
+  MasterPartInterchangeItem,
+  RplPackage,
+  RplPackageItem
 } from '../types';
 import {
   INITIAL_ADMIN_USER,
@@ -115,6 +119,7 @@ const STORAGE_KEYS = {
   ACTIVITY_LOGS: 'bkwa_activity_logs_v2',
   CUSTOM_LOGO: 'bkwa_company_custom_logo',
   MASTER_PARTS: 'bkwa_master_parts_v1',
+  RPL_PACKAGES: 'bkwa_rpl_packages_v1',
 };
 
 // --- LOGO STORAGE MANAGEMENT (Menjaga custom logo ref yang dipilih pengguna) ---
@@ -5942,6 +5947,10 @@ export function addOrUpdateMasterPart(
       ...currentList[index],
       ...data,
       minStock: Math.max(0, Number(data.minStock ?? currentList[index].minStock ?? 0) || 0),
+      partRelationType: (data.partRelationType || currentList[index].partRelationType || 'In Line') as MasterPartRelationType,
+      interchangeParts: Array.isArray(data.interchangeParts)
+        ? data.interchangeParts
+        : currentList[index].interchangeParts || [],
       updatedAt: now,
     };
     currentList[index] = updated;
@@ -5963,6 +5972,8 @@ export function addOrUpdateMasterPart(
   const newPart: MasterPartItem = {
     ...data,
     minStock: Math.max(0, Number(data.minStock ?? 0) || 0),
+    partRelationType: (data.partRelationType || 'In Line') as MasterPartRelationType,
+    interchangeParts: Array.isArray(data.interchangeParts) ? data.interchangeParts : [],
     id: `MPART-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
     createdAt: now,
     updatedAt: now,
@@ -5997,9 +6008,23 @@ export function batchAddMasterParts(
 
   const newRecords: MasterPartItem[] = items.map((item, idx) => {
     addedCount++;
+    const normalizedInterchange: MasterPartInterchangeItem[] = Array.isArray(item.interchangeParts)
+      ? item.interchangeParts.map((sub, subIdx) => ({
+          ...sub,
+          id: sub.id || `MPINT-${Date.now()}-${idx}-${subIdx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+          noUrut: sub.noUrut || subIdx + 1,
+          minStock: Math.max(0, Number(sub.minStock ?? 0) || 0),
+          qty: Number(sub.qty) || 1,
+          createdAt: sub.createdAt || now,
+          updatedAt: now,
+        }))
+      : [];
+
     return {
       ...item,
       minStock: Math.max(0, Number(item.minStock ?? 0) || 0),
+      partRelationType: (item.partRelationType || 'In Line') as MasterPartRelationType,
+      interchangeParts: normalizedInterchange,
       id: `MPART-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       createdAt: now,
       updatedAt: now,
@@ -6046,6 +6071,246 @@ export function deleteMasterPart(id: string): { success: boolean; message: strin
   return {
     success: true,
     message: `Master Part [${target.namaPart}] berhasil dihapus!`,
+  };
+}
+
+export function addOrUpdateMasterPartInterchange(
+  parentId: string,
+  subData: Omit<MasterPartInterchangeItem, 'id' | 'createdAt' | 'updatedAt'>,
+  subIdToEdit?: string
+): { success: boolean; message: string; record?: MasterPartItem } {
+  const currentList = getAllMasterParts();
+  const parentIndex = currentList.findIndex((p) => p.id === parentId);
+  if (parentIndex === -1) {
+    return { success: false, message: 'Part induk Master Part tidak ditemukan!' };
+  }
+
+  const parent = currentList[parentIndex];
+  const existingSubs = Array.isArray(parent.interchangeParts) ? [...parent.interchangeParts] : [];
+  const now = new Date().toISOString();
+
+  if (subIdToEdit) {
+    const subIdx = existingSubs.findIndex((s) => s.id === subIdToEdit);
+    if (subIdx === -1) {
+      return { success: false, message: 'Item Interchange tidak ditemukan untuk diedit!' };
+    }
+    existingSubs[subIdx] = {
+      ...existingSubs[subIdx],
+      ...subData,
+      qty: Number(subData.qty) || 1,
+      minStock: Math.max(0, Number(subData.minStock ?? 0) || 0),
+      updatedAt: now,
+    };
+  } else {
+    const newSub: MasterPartInterchangeItem = {
+      ...subData,
+      id: `MPINT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      noUrut: subData.noUrut || existingSubs.length + 1,
+      qty: Number(subData.qty) || 1,
+      minStock: Math.max(0, Number(subData.minStock ?? 0) || 0),
+      createdAt: now,
+      updatedAt: now,
+    };
+    existingSubs.push(newSub);
+  }
+
+  const updatedParent: MasterPartItem = {
+    ...parent,
+    partRelationType: 'Interchange',
+    interchangeParts: existingSubs,
+    updatedAt: now,
+  };
+
+  currentList[parentIndex] = updatedParent;
+  saveAllMasterParts(currentList);
+  syncItemToFirestore('master_parts', updatedParent.id, updatedParent);
+
+  logActivity({
+    aksi: subIdToEdit ? 'UPDATE' : 'REGISTRASI',
+    keterangan: `${subIdToEdit ? 'Update' : 'Tambah'} Part Interchange [${subData.namaPart} - PN: ${subData.pn}] pada induk [${parent.namaPart}]`,
+    detailUnit: parent.noUnit,
+  });
+
+  return {
+    success: true,
+    message: subIdToEdit
+      ? `Part Interchange [${subData.namaPart}] berhasil diperbarui!`
+      : `Part Interchange [${subData.namaPart}] berhasil ditambahkan ke ${parent.namaPart}!`,
+    record: updatedParent,
+  };
+}
+
+export function deleteMasterPartInterchange(
+  parentId: string,
+  subId: string
+): { success: boolean; message: string } {
+  const currentList = getAllMasterParts();
+  const parentIndex = currentList.findIndex((p) => p.id === parentId);
+  if (parentIndex === -1) {
+    return { success: false, message: 'Part induk Master Part tidak ditemukan!' };
+  }
+
+  const parent = currentList[parentIndex];
+  const existingSubs = Array.isArray(parent.interchangeParts) ? parent.interchangeParts : [];
+  const targetSub = existingSubs.find((s) => s.id === subId);
+  if (!targetSub) {
+    return { success: false, message: 'Item Interchange tidak ditemukan!' };
+  }
+
+  const filteredSubs = existingSubs
+    .filter((s) => s.id !== subId)
+    .map((s, idx) => ({ ...s, noUrut: idx + 1 }));
+
+  const updatedParent: MasterPartItem = {
+    ...parent,
+    interchangeParts: filteredSubs,
+    updatedAt: new Date().toISOString(),
+  };
+
+  currentList[parentIndex] = updatedParent;
+  saveAllMasterParts(currentList);
+  syncItemToFirestore('master_parts', updatedParent.id, updatedParent);
+
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Part Interchange [${targetSub.namaPart} - PN: ${targetSub.pn}] dari induk [${parent.namaPart}]`,
+    detailUnit: parent.noUnit,
+  });
+
+  return {
+    success: true,
+    message: `Part Interchange [${targetSub.namaPart}] berhasil dihapus!`,
+  };
+}
+
+// ==========================================
+// --- MODUL 8 TAB RPL: RECOMMENDED PART LIST ---
+// ==========================================
+
+export function getAllRplPackages(): RplPackage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.RPL_PACKAGES);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error('Error reading RPL packages from storage:', e);
+    return [];
+  }
+}
+
+export function saveAllRplPackages(list: RplPackage[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.RPL_PACKAGES, JSON.stringify(list));
+    window.dispatchEvent(new CustomEvent('bkwa-rpl-packages-changed'));
+  } catch (e) {
+    console.error('Error saving RPL packages to storage:', e);
+  }
+}
+
+export function addOrUpdateRplPackage(
+  data: Omit<RplPackage, 'id' | 'createdAt' | 'updatedAt'>,
+  idToEdit?: string
+): { success: boolean; message: string; record?: RplPackage } {
+  const currentList = getAllRplPackages();
+  const normalizedPn = (data.packagePn || '').trim().toUpperCase();
+  if (!normalizedPn) {
+    return { success: false, message: 'PN Paket RPL wajib diisi!' };
+  }
+
+  const duplicate = currentList.find(
+    (pkg) => pkg.packagePn.trim().toUpperCase() === normalizedPn && pkg.id !== idToEdit
+  );
+  if (duplicate) {
+    return {
+      success: false,
+      message: `PN Paket "${normalizedPn}" sudah terdaftar untuk "${duplicate.packageName}". Gunakan PN Paket lain.`,
+    };
+  }
+
+  if (!Array.isArray(data.items) || data.items.length === 0) {
+    return { success: false, message: 'Minimal pilih 1 item Master Part di dalam paket RPL!' };
+  }
+
+  const sanitizedItems: RplPackageItem[] = data.items.map((item) => ({
+    ...item,
+    qtyNeeded: Math.max(1, Number(item.qtyNeeded) || 1),
+  }));
+
+  const now = new Date().toISOString();
+
+  if (idToEdit) {
+    const index = currentList.findIndex((p) => p.id === idToEdit);
+    if (index === -1) {
+      return { success: false, message: 'Paket RPL tidak ditemukan untuk diedit!' };
+    }
+    const updated: RplPackage = {
+      ...currentList[index],
+      ...data,
+      packagePn: normalizedPn,
+      items: sanitizedItems,
+      updatedAt: now,
+    };
+    currentList[index] = updated;
+    saveAllRplPackages(currentList);
+    syncItemToFirestore('rpl_packages', updated.id, updated);
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Update Paket RPL [${updated.packagePn}] ${updated.packageName} (${updated.items.length} part)`,
+      detailUnit: updated.noUnit || updated.jenisUnit,
+    });
+    return {
+      success: true,
+      message: `Paket RPL [${updated.packagePn}] berhasil diperbarui!`,
+      record: updated,
+    };
+  }
+
+  const newPkg: RplPackage = {
+    ...data,
+    packagePn: normalizedPn,
+    items: sanitizedItems,
+    id: `RPL-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  currentList.unshift(newPkg);
+  saveAllRplPackages(currentList);
+  syncItemToFirestore('rpl_packages', newPkg.id, newPkg);
+  logActivity({
+    aksi: 'REGISTRASI',
+    keterangan: `Buat Paket RPL Baru [${newPkg.packagePn}] ${newPkg.packageName} (${newPkg.items.length} part)`,
+    detailUnit: newPkg.noUnit || newPkg.jenisUnit,
+  });
+
+  return {
+    success: true,
+    message: `Paket RPL [${newPkg.packagePn}] berhasil dibuat dan disimpan!`,
+    record: newPkg,
+  };
+}
+
+export function deleteRplPackage(id: string): { success: boolean; message: string } {
+  const currentList = getAllRplPackages();
+  const target = currentList.find((p) => p.id === id);
+  if (!target) {
+    return { success: false, message: 'Paket RPL tidak ditemukan!' };
+  }
+
+  const filtered = currentList.filter((p) => p.id !== id);
+  saveAllRplPackages(filtered);
+  deleteItemFromFirestore('rpl_packages', id, target);
+
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Paket RPL [${target.packagePn}] ${target.packageName}`,
+    detailUnit: target.noUnit || target.jenisUnit,
+  });
+
+  return {
+    success: true,
+    message: `Paket RPL [${target.packagePn}] berhasil dihapus!`,
   };
 }
 

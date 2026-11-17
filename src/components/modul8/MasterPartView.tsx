@@ -5,30 +5,35 @@ import {
   MasterPartKategori, 
   MasterPartJenis, 
   MasterPartFungsi,
+  MasterPartRelationType,
+  MasterPartInterchangeItem,
   MASTER_PART_KATEGORI_OPTIONS,
   MASTER_PART_JENIS_OPTIONS,
   MASTER_PART_FUNGSI_OPTIONS,
+  MASTER_PART_RELATION_OPTIONS,
   UserAccount 
 } from '../../types';
 import { 
   getAllMasterParts, 
   addOrUpdateMasterPart, 
   batchAddMasterParts, 
-  deleteMasterPart, 
+  deleteMasterPart,
+  addOrUpdateMasterPartInterchange,
+  deleteMasterPartInterchange,
+  getAllRplPackages,
   isDeveloper,
   canUserInsertModule,
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule
 } from '../../utils/storage';
+import { RplSubView } from './RplSubView';
 import { 
   Boxes, 
   Plus, 
   Trash2, 
   Edit3, 
   Search, 
-  Filter, 
-  Download, 
   Upload, 
   RefreshCw, 
   CheckCircle2, 
@@ -40,7 +45,11 @@ import {
   FileSpreadsheet, 
   Copy,
   Info,
-  Lock
+  Lock,
+  ChevronDown,
+  ChevronRight,
+  ArrowRightLeft,
+  Package
 } from 'lucide-react';
 
 interface MasterPartViewProps {
@@ -48,7 +57,7 @@ interface MasterPartViewProps {
   currentUser: UserAccount;
 }
 
-interface DraftPartRow {
+interface DraftInterchangeRow {
   noUrut: number;
   kategori: MasterPartKategori;
   jenisPart: MasterPartJenis;
@@ -62,6 +71,52 @@ interface DraftPartRow {
   remark: string;
 }
 
+interface DraftPartRow {
+  noUrut: number;
+  kategori: MasterPartKategori;
+  jenisPart: MasterPartJenis;
+  merk: string;
+  fungsi: MasterPartFungsi;
+  namaPart: string;
+  pn: string;
+  qty: number;
+  minStock: number;
+  satuan: string;
+  partRelationType: MasterPartRelationType;
+  interchangeDrafts: DraftInterchangeRow[];
+  remark: string;
+}
+
+const createEmptyInterchangeDraft = (noUrut = 1, defaultMerk = ''): DraftInterchangeRow => ({
+  noUrut,
+  kategori: 'Fast Moving',
+  jenisPart: 'OEM',
+  merk: defaultMerk,
+  fungsi: 'Part Service',
+  namaPart: '',
+  pn: '',
+  qty: 1,
+  minStock: 0,
+  satuan: 'Pcs',
+  remark: '',
+});
+
+const createEmptyDraftRow = (noUrut = 1, defaultMerk = ''): DraftPartRow => ({
+  noUrut,
+  kategori: 'Fast Moving',
+  jenisPart: 'Genuine Part',
+  merk: defaultMerk,
+  fungsi: 'Part Service',
+  namaPart: '',
+  pn: '',
+  qty: 1,
+  minStock: 0,
+  satuan: 'Pcs',
+  partRelationType: 'In Line',
+  interchangeDrafts: [],
+  remark: '',
+});
+
 const COMMON_SATUAN_OPTIONS = ['Pcs', 'Set', 'Ea', 'Assy', 'Roll', 'Unit', 'Box', 'Liter', 'Can'];
 const NON_UNIT_JENIS = 'Non Unit';
 const NON_UNIT_CODE = 'NON-UNIT';
@@ -73,6 +128,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const canDelete = canUserDeleteModule(currentUser, 8) || isDev;
   const canExport = canUserExportModule(currentUser, 8) || isDev;
 
+  const [activeTab, setActiveTab] = useState<'katalog' | 'rpl'>('katalog');
+  const [rplPackageCount, setRplPackageCount] = useState(0);
+
   // Master parts list state
   const [masterParts, setMasterParts] = useState<MasterPartItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,6 +140,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     setIsLoading(true);
     const data = getAllMasterParts();
     setMasterParts(data);
+    setRplPackageCount(getAllRplPackages().length);
     setIsLoading(false);
   };
 
@@ -89,9 +148,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     loadParts();
     const handleStorageChange = () => loadParts();
     window.addEventListener('bkwa-master-parts-changed', handleStorageChange);
+    window.addEventListener('bkwa-rpl-packages-changed', handleStorageChange);
     window.addEventListener('bkwa-firestore-synced', handleStorageChange);
     return () => {
       window.removeEventListener('bkwa-master-parts-changed', handleStorageChange);
+      window.removeEventListener('bkwa-rpl-packages-changed', handleStorageChange);
       window.removeEventListener('bkwa-firestore-synced', handleStorageChange);
     };
   }, []);
@@ -135,21 +196,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   };
 
   // --- MULTI-ROW DRAFT PARTS INPUT ---
-  const [draftRows, setDraftRows] = useState<DraftPartRow[]>([
-    {
-      noUrut: 1,
-      kategori: 'Fast Moving',
-      jenisPart: 'Genuine Part',
-      merk: '',
-      fungsi: 'Part Service',
-      namaPart: '',
-      pn: '',
-      qty: 1,
-      minStock: 0,
-      satuan: 'Pcs',
-      remark: '',
-    },
-  ]);
+  const [draftRows, setDraftRows] = useState<DraftPartRow[]>([createEmptyDraftRow(1)]);
 
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error' | null;
@@ -159,19 +206,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const handleAddDraftRow = () => {
     setDraftRows((prev) => [
       ...prev,
-      {
-        noUrut: prev.length + 1,
-        kategori: 'Fast Moving',
-        jenisPart: 'Genuine Part',
-        merk: prev.length > 0 ? prev[prev.length - 1].merk : '',
-        fungsi: 'Part Service',
-        namaPart: '',
-        pn: '',
-        qty: 1,
-        minStock: 0,
-        satuan: 'Pcs',
-        remark: '',
-      },
+      createEmptyDraftRow(prev.length + 1, prev.length > 0 ? prev[prev.length - 1].merk : ''),
     ]);
   };
 
@@ -183,28 +218,14 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       {
         ...source,
         noUrut: prev.length + 1,
-        namaPart: `${source.namaPart}`,
+        interchangeDrafts: source.interchangeDrafts.map((sub) => ({ ...sub })),
       },
     ]);
   };
 
   const handleRemoveDraftRow = (index: number) => {
     if (draftRows.length <= 1) {
-      setDraftRows([
-        {
-          noUrut: 1,
-          kategori: 'Fast Moving',
-          jenisPart: 'Genuine Part',
-          merk: '',
-          fungsi: 'Part Service',
-          namaPart: '',
-          pn: '',
-          qty: 1,
-          minStock: 0,
-          satuan: 'Pcs',
-          remark: '',
-        },
-      ]);
+      setDraftRows([createEmptyDraftRow(1)]);
       return;
     }
     const updated = draftRows.filter((_, i) => i !== index).map((row, i) => ({
@@ -217,7 +238,50 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const handleDraftChange = (index: number, field: keyof DraftPartRow, value: any) => {
     setDraftRows((prev) => {
       const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
+      const nextRow = { ...copy[index], [field]: value };
+      if (field === 'partRelationType' && value === 'Interchange' && nextRow.interchangeDrafts.length === 0) {
+        nextRow.interchangeDrafts = [createEmptyInterchangeDraft(1)];
+      }
+      copy[index] = nextRow;
+      return copy;
+    });
+  };
+
+  const handleAddDraftInterchange = (rowIndex: number) => {
+    setDraftRows((prev) => {
+      const copy = [...prev];
+      const subs = copy[rowIndex].interchangeDrafts || [];
+      copy[rowIndex] = {
+        ...copy[rowIndex],
+        partRelationType: 'Interchange',
+        interchangeDrafts: [...subs, createEmptyInterchangeDraft(subs.length + 1)],
+      };
+      return copy;
+    });
+  };
+
+  const handleDraftInterchangeChange = (
+    rowIndex: number,
+    subIndex: number,
+    field: keyof DraftInterchangeRow,
+    value: any
+  ) => {
+    setDraftRows((prev) => {
+      const copy = [...prev];
+      const subs = [...(copy[rowIndex].interchangeDrafts || [])];
+      subs[subIndex] = { ...subs[subIndex], [field]: value };
+      copy[rowIndex] = { ...copy[rowIndex], interchangeDrafts: subs };
+      return copy;
+    });
+  };
+
+  const handleRemoveDraftInterchange = (rowIndex: number, subIndex: number) => {
+    setDraftRows((prev) => {
+      const copy = [...prev];
+      const subs = (copy[rowIndex].interchangeDrafts || [])
+        .filter((_, i) => i !== subIndex)
+        .map((sub, idx) => ({ ...sub, noUrut: idx + 1 }));
+      copy[rowIndex] = { ...copy[rowIndex], interchangeDrafts: subs };
       return copy;
     });
   };
@@ -252,24 +316,51 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       return;
     }
 
-    const payloadItems = validRows.map((r, idx) => ({
-      unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || resolvedNoUnit),
-      jenisUnit: selectedJenis,
-      noUnit: resolvedNoUnit,
-      namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
-      modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
-      noUrut: r.noUrut || idx + 1,
-      kategori: r.kategori,
-      jenisPart: r.jenisPart,
-      merk: r.merk.trim() || (isNonUnitSelected ? 'Universal' : activeUnit?.brandMerk || 'Universal'),
-      fungsi: r.fungsi,
-      namaPart: r.namaPart.trim() || 'Part Tanpa Nama',
-      pn: r.pn.trim() || '-',
-      qty: Number(r.qty) || 1,
-      minStock: Math.max(0, Number(r.minStock) || 0),
-      satuan: r.satuan || 'Pcs',
-      remark: r.remark.trim() || '',
-    }));
+    const now = new Date().toISOString();
+    const payloadItems = validRows.map((r, idx) => {
+      const validSubs: MasterPartInterchangeItem[] =
+        r.partRelationType === 'Interchange'
+          ? (r.interchangeDrafts || [])
+              .filter((sub) => sub.namaPart.trim() !== '' || sub.pn.trim() !== '')
+              .map((sub, subIdx) => ({
+                id: `MPINT-${Date.now()}-${idx}-${subIdx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+                noUrut: sub.noUrut || subIdx + 1,
+                kategori: sub.kategori,
+                jenisPart: sub.jenisPart,
+                merk: sub.merk.trim() || 'Universal',
+                fungsi: sub.fungsi,
+                namaPart: sub.namaPart.trim() || 'Part Interchange',
+                pn: sub.pn.trim() || '-',
+                qty: Number(sub.qty) || 1,
+                minStock: Math.max(0, Number(sub.minStock) || 0),
+                satuan: sub.satuan || 'Pcs',
+                remark: sub.remark.trim() || '',
+                createdAt: now,
+                updatedAt: now,
+              }))
+          : [];
+
+      return {
+        unitId: isNonUnitSelected ? NON_UNIT_CODE : (activeUnit?.id || resolvedNoUnit),
+        jenisUnit: selectedJenis,
+        noUnit: resolvedNoUnit,
+        namaAlat: isNonUnitSelected ? 'Non Unit / Material Umum' : (activeUnit?.namaAlat || ''),
+        modelUnit: isNonUnitSelected ? '-' : (activeUnit?.modelUnit || ''),
+        noUrut: r.noUrut || idx + 1,
+        kategori: r.kategori,
+        jenisPart: r.jenisPart,
+        merk: r.merk.trim() || (isNonUnitSelected ? 'Universal' : activeUnit?.brandMerk || 'Universal'),
+        fungsi: r.fungsi,
+        namaPart: r.namaPart.trim() || 'Part Tanpa Nama',
+        pn: r.pn.trim() || '-',
+        qty: Number(r.qty) || 1,
+        minStock: Math.max(0, Number(r.minStock) || 0),
+        satuan: r.satuan || 'Pcs',
+        partRelationType: r.partRelationType || 'In Line',
+        interchangeParts: validSubs,
+        remark: r.remark.trim() || '',
+      };
+    });
 
     const result = batchAddMasterParts(payloadItems);
     if (result.success) {
@@ -279,22 +370,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           ? `Berhasil menyimpan ${result.count} item Master Part kategori Non Unit (${resolvedNoUnit})!`
           : `Berhasil menyimpan ${result.count} item Master Part untuk unit ${resolvedNoUnit}!`,
       });
-      // Reset rows to single empty
-      setDraftRows([
-        {
-          noUrut: 1,
-          kategori: 'Fast Moving',
-          jenisPart: 'Genuine Part',
-          merk: activeUnit?.brandMerk || '',
-          fungsi: 'Part Service',
-          namaPart: '',
-          pn: '',
-          qty: 1,
-          minStock: 0,
-          satuan: 'Pcs',
-          remark: '',
-        },
-      ]);
+      setDraftRows([createEmptyDraftRow(1, activeUnit?.brandMerk || '')]);
       loadParts();
     } else {
       setFeedback({ type: 'error', message: result.message });
@@ -308,13 +384,18 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const [filterKategori, setFilterKategori] = useState<string>('ALL');
   const [filterJenisPart, setFilterJenisPart] = useState<string>('ALL');
   const [filterFungsi, setFilterFungsi] = useState<string>('ALL');
+  const [filterRelationType, setFilterRelationType] = useState<string>('ALL');
+  const [expandedInterchangeIds, setExpandedInterchangeIds] = useState<Record<string, boolean>>({});
 
   // Filtered master parts
   const filteredMasterParts = useMemo(() => {
     return masterParts.filter((item) => {
-      // Search query
+      // Search query (cek induk dan sub-part interchange)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
+        const subText = (item.interchangeParts || [])
+          .map((s) => `${s.namaPart} ${s.pn} ${s.merk} ${s.remark || ''}`)
+          .join(' ');
         const matchText = (
           (item.namaPart || '') +
           ' ' +
@@ -326,7 +407,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           ' ' +
           (item.jenisUnit || '') +
           ' ' +
-          (item.remark || '')
+          (item.remark || '') +
+          ' ' +
+          subText
         ).toLowerCase();
         if (!matchText.includes(q)) return false;
       }
@@ -350,6 +433,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       if (filterFungsi !== 'ALL' && item.fungsi !== filterFungsi) {
         return false;
       }
+      // Filter Tipe In Line / Interchange
+      if (filterRelationType !== 'ALL') {
+        const itemRelation = item.partRelationType || 'In Line';
+        if (itemRelation !== filterRelationType) return false;
+      }
       return true;
     });
   }, [
@@ -360,6 +448,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     filterKategori,
     filterJenisPart,
     filterFungsi,
+    filterRelationType,
   ]);
 
   // Units list & jenis list found in master parts for table filtering
@@ -418,7 +507,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     if (!canEdit) return;
     setEditError(null);
     setEditingPart(part);
-    setEditFormData({ ...part, minStock: Number(part.minStock ?? 0) });
+    setEditFormData({
+      ...part,
+      minStock: Number(part.minStock ?? 0),
+      partRelationType: part.partRelationType || 'In Line',
+    });
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -443,6 +536,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         qty: Number(editFormData.qty) || editingPart.qty,
         minStock: Math.max(0, Number(editFormData.minStock ?? 0) || 0),
         satuan: editFormData.satuan || editingPart.satuan,
+        partRelationType: (editFormData.partRelationType as MasterPartRelationType) || editingPart.partRelationType || 'In Line',
+        interchangeParts: editingPart.interchangeParts || [],
         remark: editFormData.remark || '',
       },
       editingPart.id
@@ -456,6 +551,96 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     } else {
       setEditError(res.message);
     }
+  };
+
+  // --- MODAL ADD / EDIT SUB-ITEM INTERCHANGE ---
+  const [interchangeModal, setInterchangeModal] = useState<{
+    parent: MasterPartItem;
+    editingSub: MasterPartInterchangeItem | null;
+  } | null>(null);
+  const [subFormData, setSubFormData] = useState<DraftInterchangeRow>(createEmptyInterchangeDraft(1));
+  const [subError, setSubError] = useState<string | null>(null);
+  const [deletingInterchange, setDeletingInterchange] = useState<{
+    parentId: string;
+    subId: string;
+    nama: string;
+  } | null>(null);
+
+  const handleOpenInterchangeModal = (
+    parent: MasterPartItem,
+    editingSub: MasterPartInterchangeItem | null = null
+  ) => {
+    if (!canInsert && !canEdit) return;
+    setSubError(null);
+    setInterchangeModal({ parent, editingSub });
+    if (editingSub) {
+      setSubFormData({
+        noUrut: editingSub.noUrut || 1,
+        kategori: editingSub.kategori,
+        jenisPart: editingSub.jenisPart,
+        merk: editingSub.merk || '',
+        fungsi: editingSub.fungsi,
+        namaPart: editingSub.namaPart || '',
+        pn: editingSub.pn || '',
+        qty: Number(editingSub.qty) || 1,
+        minStock: Number(editingSub.minStock ?? 0),
+        satuan: editingSub.satuan || 'Pcs',
+        remark: editingSub.remark || '',
+      });
+    } else {
+      const nextNo = (parent.interchangeParts?.length || 0) + 1;
+      setSubFormData(createEmptyInterchangeDraft(nextNo));
+    }
+  };
+
+  const handleSaveInterchangeModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!interchangeModal) return;
+    setSubError(null);
+
+    if (!subFormData.namaPart.trim() && !subFormData.pn.trim()) {
+      setSubError('Minimal isi Nama Part atau Part Number (PN) pengganti!');
+      return;
+    }
+
+    const res = addOrUpdateMasterPartInterchange(
+      interchangeModal.parent.id,
+      {
+        noUrut: Number(subFormData.noUrut) || 1,
+        kategori: subFormData.kategori,
+        jenisPart: subFormData.jenisPart,
+        merk: subFormData.merk.trim() || 'Universal',
+        fungsi: subFormData.fungsi,
+        namaPart: subFormData.namaPart.trim() || 'Part Interchange',
+        pn: subFormData.pn.trim() || '-',
+        qty: Number(subFormData.qty) || 1,
+        minStock: Math.max(0, Number(subFormData.minStock) || 0),
+        satuan: subFormData.satuan || 'Pcs',
+        remark: subFormData.remark.trim() || '',
+      },
+      interchangeModal.editingSub?.id
+    );
+
+    if (res.success) {
+      setExpandedInterchangeIds((prev) => ({ ...prev, [interchangeModal.parent.id]: true }));
+      setInterchangeModal(null);
+      setFeedback({ type: 'success', message: res.message });
+      loadParts();
+    } else {
+      setSubError(res.message);
+    }
+  };
+
+  const handleConfirmDeleteInterchange = () => {
+    if (!canDelete || !deletingInterchange) return;
+    const res = deleteMasterPartInterchange(deletingInterchange.parentId, deletingInterchange.subId);
+    if (res.success) {
+      setFeedback({ type: 'success', message: res.message });
+      loadParts();
+    } else {
+      setFeedback({ type: 'error', message: res.message });
+    }
+    setDeletingInterchange(null);
   };
 
   // --- DELETE ACTION ---
@@ -500,6 +685,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       'Qty',
       'Min Stock',
       'Satuan',
+      'Tipe Part',
+      'Jml Interchange',
       'Remark',
     ];
 
@@ -517,6 +704,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       p.qty,
       Number(p.minStock ?? 0),
       `"${p.satuan || ''}"`,
+      `"${p.partRelationType || 'In Line'}"`,
+      p.interchangeParts?.length || 0,
       `"${(p.remark || '').replace(/"/g, '""')}"`,
     ]);
 
@@ -723,6 +912,61 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         </div>
       </div>
 
+      {/* Navigation Tabs Modul 8 */}
+      <div className="flex flex-wrap items-center gap-2 bg-stone-900 border border-stone-800 rounded-xl p-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('katalog')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+            activeTab === 'katalog'
+              ? 'bg-amber-500 text-stone-950 shadow'
+              : 'text-stone-300 hover:text-stone-100 hover:bg-stone-800/70'
+          }`}
+        >
+          <Boxes className="w-4 h-4" />
+          <span>Katalog Master Part & Interchange</span>
+          <span
+            className={`font-mono text-[11px] px-1.5 py-0.5 rounded ${
+              activeTab === 'katalog'
+                ? 'bg-stone-950/20 text-stone-950 font-bold'
+                : 'bg-stone-800 text-stone-400'
+            }`}
+          >
+            {masterParts.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('rpl')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+            activeTab === 'rpl'
+              ? 'bg-amber-500 text-stone-950 shadow'
+              : 'text-stone-300 hover:text-stone-100 hover:bg-stone-800/70'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          <span>RPL (Recommended Part List)</span>
+          <span
+            className={`font-mono text-[11px] px-1.5 py-0.5 rounded ${
+              activeTab === 'rpl'
+                ? 'bg-stone-950/20 text-stone-950 font-bold'
+                : 'bg-stone-800 text-stone-400'
+            }`}
+          >
+            {rplPackageCount}
+          </span>
+        </button>
+      </div>
+
+      {activeTab === 'rpl' ? (
+        <RplSubView
+          units={units}
+          masterParts={masterParts}
+          currentUser={currentUser}
+        />
+      ) : (
+        <>
       {/* Global feedback message banner */}
       {feedback && (
         <div
@@ -933,7 +1177,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
             {/* Responsive Table Container */}
             <div className="overflow-x-auto border border-stone-800 rounded-xl bg-stone-950/80">
-              <table className="w-full text-left text-xs border-collapse min-w-[1080px]">
+              <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
                 <thead>
                   <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                     <th className="py-2.5 px-3 w-14 text-center">No</th>
@@ -945,173 +1189,427 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                     <th className="py-2.5 px-3 w-36">Part Number (PN)</th>
                     <th className="py-2.5 px-3 w-28 text-center">Qty & Satuan</th>
                     <th className="py-2.5 px-3 w-24 text-center">Min Stock</th>
+                    <th className="py-2.5 px-3 w-32">Tipe Part</th>
                     <th className="py-2.5 px-3 w-40">Remark / Keterangan</th>
                     <th className="py-2.5 px-3 w-16 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-800/60">
                   {draftRows.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-stone-900/40 transition-colors">
-                      {/* No Urut */}
-                      <td className="py-2 px-3 text-center">
-                        <input
-                          type="number"
-                          value={row.noUrut}
-                          onChange={(e) => handleDraftChange(idx, 'noUrut', Number(e.target.value))}
-                          className="w-12 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1.5 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
-                          min="1"
-                        />
-                      </td>
-
-                      {/* Kategori Part */}
-                      <td className="py-2 px-3">
-                        <select
-                          value={row.kategori}
-                          onChange={(e) => handleDraftChange(idx, 'kategori', e.target.value as MasterPartKategori)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none font-medium"
-                        >
-                          {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
-                            <option key={k} value={k}>
-                              {k}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Jenis Part */}
-                      <td className="py-2 px-3">
-                        <select
-                          value={row.jenisPart}
-                          onChange={(e) => handleDraftChange(idx, 'jenisPart', e.target.value as MasterPartJenis)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                        >
-                          {MASTER_PART_JENIS_OPTIONS.map((j) => (
-                            <option key={j} value={j}>
-                              {j}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Merk Part */}
-                      <td className="py-2 px-3">
-                        <input
-                          type="text"
-                          placeholder="Merek part..."
-                          value={row.merk}
-                          onChange={(e) => handleDraftChange(idx, 'merk', e.target.value)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                        />
-                      </td>
-
-                      {/* Fungsi */}
-                      <td className="py-2 px-3">
-                        <select
-                          value={row.fungsi}
-                          onChange={(e) => handleDraftChange(idx, 'fungsi', e.target.value as MasterPartFungsi)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                        >
-                          {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
-                            <option key={f} value={f}>
-                              {f}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Nama Part */}
-                      <td className="py-2 px-3">
-                        <input
-                          type="text"
-                          placeholder="Contoh: Oil Filter Element, V-Belt, Seal..."
-                          value={row.namaPart}
-                          onChange={(e) => handleDraftChange(idx, 'namaPart', e.target.value)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-100 font-medium text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                          required={idx === 0}
-                        />
-                      </td>
-
-                      {/* PN (Part Number) */}
-                      <td className="py-2 px-3">
-                        <input
-                          type="text"
-                          placeholder="Contoh: 600-185-5100"
-                          value={row.pn}
-                          onChange={(e) => handleDraftChange(idx, 'pn', e.target.value)}
-                          className="w-full bg-stone-900 border border-stone-700 text-amber-400 font-mono text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                        />
-                      </td>
-
-                      {/* Qty & Satuan */}
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-1">
+                    <React.Fragment key={idx}>
+                      <tr className="hover:bg-stone-900/40 transition-colors">
+                        {/* No Urut */}
+                        <td className="py-2 px-3 text-center">
                           <input
                             type="number"
-                            value={row.qty}
-                            onChange={(e) => handleDraftChange(idx, 'qty', Math.max(1, Number(e.target.value)))}
-                            className="w-12 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
+                            value={row.noUrut}
+                            onChange={(e) => handleDraftChange(idx, 'noUrut', Number(e.target.value))}
+                            className="w-12 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1.5 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
                             min="1"
                           />
+                        </td>
+
+                        {/* Kategori Part */}
+                        <td className="py-2 px-3">
                           <select
-                            value={row.satuan}
-                            onChange={(e) => handleDraftChange(idx, 'satuan', e.target.value)}
-                            className="w-16 bg-stone-900 border border-stone-700 text-stone-300 text-xs rounded px-1 py-1 focus:border-amber-500 focus:outline-none"
+                            value={row.kategori}
+                            onChange={(e) => handleDraftChange(idx, 'kategori', e.target.value as MasterPartKategori)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none font-medium"
                           >
-                            {COMMON_SATUAN_OPTIONS.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
+                            {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
+                              <option key={k} value={k}>
+                                {k}
                               </option>
                             ))}
                           </select>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Min Stock */}
-                      <td className="py-2 px-3 text-center">
-                        <input
-                          type="number"
-                          value={row.minStock}
-                          onChange={(e) => handleDraftChange(idx, 'minStock', Math.max(0, Number(e.target.value) || 0))}
-                          className="w-16 bg-stone-900 border border-stone-700 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
-                          min="0"
-                          placeholder="0"
-                          title="Minimum Stock (Safety Stock)"
-                        />
-                      </td>
-
-                      {/* Remark */}
-                      <td className="py-2 px-3">
-                        <input
-                          type="text"
-                          placeholder="Keterangan tambahan..."
-                          value={row.remark}
-                          onChange={(e) => handleDraftChange(idx, 'remark', e.target.value)}
-                          className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
-                        />
-                      </td>
-
-                      {/* Action buttons */}
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleDuplicateDraftRow(idx)}
-                            className="p-1 text-stone-400 hover:text-amber-400 transition-colors"
-                            title="Duplikat baris"
+                        {/* Jenis Part */}
+                        <td className="py-2 px-3">
+                          <select
+                            value={row.jenisPart}
+                            onChange={(e) => handleDraftChange(idx, 'jenisPart', e.target.value as MasterPartJenis)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
                           >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDraftRow(idx)}
-                            className="p-1 text-stone-400 hover:text-red-400 transition-colors"
-                            title="Hapus baris"
+                            {MASTER_PART_JENIS_OPTIONS.map((j) => (
+                              <option key={j} value={j}>
+                                {j}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Merk Part */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            placeholder="Merek part..."
+                            value={row.merk}
+                            onChange={(e) => handleDraftChange(idx, 'merk', e.target.value)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
+                          />
+                        </td>
+
+                        {/* Fungsi */}
+                        <td className="py-2 px-3">
+                          <select
+                            value={row.fungsi}
+                            onChange={(e) => handleDraftChange(idx, 'fungsi', e.target.value as MasterPartFungsi)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
+                              <option key={f} value={f}>
+                                {f}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Nama Part */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            placeholder="Contoh: Oil Filter Element, V-Belt, Seal..."
+                            value={row.namaPart}
+                            onChange={(e) => handleDraftChange(idx, 'namaPart', e.target.value)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-100 font-medium text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
+                            required={idx === 0}
+                          />
+                        </td>
+
+                        {/* PN (Part Number) */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            placeholder="Contoh: 600-185-5100"
+                            value={row.pn}
+                            onChange={(e) => handleDraftChange(idx, 'pn', e.target.value)}
+                            className="w-full bg-stone-900 border border-stone-700 text-amber-400 font-mono text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
+                          />
+                        </td>
+
+                        {/* Qty & Satuan */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              value={row.qty}
+                              onChange={(e) => handleDraftChange(idx, 'qty', Math.max(1, Number(e.target.value)))}
+                              className="w-12 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
+                              min="1"
+                            />
+                            <select
+                              value={row.satuan}
+                              onChange={(e) => handleDraftChange(idx, 'satuan', e.target.value)}
+                              className="w-16 bg-stone-900 border border-stone-700 text-stone-300 text-xs rounded px-1 py-1 focus:border-amber-500 focus:outline-none"
+                            >
+                              {COMMON_SATUAN_OPTIONS.map((s) => (
+                                <option key={s} value={s}>
+                                  {s}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </td>
+
+                        {/* Min Stock */}
+                        <td className="py-2 px-3 text-center">
+                          <input
+                            type="number"
+                            value={row.minStock}
+                            onChange={(e) => handleDraftChange(idx, 'minStock', Math.max(0, Number(e.target.value) || 0))}
+                            className="w-16 bg-stone-900 border border-stone-700 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs focus:border-amber-500 focus:outline-none"
+                            min="0"
+                            placeholder="0"
+                            title="Minimum Stock (Safety Stock)"
+                          />
+                        </td>
+
+                        {/* Tipe Part: In Line / Interchange */}
+                        <td className="py-2 px-3">
+                          <select
+                            value={row.partRelationType}
+                            onChange={(e) =>
+                              handleDraftChange(idx, 'partRelationType', e.target.value as MasterPartRelationType)
+                            }
+                            className={`w-full bg-stone-900 border text-xs rounded px-2 py-1 focus:outline-none font-medium ${
+                              row.partRelationType === 'Interchange'
+                                ? 'border-sky-700 text-sky-300 focus:border-sky-500'
+                                : 'border-stone-700 text-stone-200 focus:border-amber-500'
+                            }`}
+                          >
+                            {MASTER_PART_RELATION_OPTIONS.map((rel) => (
+                              <option key={rel} value={rel}>
+                                {rel}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Remark */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            placeholder="Keterangan tambahan..."
+                            value={row.remark}
+                            onChange={(e) => handleDraftChange(idx, 'remark', e.target.value)}
+                            className="w-full bg-stone-900 border border-stone-700 text-stone-300 text-xs rounded px-2 py-1 focus:border-amber-500 focus:outline-none"
+                          />
+                        </td>
+
+                        {/* Action buttons */}
+                        <td className="py-2 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicateDraftRow(idx)}
+                              className="p-1 text-stone-400 hover:text-amber-400 transition-colors"
+                              title="Duplikat baris"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDraftRow(idx)}
+                              className="p-1 text-stone-400 hover:text-red-400 transition-colors"
+                              title="Hapus baris"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Sub-Tabel Draft Interchange jika Tipe Part === Interchange */}
+                      {row.partRelationType === 'Interchange' && (
+                        <tr className="bg-stone-950/90">
+                          <td colSpan={12} className="p-3 pl-8 border-b border-stone-800">
+                            <div className="border border-sky-900/60 rounded-lg overflow-hidden bg-stone-900/60">
+                              <div className="px-3 py-2 bg-sky-950/30 border-b border-sky-900/50 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-[11px] font-semibold text-sky-300">
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                  <span>
+                                    Sub-Tabel Part Interchange untuk Baris #{row.noUrut}{' '}
+                                    {row.namaPart ? `(${row.namaPart})` : ''}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddDraftInterchange(idx)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Tambah Part Interchange</span>
+                                </button>
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-[11px] border-collapse min-w-[980px]">
+                                  <thead>
+                                    <tr className="bg-stone-900 text-stone-400 border-b border-stone-800 font-mono">
+                                      <th className="py-1.5 px-2 w-12 text-center">No</th>
+                                      <th className="py-1.5 px-2 w-32">Kategori Part</th>
+                                      <th className="py-1.5 px-2 w-28">Jenis Part</th>
+                                      <th className="py-1.5 px-2 w-28">Merk Part</th>
+                                      <th className="py-1.5 px-2 w-28">Fungsi</th>
+                                      <th className="py-1.5 px-2 min-w-[180px]">Nama Part Pengganti</th>
+                                      <th className="py-1.5 px-2 w-32">Part Number (PN)</th>
+                                      <th className="py-1.5 px-2 w-28 text-center">Qty & Satuan</th>
+                                      <th className="py-1.5 px-2 w-20 text-center">Min Stock</th>
+                                      <th className="py-1.5 px-2 w-32">Remark</th>
+                                      <th className="py-1.5 px-2 w-12 text-center">Hapus</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-800/60">
+                                    {(row.interchangeDrafts || []).map((sub, subIdx) => (
+                                      <tr key={subIdx}>
+                                        <td className="py-1.5 px-2 text-center">
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={sub.noUrut}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(
+                                                idx,
+                                                subIdx,
+                                                'noUrut',
+                                                Number(e.target.value)
+                                              )
+                                            }
+                                            className="w-10 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1 py-1 font-mono"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <select
+                                            value={sub.kategori}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(
+                                                idx,
+                                                subIdx,
+                                                'kategori',
+                                                e.target.value as MasterPartKategori
+                                              )
+                                            }
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 rounded px-1.5 py-1"
+                                          >
+                                            {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
+                                              <option key={k} value={k}>
+                                                {k}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <select
+                                            value={sub.jenisPart}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(
+                                                idx,
+                                                subIdx,
+                                                'jenisPart',
+                                                e.target.value as MasterPartJenis
+                                              )
+                                            }
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 rounded px-1.5 py-1"
+                                          >
+                                            {MASTER_PART_JENIS_OPTIONS.map((j) => (
+                                              <option key={j} value={j}>
+                                                {j}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="text"
+                                            value={sub.merk}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(idx, subIdx, 'merk', e.target.value)
+                                            }
+                                            placeholder="Merk..."
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 rounded px-1.5 py-1"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <select
+                                            value={sub.fungsi}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(
+                                                idx,
+                                                subIdx,
+                                                'fungsi',
+                                                e.target.value as MasterPartFungsi
+                                              )
+                                            }
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-200 rounded px-1.5 py-1"
+                                          >
+                                            {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
+                                              <option key={f} value={f}>
+                                                {f}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="text"
+                                            value={sub.namaPart}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(idx, subIdx, 'namaPart', e.target.value)
+                                            }
+                                            placeholder="Nama part pengganti..."
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-100 rounded px-1.5 py-1"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="text"
+                                            value={sub.pn}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(idx, subIdx, 'pn', e.target.value)
+                                            }
+                                            placeholder="PN pengganti..."
+                                            className="w-full bg-stone-900 border border-stone-700 text-sky-300 font-mono rounded px-1.5 py-1"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              value={sub.qty}
+                                              onChange={(e) =>
+                                                handleDraftInterchangeChange(
+                                                  idx,
+                                                  subIdx,
+                                                  'qty',
+                                                  Math.max(1, Number(e.target.value) || 1)
+                                                )
+                                              }
+                                              className="w-11 bg-stone-900 border border-stone-700 text-stone-200 text-center rounded px-1 py-1 font-mono"
+                                            />
+                                            <select
+                                              value={sub.satuan}
+                                              onChange={(e) =>
+                                                handleDraftInterchangeChange(idx, subIdx, 'satuan', e.target.value)
+                                              }
+                                              className="w-14 bg-stone-900 border border-stone-700 text-stone-300 rounded px-1 py-1"
+                                            >
+                                              {COMMON_SATUAN_OPTIONS.map((s) => (
+                                                <option key={s} value={s}>
+                                                  {s}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </td>
+                                        <td className="py-1.5 px-2 text-center">
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={sub.minStock}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(
+                                                idx,
+                                                subIdx,
+                                                'minStock',
+                                                Math.max(0, Number(e.target.value) || 0)
+                                              )
+                                            }
+                                            className="w-14 bg-stone-900 border border-stone-700 text-amber-300 text-center rounded px-1 py-1 font-mono"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2">
+                                          <input
+                                            type="text"
+                                            value={sub.remark}
+                                            onChange={(e) =>
+                                              handleDraftInterchangeChange(idx, subIdx, 'remark', e.target.value)
+                                            }
+                                            placeholder="Remark..."
+                                            className="w-full bg-stone-900 border border-stone-700 text-stone-300 rounded px-1.5 py-1"
+                                          />
+                                        </td>
+                                        <td className="py-1.5 px-2 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveDraftInterchange(idx, subIdx)}
+                                            className="p-1 text-stone-400 hover:text-red-400"
+                                            title="Hapus part interchange"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -1131,21 +1629,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               <button
                 type="button"
                 onClick={() => {
-                  setDraftRows([
-                    {
-                      noUrut: 1,
-                      kategori: 'Fast Moving',
-                      jenisPart: 'Genuine Part',
-                      merk: '',
-                      fungsi: 'Part Service',
-                      namaPart: '',
-                      pn: '',
-                      qty: 1,
-                      minStock: 0,
-                      satuan: 'Pcs',
-                      remark: '',
-                    },
-                  ]);
+                  setDraftRows([createEmptyDraftRow(1)]);
                 }}
                 className="px-4 py-2 text-xs font-medium text-stone-400 hover:text-stone-200 transition-colors"
               >
@@ -1211,13 +1695,13 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         </div>
 
         {/* Filter & Search Bar */}
-        <div className="p-4 bg-stone-950/60 border-b border-stone-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="p-4 bg-stone-950/60 border-b border-stone-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
           {/* Search box */}
           <div className="lg:col-span-2 relative">
             <Search className="w-4 h-4 text-stone-500 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Cari nama part, PN, merk, unit..."
+              placeholder="Cari nama part, PN, merk, unit, interchange..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-stone-900 border border-stone-800 text-stone-200 text-xs rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:border-amber-500"
@@ -1292,11 +1776,27 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
               ))}
             </select>
           </div>
+
+          {/* Filter Tipe Part (In Line / Interchange) */}
+          <div>
+            <select
+              value={filterRelationType}
+              onChange={(e) => setFilterRelationType(e.target.value)}
+              className="w-full bg-stone-900 border border-stone-800 text-stone-200 text-xs rounded-lg px-2.5 py-2 focus:outline-none focus:border-amber-500"
+            >
+              <option value="ALL">Semua Tipe Part</option>
+              {MASTER_PART_RELATION_OPTIONS.map((rel) => (
+                <option key={rel} value={rel}>
+                  {rel}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Master Part Data Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse min-w-[1140px]">
+          <table className="w-full text-left text-xs border-collapse min-w-[1260px]">
             <thead>
               <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                 <th className="py-3 px-3 w-12 text-center">No</th>
@@ -1305,18 +1805,19 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 <th className="py-3 px-3 w-28">Jenis Part</th>
                 <th className="py-3 px-3 w-28">Merk Part</th>
                 <th className="py-3 px-3 w-28">Fungsi</th>
-                <th className="py-3 px-4 min-w-[220px]">Nama Part</th>
+                <th className="py-3 px-4 min-w-[200px]">Nama Part</th>
                 <th className="py-3 px-3 w-36">Part Number (PN)</th>
                 <th className="py-3 px-3 w-20 text-center">Qty</th>
                 <th className="py-3 px-3 w-24 text-center">Min Stock</th>
-                <th className="py-3 px-3 w-36">Remark</th>
-                <th className="py-3 px-3 w-24 text-center">Aksi</th>
+                <th className="py-3 px-3 w-36">In Line / Interchange</th>
+                <th className="py-3 px-3 w-32">Remark</th>
+                <th className="py-3 px-3 w-28 text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60">
               {filteredMasterParts.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-stone-500">
+                  <td colSpan={13} className="py-12 text-center text-stone-500">
                     <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30 text-stone-400" />
                     <p className="text-sm font-medium">Belum ada data Master Part yang sesuai.</p>
                     <p className="text-xs text-stone-600 mt-1">
@@ -1326,7 +1827,6 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 </tr>
               ) : (
                 filteredMasterParts.map((item, idx) => {
-                  // Badge kategori styling
                   let badgeKategoriClass = 'bg-stone-800 text-stone-300 border-stone-700';
                   if (item.kategori === 'Fast Moving') {
                     badgeKategoriClass = 'bg-emerald-950/60 text-emerald-400 border-emerald-800/80';
@@ -1336,7 +1836,6 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                     badgeKategoriClass = 'bg-red-950/60 text-red-400 border-red-800/80';
                   }
 
-                  // Badge jenis part styling
                   const badgeJenisClass =
                     item.jenisPart === 'Genuine Part'
                       ? 'bg-purple-950/60 text-purple-300 border-purple-800/70'
@@ -1347,130 +1846,325 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                     (item.noUnit || '').toUpperCase() === NON_UNIT_CODE;
                   const minStockVal = Number(item.minStock ?? 0);
                   const isLowStock = minStockVal > 0 && Number(item.qty || 0) <= minStockVal;
+                  const subParts = item.interchangeParts || [];
+                  const isInterchange =
+                    item.partRelationType === 'Interchange' || subParts.length > 0;
+                  const isExpanded = Boolean(expandedInterchangeIds[item.id]);
 
                   return (
-                    <tr key={item.id} className="hover:bg-stone-900/40 transition-colors">
-                      {/* No Urut */}
-                      <td className="py-3 px-3 text-center font-mono text-stone-400">
-                        {item.noUrut || idx + 1}
-                      </td>
+                    <React.Fragment key={item.id}>
+                      <tr className="hover:bg-stone-900/40 transition-colors">
+                        {/* No Urut */}
+                        <td className="py-3 px-3 text-center font-mono text-stone-400 tabular-nums">
+                          {item.noUrut || idx + 1}
+                        </td>
 
-                      {/* No Unit */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`font-mono font-bold block ${
-                            isItemNonUnit ? 'text-sky-400' : 'text-amber-400'
-                          }`}
-                        >
-                          {item.noUnit || '-'}
-                        </span>
-                        <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
-                          {item.jenisUnit || ''}
-                        </span>
-                      </td>
-
-                      {/* Kategori Part */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeKategoriClass}`}
-                        >
-                          {item.kategori}
-                        </span>
-                      </td>
-
-                      {/* Jenis Part */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium border ${badgeJenisClass}`}
-                        >
-                          {item.jenisPart}
-                        </span>
-                      </td>
-
-                      {/* Merk Part */}
-                      <td className="py-3 px-3 text-stone-300 font-medium">
-                        {item.merk || '-'}
-                      </td>
-
-                      {/* Fungsi */}
-                      <td className="py-3 px-3">
-                        <span className="text-stone-300 text-xs block">{item.fungsi}</span>
-                      </td>
-
-                      {/* Nama Part */}
-                      <td className="py-3 px-4">
-                        <span className="font-semibold text-stone-100 block">
-                          {item.namaPart}
-                        </span>
-                        {item.modelUnit && item.modelUnit !== '-' && (
-                          <span className="text-[10px] text-stone-400 block">
-                            Model: {item.modelUnit}
+                        {/* No Unit */}
+                        <td className="py-3 px-3">
+                          <span
+                            className={`font-mono font-bold block ${
+                              isItemNonUnit ? 'text-sky-400' : 'text-amber-400'
+                            }`}
+                          >
+                            {item.noUnit || '-'}
                           </span>
-                        )}
-                      </td>
-
-                      {/* PN (Part Number) */}
-                      <td className="py-3 px-3">
-                        <span className="font-mono text-xs text-amber-300 bg-stone-950/80 px-2 py-0.5 rounded border border-stone-800">
-                          {item.pn || '-'}
-                        </span>
-                      </td>
-
-                      {/* Qty & Satuan */}
-                      <td className="py-3 px-3 text-center font-mono">
-                        <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-stone-200'}`}>
-                          {item.qty}
-                        </span>{' '}
-                        <span className="text-stone-400 text-[10px]">{item.satuan}</span>
-                      </td>
-
-                      {/* Min Stock */}
-                      <td className="py-3 px-3 text-center font-mono">
-                        <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-amber-300'}`}>
-                          {minStockVal}
-                        </span>{' '}
-                        <span className="text-stone-400 text-[10px]">{item.satuan || 'Pcs'}</span>
-                        {isLowStock && (
-                          <span className="block text-[9px] text-red-400 font-semibold mt-0.5">
-                            Stok Min
+                          <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
+                            {item.jenisUnit || ''}
                           </span>
-                        )}
-                      </td>
+                        </td>
 
-                      {/* Remark */}
-                      <td className="py-3 px-3 text-stone-400 text-xs">
-                        {item.remark || '-'}
-                      </td>
+                        {/* Kategori Part */}
+                        <td className="py-3 px-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeKategoriClass}`}
+                          >
+                            {item.kategori}
+                          </span>
+                        </td>
 
-                      {/* Aksi */}
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {canEdit && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(item)}
-                              className="p-1.5 text-stone-400 hover:text-amber-400 hover:bg-stone-800 rounded transition-colors"
-                              title="Edit Part"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
+                        {/* Jenis Part */}
+                        <td className="py-3 px-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium border ${badgeJenisClass}`}
+                          >
+                            {item.jenisPart}
+                          </span>
+                        </td>
+
+                        {/* Merk Part */}
+                        <td className="py-3 px-3 text-stone-300 font-medium">
+                          {item.merk || '-'}
+                        </td>
+
+                        {/* Fungsi */}
+                        <td className="py-3 px-3">
+                          <span className="text-stone-300 text-xs block">{item.fungsi}</span>
+                        </td>
+
+                        {/* Nama Part */}
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-stone-100 block">
+                            {item.namaPart}
+                          </span>
+                          {item.modelUnit && item.modelUnit !== '-' && (
+                            <span className="text-[10px] text-stone-400 block">
+                              Model: {item.modelUnit}
+                            </span>
                           )}
-                          {canDelete && (
-                            <button
-                              type="button"
-                              onClick={() => handleRequestDelete(item.id, item.namaPart)}
-                              className="p-1.5 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded transition-colors"
-                              title="Hapus Part"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                        </td>
+
+                        {/* PN (Part Number) */}
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-xs text-amber-300 bg-stone-950/80 px-2 py-0.5 rounded border border-stone-800">
+                            {item.pn || '-'}
+                          </span>
+                        </td>
+
+                        {/* Qty & Satuan */}
+                        <td className="py-3 px-3 text-center font-mono tabular-nums">
+                          <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-stone-200'}`}>
+                            {item.qty}
+                          </span>{' '}
+                          <span className="text-stone-400 text-[10px]">{item.satuan}</span>
+                        </td>
+
+                        {/* Min Stock */}
+                        <td className="py-3 px-3 text-center font-mono tabular-nums">
+                          <span className={`font-bold ${isLowStock ? 'text-red-400' : 'text-amber-300'}`}>
+                            {minStockVal}
+                          </span>{' '}
+                          <span className="text-stone-400 text-[10px]">{item.satuan || 'Pcs'}</span>
+                          {isLowStock && (
+                            <span className="block text-[9px] text-red-400 font-semibold mt-0.5">
+                              Stok Min
+                            </span>
                           )}
-                          {!canEdit && !canDelete && (
-                            <span className="text-[10px] font-mono text-stone-600">-</span>
+                        </td>
+
+                        {/* In Line / Interchange */}
+                        <td className="py-3 px-3">
+                          {isInterchange ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedInterchangeIds((prev) => ({
+                                    ...prev,
+                                    [item.id]: !prev[item.id],
+                                  }))
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-sky-950/60 text-sky-300 border border-sky-800/80 hover:bg-sky-900/60 transition-colors whitespace-nowrap"
+                                title="Buka / Tutup Sub-Tabel Interchange"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                )}
+                                <span>Interchange ({subParts.length})</span>
+                              </button>
+                              {(canInsert || canEdit) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenInterchangeModal(item, null)}
+                                  className="p-1 text-sky-300 hover:text-sky-200 bg-sky-950/40 hover:bg-sky-900/50 border border-sky-800/70 rounded transition-colors"
+                                  title="Tambah Part Interchange"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-stone-800/80 text-stone-300 border border-stone-700">
+                              In Line
+                            </span>
                           )}
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+
+                        {/* Remark */}
+                        <td className="py-3 px-3 text-stone-400 text-xs">
+                          {item.remark || '-'}
+                        </td>
+
+                        {/* Aksi */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(item)}
+                                className="p-1.5 text-stone-400 hover:text-amber-400 hover:bg-stone-800 rounded transition-colors"
+                                title="Edit Part"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleRequestDelete(item.id, item.namaPart)}
+                                className="p-1.5 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded transition-colors"
+                                title="Hapus Part"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {!canEdit && !canDelete && (
+                              <span className="text-[10px] font-mono text-stone-600">-</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* SUB-TABEL INTERCHANGE DI BAWAH BARIS INDUK DENGAN MENU SAMA */}
+                      {isInterchange && isExpanded && (
+                        <tr className="bg-stone-950/90">
+                          <td colSpan={13} className="p-3 pl-8 border-b border-stone-800">
+                            <div className="border border-sky-900/60 rounded-xl overflow-hidden bg-stone-900/70">
+                              <div className="px-3.5 py-2.5 bg-sky-950/30 border-b border-sky-900/50 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-sky-300">
+                                  <ArrowRightLeft className="w-4 h-4" />
+                                  <span>
+                                    Sub-Tabel Part Interchange — {item.namaPart} ({item.pn})
+                                  </span>
+                                  <span className="text-[11px] font-mono text-stone-400">
+                                    · {subParts.length} Part Pengganti
+                                  </span>
+                                </div>
+
+                                {(canInsert || canEdit) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenInterchangeModal(item, null)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded-lg transition-colors whitespace-nowrap"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Tambah Part Interchange</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs border-collapse min-w-[1140px]">
+                                  <thead>
+                                    <tr className="bg-stone-900 text-stone-400 border-b border-stone-800 font-mono">
+                                      <th className="py-2 px-3 w-12 text-center">No</th>
+                                      <th className="py-2 px-3 w-28">Ref Unit</th>
+                                      <th className="py-2 px-3 w-28">Kategori Part</th>
+                                      <th className="py-2 px-3 w-28">Jenis Part</th>
+                                      <th className="py-2 px-3 w-28">Merk Part</th>
+                                      <th className="py-2 px-3 w-28">Fungsi</th>
+                                      <th className="py-2 px-3 min-w-[200px]">Nama Part Interchange</th>
+                                      <th className="py-2 px-3 w-36">Part Number (PN)</th>
+                                      <th className="py-2 px-3 w-20 text-center">Qty</th>
+                                      <th className="py-2 px-3 w-24 text-center">Min Stock</th>
+                                      <th className="py-2 px-3 w-32">Remark</th>
+                                      <th className="py-2 px-3 w-24 text-center">Aksi</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-stone-800/60">
+                                    {subParts.length === 0 ? (
+                                      <tr>
+                                        <td colSpan={12} className="py-6 text-center text-stone-500 text-xs">
+                                          Belum ada part pengganti (Interchange) terdaftar. Klik Tambah Part Interchange di atas.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      subParts.map((sub, subIdx) => {
+                                        const subMin = Number(sub.minStock ?? 0);
+                                        const subLow = subMin > 0 && Number(sub.qty || 0) <= subMin;
+                                        return (
+                                          <tr key={sub.id} className="hover:bg-stone-800/30 transition-colors">
+                                            <td className="py-2.5 px-3 text-center font-mono text-stone-400 tabular-nums">
+                                              {sub.noUrut || subIdx + 1}
+                                            </td>
+                                            <td className="py-2.5 px-3 font-mono text-[11px] text-sky-400">
+                                              {item.noUnit || '-'}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-stone-300">
+                                              {sub.kategori}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-stone-300">
+                                              {sub.jenisPart}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-stone-300 font-medium">
+                                              {sub.merk || '-'}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-stone-300">
+                                              {sub.fungsi}
+                                            </td>
+                                            <td className="py-2.5 px-3 font-semibold text-stone-100">
+                                              {sub.namaPart}
+                                            </td>
+                                            <td className="py-2.5 px-3">
+                                              <span className="font-mono text-xs text-sky-300 bg-stone-950/80 px-2 py-0.5 rounded border border-stone-800">
+                                                {sub.pn || '-'}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center font-mono tabular-nums">
+                                              <span className={`font-bold ${subLow ? 'text-red-400' : 'text-stone-200'}`}>
+                                                {sub.qty}
+                                              </span>{' '}
+                                              <span className="text-stone-400 text-[10px]">
+                                                {sub.satuan || 'Pcs'}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center font-mono tabular-nums">
+                                              <span className={`font-bold ${subLow ? 'text-red-400' : 'text-amber-300'}`}>
+                                                {subMin}
+                                              </span>{' '}
+                                              <span className="text-stone-400 text-[10px]">
+                                                {sub.satuan || 'Pcs'}
+                                              </span>
+                                            </td>
+                                            <td className="py-2.5 px-3 text-stone-400">
+                                              {sub.remark || '-'}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center">
+                                              <div className="flex items-center justify-center gap-1.5">
+                                                {canEdit && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleOpenInterchangeModal(item, sub)}
+                                                    className="p-1 text-stone-400 hover:text-sky-400 hover:bg-stone-800 rounded transition-colors"
+                                                    title="Edit Part Interchange"
+                                                  >
+                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                )}
+                                                {canDelete && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setDeletingInterchange({
+                                                        parentId: item.id,
+                                                        subId: sub.id,
+                                                        nama: sub.namaPart,
+                                                      })
+                                                    }
+                                                    className="p-1 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded transition-colors"
+                                                    title="Hapus Part Interchange"
+                                                  >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                )}
+                                                {!canEdit && !canDelete && (
+                                                  <span className="text-[10px] font-mono text-stone-600">-</span>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -1478,6 +2172,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* MODAL EDIT MASTER PART */}
       {editingPart && (
@@ -1659,7 +2355,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 </div>
 
                 {/* Qty, Min Stock & Satuan */}
-                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-stone-400 mb-1">Qty</label>
                     <input
@@ -1695,6 +2391,26 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                       onChange={(e) => setEditFormData({ ...editFormData, satuan: e.target.value })}
                       className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-stone-400 mb-1">Tipe Part</label>
+                    <select
+                      value={editFormData.partRelationType || 'In Line'}
+                      onChange={(e) =>
+                        setEditFormData({
+                          ...editFormData,
+                          partRelationType: e.target.value as MasterPartRelationType,
+                        })
+                      }
+                      className="w-full bg-stone-950 border border-stone-700 text-sky-300 rounded p-2"
+                    >
+                      {MASTER_PART_RELATION_OPTIONS.map((rel) => (
+                        <option key={rel} value={rel}>
+                          {rel}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
@@ -1815,6 +2531,240 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           </div>
         </div>
       )}
+      {/* MODAL TAMBAH / EDIT SUB-PART INTERCHANGE */}
+      {interchangeModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-2xl w-full p-5 shadow-2xl space-y-4 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-sky-400" />
+                <div>
+                  <h3 className="text-base font-bold text-stone-100">
+                    {interchangeModal.editingSub
+                      ? 'Edit Part Interchange'
+                      : 'Tambah Part Interchange'}
+                  </h3>
+                  <p className="text-[11px] text-stone-400">
+                    Induk: <span className="text-amber-400 font-mono">{interchangeModal.parent.pn}</span> — {interchangeModal.parent.namaPart}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInterchangeModal(null)}
+                className="text-stone-400 hover:text-stone-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {subError && (
+              <div className="p-3 bg-red-950/60 border border-red-800 text-red-300 rounded-lg text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{subError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveInterchangeModal} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block text-stone-400 mb-1">No Urut</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={subFormData.noUrut}
+                    onChange={(e) => setSubFormData({ ...subFormData, noUrut: Number(e.target.value) })}
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-stone-400 mb-1">Kategori Part</label>
+                  <select
+                    value={subFormData.kategori}
+                    onChange={(e) =>
+                      setSubFormData({ ...subFormData, kategori: e.target.value as MasterPartKategori })
+                    }
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                  >
+                    {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
+                      <option key={k} value={k}>
+                        {k}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-stone-400 mb-1">Jenis Part</label>
+                  <select
+                    value={subFormData.jenisPart}
+                    onChange={(e) =>
+                      setSubFormData({ ...subFormData, jenisPart: e.target.value as MasterPartJenis })
+                    }
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                  >
+                    {MASTER_PART_JENIS_OPTIONS.map((j) => (
+                      <option key={j} value={j}>
+                        {j}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-stone-400 mb-1">Merk Part</label>
+                  <input
+                    type="text"
+                    value={subFormData.merk}
+                    onChange={(e) => setSubFormData({ ...subFormData, merk: e.target.value })}
+                    placeholder="Contoh: Donaldson, Fleetguard, Sakti..."
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-stone-400 mb-1">Fungsi</label>
+                  <select
+                    value={subFormData.fungsi}
+                    onChange={(e) =>
+                      setSubFormData({ ...subFormData, fungsi: e.target.value as MasterPartFungsi })
+                    }
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                  >
+                    {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-stone-400 mb-1">Part Number (PN)</label>
+                  <input
+                    type="text"
+                    value={subFormData.pn}
+                    onChange={(e) => setSubFormData({ ...subFormData, pn: e.target.value })}
+                    placeholder="Contoh: P550588"
+                    className="w-full bg-stone-950 border border-stone-700 text-sky-300 rounded p-2 font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-stone-400 mb-1">Nama Part Pengganti</label>
+                  <input
+                    type="text"
+                    value={subFormData.namaPart}
+                    onChange={(e) => setSubFormData({ ...subFormData, namaPart: e.target.value })}
+                    placeholder="Contoh: Oil Filter Donaldson"
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-100 rounded p-2 font-medium"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-stone-400 mb-1">Qty</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={subFormData.qty}
+                      onChange={(e) =>
+                        setSubFormData({ ...subFormData, qty: Math.max(1, Number(e.target.value) || 1) })
+                      }
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-400 mb-1">Min Stock</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={subFormData.minStock}
+                      onChange={(e) =>
+                        setSubFormData({
+                          ...subFormData,
+                          minStock: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
+                      className="w-full bg-stone-950 border border-stone-700 text-amber-300 rounded p-2 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-stone-400 mb-1">Satuan</label>
+                    <input
+                      type="text"
+                      value={subFormData.satuan}
+                      onChange={(e) => setSubFormData({ ...subFormData, satuan: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-stone-400 mb-1">Remark / Keterangan</label>
+                  <input
+                    type="text"
+                    value={subFormData.remark}
+                    onChange={(e) => setSubFormData({ ...subFormData, remark: e.target.value })}
+                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setInterchangeModal(null)}
+                  className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold bg-sky-500 hover:bg-sky-400 text-stone-950 rounded-lg shadow"
+                >
+                  {interchangeModal.editingSub ? 'Simpan Perubahan Interchange' : 'Tambahkan Interchange'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS SUB-PART INTERCHANGE */}
+      {deletingInterchange && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <AlertTriangle className="w-10 h-10 text-red-500 mx-auto" />
+            <div>
+              <h4 className="text-sm font-bold text-stone-100">Hapus Part Interchange?</h4>
+              <p className="text-xs text-stone-400 mt-1">
+                Yakin ingin menghapus part pengganti{' '}
+                <strong className="text-stone-200">&ldquo;{deletingInterchange.nama}&rdquo;</strong>?
+              </p>
+            </div>
+            <div className="flex justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingInterchange(null)}
+                className="px-4 py-2 text-xs text-stone-300 bg-stone-800 hover:bg-stone-700 rounded-lg"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteInterchange}
+                className="px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-500 text-white rounded-lg shadow"
+              >
+                Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL KONFIRMASI HAPUS MASTER PART */}
       {deletingPart && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">

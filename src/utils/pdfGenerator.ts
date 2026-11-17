@@ -13,7 +13,9 @@ import {
   OilDistributionRecord,
   OilStockInputRecord,
   InventoryPeriodBalance,
-  ManpowerData
+  ManpowerData,
+  RplPackage,
+  MasterPartItem
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
 
@@ -4315,6 +4317,262 @@ export const exportManpowerListToPDF = (params: GenerateManpowerListPdfParams): 
   const result = generateManpowerListPDF(params);
   result.download();
   return result;
+};
+
+export interface GenerateRplPackagePdfParams {
+  pkg: RplPackage;
+  masterParts: MasterPartItem[];
+  currentUser?: UserAccount | null;
+  signatories?: Partial<ReportSignatories>;
+}
+
+/**
+ * Generate PDF Resmi Daftar Paket RPL (Recommended Part List) Service Periodic (Modul 8)
+ */
+export const generateRplPackagePDF = ({
+  pkg,
+  masterParts,
+  currentUser,
+  signatories,
+}: GenerateRplPackagePdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const now = new Date();
+  const nowStr = now.toLocaleString('id-ID');
+  const dateStr = now.toISOString().split('T')[0];
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Planner / Admin Workshop';
+
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & LOGISTIK WORKSHOP • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text('DOKUMEN RECOMMENDED PART LIST (RPL)', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH (ETIKA09)', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text(`DAFTAR KEBUTUHAN SUKU CADANG SERVICE PERIODIC — ${pkg.packagePn}`, 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Nama Paket: ${pkg.packageName}   |   Interval: ${pkg.serviceInterval}   |   Dicetak: ${nowStr}   |   Oleh: ${exporterName}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  const totalQtyNeeded = pkg.items.reduce((acc, item) => acc + (Number(item.qtyNeeded) || 0), 0);
+  const startY = 33;
+  const cardWidth = 62;
+  const cardHeight = 11;
+
+  const cards = [
+    { label: 'PN PAKET RPL', val: pkg.packagePn || '-', color: [180, 83, 9] as [number, number, number] },
+    { label: 'INTERVAL SERVICE', val: pkg.serviceInterval || '-', color: [30, 41, 59] as [number, number, number] },
+    { label: 'TARGET UNIT / KATEGORI', val: `${pkg.jenisUnit || '-'}${pkg.noUnit ? ` (${pkg.noUnit})` : ''}`, color: [37, 99, 235] as [number, number, number] },
+    { label: 'TOTAL ITEM & QTY PAKET', val: `${pkg.items.length} PN / ${totalQtyNeeded} Pcs`, color: [16, 185, 129] as [number, number, number] },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 3.8);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 3, startY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...c.color);
+    doc.text(String(c.val).slice(0, 32), x + 3, startY + 8.8);
+  });
+
+  const masterMap = new Map<string, MasterPartItem>();
+  masterParts.forEach((mp) => masterMap.set(mp.id, mp));
+
+  const tableData = pkg.items.map((item, idx) => {
+    const livePart = masterMap.get(item.masterPartId);
+    const tipe = livePart?.partRelationType || 'In Line';
+    const interchangeCount = livePart?.interchangeParts?.length || 0;
+    const tipeLabel = tipe === 'Interchange' ? `Interchange (${interchangeCount})` : 'In Line';
+    const stokMaster = livePart ? `${livePart.qty} ${livePart.satuan || item.satuan}` : '-';
+    const minStock = livePart ? `${Number(livePart.minStock ?? 0)}` : '-';
+
+    return [
+      (idx + 1).toString(),
+      livePart?.pn || item.pn || '-',
+      livePart?.namaPart || item.namaPart || '-',
+      livePart?.merk || item.merk || '-',
+      livePart?.kategori || item.kategori || '-',
+      livePart?.jenisPart || item.jenisPart || '-',
+      tipeLabel,
+      `${item.qtyNeeded} ${livePart?.satuan || item.satuan || 'Pcs'}`,
+      stokMaster,
+      minStock,
+      item.notes || '-',
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 47,
+    head: [[
+      'No',
+      'Part Number (PN)',
+      'Nama Part',
+      'Merk',
+      'Kategori',
+      'Jenis',
+      'Tipe',
+      'Qty Paket',
+      'Stok Master',
+      'Min Stock',
+      'Catatan',
+    ]],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      1: { fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 32 },
+      2: { fontStyle: 'bold', cellWidth: 48 },
+      3: { cellWidth: 22 },
+      4: { halign: 'center', cellWidth: 22 },
+      5: { halign: 'center', cellWidth: 22 },
+      6: { halign: 'center', cellWidth: 24 },
+      7: { halign: 'center', fontStyle: 'bold', cellWidth: 20 },
+      8: { halign: 'center', cellWidth: 22 },
+      9: { halign: 'center', cellWidth: 16 },
+      10: { cellWidth: 32 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 150;
+  if (pkg.notes) {
+    if (finalY > 145) {
+      doc.addPage();
+      renderHeader();
+      finalY = 38;
+    } else {
+      finalY += 5;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...darkTextColor);
+    doc.text(`Catatan Paket: ${pkg.notes}`, 14, finalY);
+    finalY += 4;
+  }
+
+  if (finalY > 148) {
+    doc.addPage();
+    renderHeader();
+    finalY = 38;
+  } else {
+    finalY += 8;
+  }
+
+  const sigY = finalY;
+  const colWidth = 75;
+  const pembuatNama = signatories?.pembuatName || exporterName;
+  const pembuatJabatan = signatories?.pembuatJabatan || 'Planner / Admin Workshop';
+  const diperiksaNama = signatories?.diperiksaName || 'Dodik Mariyadi';
+  const diperiksaJabatan = signatories?.diperiksaJabatan || 'Kabag Workshop';
+  const disetujuiNama = signatories?.disetujuiName || 'Logistik / Management';
+  const disetujuiJabatan = signatories?.disetujuiJabatan || 'Management';
+
+  const sigCols = [
+    { title: 'Dibuat Oleh :', name: pembuatNama, role: pembuatJabatan, x: 14 },
+    { title: 'Diperiksa Oleh :', name: diperiksaNama, role: diperiksaJabatan, x: 14 + colWidth + 20 },
+    { title: 'Disetujui Oleh :', name: disetujuiNama, role: disetujuiJabatan, x: 14 + (colWidth + 20) * 2 },
+  ];
+
+  sigCols.forEach((sc) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sc.title, sc.x + colWidth / 2, sigY, { align: 'center' });
+    doc.line(sc.x + 10, sigY + 18, sc.x + colWidth - 10, sigY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sc.name, sc.x + colWidth / 2, sigY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sc.role, sc.x + colWidth / 2, sigY + 26, { align: 'center' });
+  });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(14, 200, 283, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH (ETIKA09) • Recommended Part List (${pkg.packagePn}) • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  const cleanPn = (pkg.packagePn || 'RPL').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanDate = dateStr.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `RPL_${cleanPn}_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
 };
 
 

@@ -1188,6 +1188,7 @@ export interface OutFieldFuelRecord {
 export type MasterPartKategori = 'Fast Moving' | 'Slow Moving' | 'Death Stock';
 export type MasterPartJenis = 'Genuine Part' | 'OEM';
 export type MasterPartFungsi = 'Part Service' | 'Consumable' | 'Tool';
+export type MasterPartRelationType = 'In Line' | 'Interchange';
 
 export const MASTER_PART_KATEGORI_OPTIONS: MasterPartKategori[] = [
   'Fast Moving',
@@ -1205,6 +1206,28 @@ export const MASTER_PART_FUNGSI_OPTIONS: MasterPartFungsi[] = [
   'Consumable',
   'Tool',
 ];
+
+export const MASTER_PART_RELATION_OPTIONS: MasterPartRelationType[] = [
+  'In Line',
+  'Interchange',
+];
+
+export interface MasterPartInterchangeItem {
+  id: string;
+  noUrut?: number;
+  kategori: MasterPartKategori;
+  jenisPart: MasterPartJenis;
+  merk: string;
+  fungsi: MasterPartFungsi;
+  namaPart: string;
+  pn: string;
+  qty: number;
+  minStock?: number;
+  satuan?: string;
+  remark?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface MasterPartItem {
   id: string;
@@ -1226,7 +1249,48 @@ export interface MasterPartItem {
   qty: number;                       // Jumlah Part
   minStock?: number;                 // Minimum Stock (Safety Stock)
   satuan?: string;                   // Pcs, Set, Unit, Liter, Box, dll.
+  partRelationType?: MasterPartRelationType; // In Line atau Interchange
+  interchangeParts?: MasterPartInterchangeItem[]; // Sub-tabel part pengganti bila Interchange
   remark?: string;                   // Remark / Catatan
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==========================================
+// MODUL 8 TAB RPL: RECOMMENDED PART LIST (SERVICE PERIODIC)
+// ==========================================
+export const RPL_INTERVAL_OPTIONS = [
+  '250 HM',
+  '500 HM',
+  '1000 HM',
+  '2000 HM',
+  'Periodic Lainnya',
+] as const;
+
+export interface RplPackageItem {
+  id: string;
+  masterPartId: string;
+  pn: string;
+  namaPart: string;
+  merk: string;
+  kategori: MasterPartKategori;
+  jenisPart: MasterPartJenis;
+  fungsi: MasterPartFungsi;
+  satuan: string;
+  qtyNeeded: number;
+  notes?: string;
+}
+
+export interface RplPackage {
+  id: string;
+  packagePn: string;                 // PN Paket RPL (misal RPL-EX200-250HM)
+  packageName: string;               // Nama Paket Service Periodic
+  serviceInterval: string;           // 250 HM, 500 HM, 1000 HM, 2000 HM, dll
+  jenisUnit: string;                 // Jenis Unit target atau Non Unit / Semua Unit
+  noUnit?: string;                   // No Unit spesifik / ALL / NON-UNIT
+  notes?: string;                    // Catatan tambahan paket
+  items: RplPackageItem[];
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }

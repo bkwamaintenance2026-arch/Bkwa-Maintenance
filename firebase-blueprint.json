@@ -174,6 +174,50 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "tanggal", "nama", "keterangan"]
+    },
+    "MasterPart": {
+      "title": "MasterPart",
+      "description": "Katalog Master Part & Material beserta status In Line / Interchange dan sub-part pengganti",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "jenisUnit": { "type": "string", "maxLength": 100 },
+        "noUnit": { "type": "string", "maxLength": 100 },
+        "kategori": { "type": "string", "enum": ["Fast Moving", "Slow Moving", "Death Stock"] },
+        "jenisPart": { "type": "string", "enum": ["Genuine Part", "OEM"] },
+        "merk": { "type": "string", "maxLength": 100 },
+        "fungsi": { "type": "string", "enum": ["Part Service", "Consumable", "Tool"] },
+        "namaPart": { "type": "string", "maxLength": 200 },
+        "pn": { "type": "string", "maxLength": 100 },
+        "qty": { "type": "number" },
+        "minStock": { "type": "number" },
+        "satuan": { "type": "string", "maxLength": 50 },
+        "partRelationType": { "type": "string", "enum": ["In Line", "Interchange"] },
+        "interchangeParts": { "type": "array", "description": "Daftar sub-part pengganti saat berstatus Interchange" },
+        "remark": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "jenisUnit", "noUnit", "namaPart", "pn", "qty"]
+    },
+    "RplPackage": {
+      "title": "RplPackage",
+      "description": "Paket Recommended Part List (RPL) untuk kebutuhan Service Periodic",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "packagePn": { "type": "string", "maxLength": 100 },
+        "packageName": { "type": "string", "maxLength": 200 },
+        "serviceInterval": { "type": "string", "maxLength": 100 },
+        "jenisUnit": { "type": "string", "maxLength": 100 },
+        "noUnit": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "items": { "type": "array", "description": "Daftar item Master Part penyusun paket RPL" },
+        "createdBy": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "packagePn", "packageName", "serviceInterval", "items"]
     }
   },
   "firestore": {
@@ -212,6 +256,14 @@
     "/tyre_records/{tyreId}": {
       "schema": "TyreRecord",
       "description": "Dokumen inventaris ban alat berat"
+    },
+    "/master_parts/{partId}": {
+      "schema": "MasterPart",
+      "description": "Dokumen katalog master part dan sub-tabel interchange"
+    },
+    "/rpl_packages/{packageId}": {
+      "schema": "RplPackage",
+      "description": "Dokumen paket Recommended Part List (RPL) untuk service periodic"
     },
     "/activity_logs/{logId}": {
       "schema": "ActivityLog",
