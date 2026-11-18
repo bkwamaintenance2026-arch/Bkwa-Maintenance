@@ -4308,15 +4308,29 @@ export function recordSparePartTransaction(
     const processedItems: SparePartTransactionItem[] = [];
     const shortageItems: SparePartTransactionItem[] = [];
 
-    // Iterasi item permintaan part
+    // Iterasi item permintaan part & jasa
     for (const reqItem of data.items) {
+      const requestedQty = Number(reqItem.qtyDiminta);
+
+      // Jika item berjenis Jasa, tidak memotong stok gudang fisik & langsung dianggap TERSEDIA (Pekerjaan Luar/Vendor)
+      if (reqItem.jenis === 'Jasa') {
+        processedItems.push({
+          ...reqItem,
+          jenis: 'Jasa',
+          qtyDiminta: requestedQty,
+          qtyDikeluarkan: requestedQty,
+          statusKetersediaan: 'TERSEDIA',
+          keterangan: reqItem.keterangan || 'Jasa / Pekerjaan Luar',
+        });
+        continue;
+      }
+
       const partIdx = parts.findIndex(
         (p) =>
-          p.partNumber.trim().toLowerCase() === reqItem.partNumber.trim().toLowerCase() ||
+          (reqItem.partNumber && p.partNumber.trim().toLowerCase() === reqItem.partNumber.trim().toLowerCase()) ||
           p.namaBarang.trim().toLowerCase() === reqItem.namaBarang.trim().toLowerCase()
       );
 
-      const requestedQty = Number(reqItem.qtyDiminta);
       let releasedQty = 0;
       let statusKetersediaan: 'TERSEDIA' | 'SEBAGIAN' | 'HABIS' = 'HABIS';
 
@@ -4539,8 +4553,94 @@ export function savePartSupplyTrackings(items: PartSupplyItemTracking[]): void {
   }
 }
 
+export interface ExtractedBreakdownPartJasaItem {
+  no: number;
+  jenis: 'Part' | 'Jasa';
+  namaPart: string;
+  partNumber: string;
+  qty: number;
+  satuan: string;
+  remark?: string;
+  tanggalRequest: string;
+}
+
 /**
- * Sinkronisasi otomatis daftar kebutuhan suku cadang dari Modul 3 (BreakdownRecord)
+ * Mengumpulkan seluruh daftar kebutuhan Part & Jasa secara lengkap & bebas duplikat
+ * dari record utama BreakdownRecord (b.partsJasa) maupun seluruh riwayatUpdate[]-nya.
+ * Sekaligus menentukan tanggal request awal item tersebut.
+ */
+export function extractBreakdownPartsJasa(b: BreakdownRecord): ExtractedBreakdownPartJasaItem[] {
+  const resultMap = new Map<string, ExtractedBreakdownPartJasaItem>();
+
+  const registerItem = (p: BreakdownPartJasaItem, reqDate: string) => {
+    const nama = (p.namaPart || '').trim();
+    const pn = (p.partNumber || '').trim();
+    if (!nama && !pn) return;
+
+    const jenis: 'Part' | 'Jasa' = p.jenis === 'Jasa' ? 'Jasa' : 'Part';
+    const key = `${jenis.toLowerCase()}__${nama.toLowerCase()}__${pn.toLowerCase()}`;
+    const qtyVal = Number(p.qty) || 1;
+    const satuanVal = String(p.satuan || 'Pcs').trim() || 'Pcs';
+
+    if (!resultMap.has(key)) {
+      resultMap.set(key, {
+        no: resultMap.size + 1,
+        jenis,
+        namaPart: nama || pn,
+        partNumber: pn || '-',
+        qty: qtyVal,
+        satuan: satuanVal,
+        remark: p.remark || '',
+        tanggalRequest: reqDate || b.tanggal || '',
+      });
+    } else {
+      const existing = resultMap.get(key)!;
+      // Pertahankan tanggal request terawal jika valid, namun perbarui qty/satuan/remark terbaru bila ada
+      const nextReqDate =
+        existing.tanggalRequest && reqDate
+          ? reqDate < existing.tanggalRequest
+            ? reqDate
+            : existing.tanggalRequest
+          : existing.tanggalRequest || reqDate;
+      resultMap.set(key, {
+        ...existing,
+        qty: qtyVal,
+        satuan: satuanVal,
+        remark: p.remark || existing.remark,
+        tanggalRequest: nextReqDate,
+      });
+    }
+  };
+
+  // Urutkan riwayatUpdate dari yang terlama ke terbaru agar tanggal request pertama terekam akurat
+  if (b.riwayatUpdate && Array.isArray(b.riwayatUpdate)) {
+    const chronological = [...b.riwayatUpdate].sort((a, bEntry) => {
+      const ka = a.createdAt || `${a.startJob || a.tanggal || ''}T${a.jamStart || '00:00'}`;
+      const kb = bEntry.createdAt || `${bEntry.startJob || bEntry.tanggal || ''}T${bEntry.jamStart || '00:00'}`;
+      return ka.localeCompare(kb);
+    });
+    chronological.forEach((upd) => {
+      const reqDate = upd.tanggal || upd.startJob || b.tanggal || '';
+      if (upd.partsJasa && Array.isArray(upd.partsJasa)) {
+        upd.partsJasa.forEach((p) => registerItem(p, reqDate));
+      }
+    });
+  }
+
+  // Sertakan pula partsJasa di root BreakdownRecord (misal input awal atau update terkini)
+  if (b.partsJasa && Array.isArray(b.partsJasa)) {
+    const mainReqDate = b.startJob || b.tanggal || '';
+    b.partsJasa.forEach((p) => registerItem(p, mainReqDate));
+  }
+
+  return Array.from(resultMap.values()).map((it, idx) => ({
+    ...it,
+    no: idx + 1,
+  }));
+}
+
+/**
+ * Sinkronisasi otomatis daftar kebutuhan suku cadang & jasa dari Modul 3 (BreakdownRecord)
  * ke tabel monitoring supply Modul 6.
  * Menggunakan No Maintenance Order (No MO) / No Notifikasi yang identik.
  */
@@ -4555,55 +4655,27 @@ export function syncBreakdownPartsToSupplyTrackings(
     });
 
     const syncedList: PartSupplyItemTracking[] = [];
+    const newlyAddedToSync: PartSupplyItemTracking[] = [];
     const now = new Date().toISOString();
 
-    // Loop seluruh breakdown yang memiliki kebutuhan part (baik di record utama maupun riwayatUpdate harian)
     breakdowns.forEach((b) => {
       const refNumber = b.noMaintenanceOrder || b.noNotifikasi || '-';
-      
-      // Kumpulkan semua item part unik untuk breakdown ini
-      const partsToSync: Array<{ p: BreakdownPartJasaItem; source: string }> = [];
+      const partsToSync = extractBreakdownPartsJasa(b);
 
-      if (b.partsJasa && Array.isArray(b.partsJasa)) {
-        b.partsJasa.forEach((p) => {
-          if (p.namaPart || p.partNumber) {
-            partsToSync.push({ p, source: 'MAIN' });
-          }
-        });
-      }
-
-      if (b.riwayatUpdate && Array.isArray(b.riwayatUpdate)) {
-        b.riwayatUpdate.forEach((upd, uIdx) => {
-          if (upd.partsJasa && Array.isArray(upd.partsJasa)) {
-            upd.partsJasa.forEach((p) => {
-              if (p.namaPart || p.partNumber) {
-                // Hindari duplikasi persis dari main
-                const already = partsToSync.some(
-                  (existing) =>
-                    existing.p.namaPart?.trim().toLowerCase() === p.namaPart?.trim().toLowerCase() &&
-                    (existing.p.partNumber || '').trim().toLowerCase() === (p.partNumber || '').trim().toLowerCase()
-                );
-                if (!already) {
-                  partsToSync.push({ p, source: `UPD_${uIdx}` });
-                }
-              }
-            });
-          }
-        });
-      }
-
-      partsToSync.forEach(({ p }, idx) => {
-        // Part key unik kombinasi breakdown ID, nama/pn part
+      partsToSync.forEach((p, idx) => {
         const cleanName = (p.namaPart || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
-        const cleanPn = (p.partNumber || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const cleanPn = (p.partNumber && p.partNumber !== '-' ? p.partNumber : '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '_');
         const pKey = `${b.id}_item_${cleanName}_${cleanPn || idx}`;
         const existing = existingMap.get(pKey);
         const requestedQty = Number(p.qty) || 1;
 
         if (existing) {
-          // Update info jika ada perubahan di Modul 3 namun jaga status pemenuhan & catatan supply
           const updated: PartSupplyItemTracking = {
             ...existing,
+            jenis: p.jenis || existing.jenis || 'Part',
             refNumber,
             noUnit: b.noUnit || existing.noUnit,
             namaAlat: b.namaAlat || b.jenis || existing.namaAlat,
@@ -4611,14 +4683,15 @@ export function syncBreakdownPartsToSupplyTrackings(
             namaPart: p.namaPart || existing.namaPart,
             qtyDiminta: requestedQty,
             satuan: p.satuan || existing.satuan,
+            tanggalRequest: existing.tanggalRequest || p.tanggalRequest || b.tanggal,
           };
           syncedList.push(updated);
           existingMap.delete(pKey);
         } else {
-          // Entri baru otomatis dari Modul 3
           const newItem: PartSupplyItemTracking = {
             id: `pst-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
             sourceType: 'UNIT_BREAKDOWN',
+            jenis: p.jenis || 'Part',
             refNumber,
             breakdownId: b.id,
             noUnit: b.noUnit,
@@ -4630,9 +4703,11 @@ export function syncBreakdownPartsToSupplyTrackings(
             qtyDiterima: 0,
             satuan: p.satuan || 'Pcs',
             status: 'PENDING',
+            tanggalRequest: p.tanggalRequest || b.tanggal,
             updatedAt: now,
           };
           syncedList.push(newItem);
+          newlyAddedToSync.push(newItem);
         }
       });
     });
@@ -4645,6 +4720,9 @@ export function syncBreakdownPartsToSupplyTrackings(
     });
 
     savePartSupplyTrackings(syncedList);
+    newlyAddedToSync.forEach((item) => {
+      syncItemToFirestore('part_supply_trackings', item.id, item);
+    });
     return syncedList;
   } catch (e) {
     console.error('Error syncing breakdown parts to supply trackings:', e);
@@ -4653,13 +4731,14 @@ export function syncBreakdownPartsToSupplyTrackings(
 }
 
 /**
- * Update status pemenuhan supply item (Checklist, Qty Supply Diterima, Surat Jalan Malang)
+ * Update status pemenuhan supply item (Checklist, Qty Supply Diterima, Tgl Request, Tgl Datang, Surat Jalan Malang)
  */
 export function updatePartSupplyStatus(
   trackingId: string,
   status: SupplyFulfillmentStatus,
   details?: {
     qtyDiterima?: number;
+    tanggalRequest?: string;
     tanggalSupply?: string;
     noSuratJalanMalang?: string;
     catatan?: string;
@@ -4690,8 +4769,9 @@ export function updatePartSupplyStatus(
       ...current,
       status,
       qtyDiterima: finalQtyDiterima,
+      tanggalRequest: details?.tanggalRequest !== undefined ? details.tanggalRequest : current.tanggalRequest,
       tanggalSupply: status !== 'PENDING' ? dateStr : undefined,
-      noSuratJalanMalang: details?.noSuratJalanMalang || current.noSuratJalanMalang || '',
+      noSuratJalanMalang: details?.noSuratJalanMalang !== undefined ? details.noSuratJalanMalang : (current.noSuratJalanMalang || ''),
       catatan: details?.catatan !== undefined ? details.catatan : current.catatan,
       updatedBy: details?.updatedBy || current.updatedBy,
       updatedAt: now,
@@ -4703,13 +4783,13 @@ export function updatePartSupplyStatus(
 
     logActivity({
       aksi: 'UPDATE',
-      keterangan: `Status supply part [${updated.namaPart}] Reff ${updated.refNumber} diubah menjadi ${status} (${updated.qtyDiterima}/${updated.qtyDiminta} ${updated.satuan})`,
+      keterangan: `Status supply [${updated.jenis || 'Part'}] ${updated.namaPart} Reff ${updated.refNumber} diubah menjadi ${status} (${updated.qtyDiterima}/${updated.qtyDiminta} ${updated.satuan})`,
       detailUnit: updated.noUnit,
     });
 
     return {
       success: true,
-      message: `Status part [${updated.namaPart}] berhasil diupdate menjadi ${status}!`,
+      message: `Status [${updated.namaPart}] berhasil diupdate menjadi ${status}!`,
       updatedItem: updated,
     };
   } catch (e: any) {
@@ -4803,6 +4883,7 @@ export function createNonUnitPurchaseRequest(
       const trackingEntry: PartSupplyItemTracking = {
         id: `pst-nu-${newRequest.id}-${idx}`,
         sourceType: 'NON_UNIT',
+        jenis: 'Part',
         refNumber: noPermintaan,
         partKey: `${newRequest.id}_nu_${idx}_${item.namaBarang}`,
         namaAlat: data.kategori === 'TOOLS_ALAT_KERJA' 
@@ -4816,9 +4897,11 @@ export function createNonUnitPurchaseRequest(
         qtyDiterima: 0,
         satuan: item.satuan,
         status: 'PENDING',
+        tanggalRequest: newRequest.tanggal,
         updatedAt: now.toISOString(),
       };
       trackings.push(trackingEntry);
+      syncItemToFirestore('part_supply_trackings', trackingEntry.id, trackingEntry);
     });
     savePartSupplyTrackings(trackings);
 

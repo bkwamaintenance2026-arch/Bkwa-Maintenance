@@ -218,6 +218,56 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "packagePn", "packageName", "serviceInterval", "items"]
+    },
+    "PartSupplyTracking": {
+      "title": "PartSupplyTracking",
+      "description": "Tracking pemenuhan supply suku cadang dan jasa perbaikan per unit atau SPB non-unit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "sourceType": { "type": "string", "enum": ["UNIT_BREAKDOWN", "NON_UNIT"] },
+        "jenis": { "type": "string", "enum": ["Part", "Jasa"] },
+        "refNumber": { "type": "string", "maxLength": 100 },
+        "breakdownId": { "type": "string", "maxLength": 128 },
+        "noUnit": { "type": "string", "maxLength": 100 },
+        "namaAlat": { "type": "string", "maxLength": 150 },
+        "partKey": { "type": "string", "maxLength": 200 },
+        "partNumber": { "type": "string", "maxLength": 100 },
+        "namaPart": { "type": "string", "maxLength": 200 },
+        "qtyDiminta": { "type": "number" },
+        "qtyDiterima": { "type": "number" },
+        "satuan": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["PENDING", "PARSIAL", "TERPENUHI"] },
+        "tanggalRequest": { "type": "string", "maxLength": 50 },
+        "tanggalSupply": { "type": "string", "maxLength": 50 },
+        "noSuratJalanMalang": { "type": "string", "maxLength": 100 },
+        "catatan": { "type": "string", "maxLength": 500 },
+        "updatedBy": { "type": "string", "maxLength": 150 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "sourceType", "refNumber", "partKey", "namaPart", "status"]
+    },
+    "NonUnitPurchaseRequest": {
+      "title": "NonUnitPurchaseRequest",
+      "description": "Formulir Surat Permintaan Barang (SPB) khusus Non-Unit Workshop",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "noPermintaan": { "type": "string", "maxLength": 100 },
+        "tanggal": { "type": "string", "maxLength": 50 },
+        "jam": { "type": "string", "maxLength": 20 },
+        "kategori": { "type": "string", "enum": ["TOOLS_ALAT_KERJA", "KONSUMABEL_WORKSHOP", "FASILITAS_UMUM"] },
+        "pemohon": { "type": "string", "maxLength": 150 },
+        "jabatanPemohon": { "type": "string", "maxLength": 100 },
+        "urgensi": { "type": "string", "enum": ["NORMAL", "URGENT", "EMERGENCY"] },
+        "alasanPermintaan": { "type": "string", "maxLength": 500 },
+        "items": { "type": "array", "description": "Daftar barang yang diajukan" },
+        "statusSupply": { "type": "string", "enum": ["PENDING", "PARSIAL", "TERPENUHI"] },
+        "statusPengajuan": { "type": "string", "enum": ["DIAJUKAN", "DISETUJUI", "SELESAI"] },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "noPermintaan", "tanggal", "kategori", "pemohon"]
     }
   },
   "firestore": {
@@ -252,6 +302,14 @@
     "/spare_parts/{partId}": {
       "schema": "SparePart",
       "description": "Dokumen item inventory suku cadang"
+    },
+    "/part_supply_trackings/{trackingId}": {
+      "schema": "PartSupplyTracking",
+      "description": "Dokumen monitoring supply dan outstanding part/jasa per unit dan non-unit"
+    },
+    "/non_unit_purchase_requests/{requestId}": {
+      "schema": "NonUnitPurchaseRequest",
+      "description": "Dokumen surat permintaan barang (SPB) khusus non-unit workshop"
     },
     "/tyre_records/{tyreId}": {
       "schema": "TyreRecord",

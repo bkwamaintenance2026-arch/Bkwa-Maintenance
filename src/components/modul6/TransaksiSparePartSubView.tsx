@@ -27,6 +27,10 @@ import {
   PackageCheck,
   AlertCircle
 } from 'lucide-react';
+import {
+  extractBreakdownPartsJasa,
+  getAllPartSupplyTrackings
+} from '../../utils/storage';
 import { OrderPartModal } from './OrderPartModal';
 import { PermintaanBarangModal } from './PermintaanBarangModal';
 
@@ -68,6 +72,9 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
   // Search & Filters for Breakdown List
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'ALL' | 'BREAKDOWN' | 'LIMIT OPERASI' | 'READY'>('ACTIVE');
+
+  // Selected No MO to immediately display Daftar Kebutuhan Part & Jasa
+  const [selectedMoBreakdownId, setSelectedMoBreakdownId] = useState<string | null>(null);
 
   // Modal State: Order Part
   const [selectedBreakdownForOrder, setSelectedBreakdownForOrder] = useState<BreakdownRecord | null>(null);
@@ -119,12 +126,26 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
     return matchSearch && matchStatus;
   });
 
-  // Handler klik No Maintenance Order atau tombol Order Part
+  // Handler klik No Maintenance Order -> Tampilkan Daftar List Kebutuhan Part & Jasa secara langsung
+  const handleSelectMo = (b: BreakdownRecord) => {
+    setSelectedMoBreakdownId((prev) => (prev === b.id ? null : b.id));
+  };
+
+  // Handler tombol Order Part -> Langsung buka modal Order Part dengan Part & Jasa terisi
   const handleOpenOrderPart = (b: BreakdownRecord) => {
     if (!canOrderPart) return;
+    setSelectedMoBreakdownId(b.id);
     setSelectedBreakdownForOrder(b);
     setIsOrderPartOpen(true);
   };
+
+  const selectedMoBreakdown = selectedMoBreakdownId
+    ? breakdowns.find((b) => b.id === selectedMoBreakdownId) || null
+    : null;
+  const selectedMoPartsJasa = selectedMoBreakdown
+    ? extractBreakdownPartsJasa(selectedMoBreakdown)
+    : [];
+  const allSupplyTrackings = getAllPartSupplyTrackings();
 
   // Handler pemicu Form Permintaan Barang dari Order Part Modal
   const handleTriggerPermintaanBarang = (params: {
@@ -158,7 +179,7 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
                 Daftar Unit Breakdown &amp; Maintenance Order
               </h3>
               <p className="text-xs text-stone-400 font-sans">
-                Klik pada <strong className="text-amber-400 font-mono">No. Maintenance Order</strong> untuk membuka formulir Order Part &amp; pemotongan stok otomatis.
+                Pilih / klik <strong className="text-amber-400 font-mono">No. Maintenance Order</strong> untuk langsung menampilkan Daftar Kebutuhan Part &amp; Jasa sesuai Update Breakdown, lalu proses Order Part atau SPB.
               </p>
             </div>
           </div>
@@ -214,27 +235,44 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
               <tbody className="divide-y divide-stone-800/60 font-mono">
                 {filteredBreakdowns.map((b) => {
                   const moNumber = b.noMaintenanceOrder || b.noNotifikasi;
+                  const isMoSelected = selectedMoBreakdownId === b.id;
+                  const bParts = extractBreakdownPartsJasa(b);
+                  const partCount = bParts.filter((p) => p.jenis !== 'Jasa').length;
+                  const jasaCount = bParts.filter((p) => p.jenis === 'Jasa').length;
+
                   return (
-                    <tr key={b.id} className="hover:bg-stone-800/40 transition">
-                      {/* Klik No Maintenance Order -> Langsung memunculkan Form Order Part */}
+                    <tr
+                      key={b.id}
+                      className={`hover:bg-stone-800/40 transition ${
+                        isMoSelected ? 'bg-amber-950/25 border-l-4 border-l-amber-500' : ''
+                      }`}
+                    >
+                      {/* Klik No Maintenance Order -> Tampilkan Daftar List Kebutuhan Part & Jasa */}
                       <td className="px-3 py-3 whitespace-nowrap">
-                        {canOrderPart ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenOrderPart(b)}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-stone-950 border border-amber-500/30 text-xs font-bold transition group active:scale-95"
-                            title="Klik untuk membuka Form Order Part untuk No Maintenance Order ini"
-                          >
-                            <Hash className="w-3.5 h-3.5 text-amber-500 group-hover:text-stone-950" />
-                            <span>{moNumber}</span>
-                            <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-800/70 text-amber-400 border border-stone-700 text-xs font-bold">
-                            <Hash className="w-3.5 h-3.5 text-amber-500" />
-                            <span>{moNumber}</span>
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMo(b)}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition group active:scale-95 cursor-pointer ${
+                            isMoSelected
+                              ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-md shadow-amber-500/20'
+                              : 'bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-stone-950 border-amber-500/30'
+                          }`}
+                          title="Klik No MO untuk menampilkan Daftar Kebutuhan Part & Jasa dari Update Breakdown"
+                        >
+                          <Hash className={`w-3.5 h-3.5 ${isMoSelected ? 'text-stone-950' : 'text-amber-500 group-hover:text-stone-950'}`} />
+                          <span>{moNumber}</span>
+                          {bParts.length > 0 && (
+                            <span
+                              className={`ml-1 px-1.5 py-0.2 rounded text-[9px] font-mono ${
+                                isMoSelected
+                                  ? 'bg-stone-950/20 text-stone-950'
+                                  : 'bg-stone-900 text-stone-200 border border-stone-700'
+                              }`}
+                            >
+                              {partCount}P{jasaCount > 0 ? `/${jasaCount}J` : ''}
+                            </span>
+                          )}
+                        </button>
                       </td>
 
                       <td className="px-3 py-3 font-bold text-stone-100 whitespace-nowrap">
@@ -278,13 +316,19 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
                           <button
                             type="button"
                             onClick={() => handleOpenOrderPart(b)}
-                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-bold shadow transition"
+                            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-bold shadow transition mx-auto cursor-pointer"
                           >
                             <ShoppingCart className="w-3.5 h-3.5" />
                             <span>Order Part</span>
                           </button>
                         ) : (
-                          <span className="text-[10px] text-stone-500">View Only</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectMo(b)}
+                            className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] font-bold border border-stone-700 cursor-pointer"
+                          >
+                            {isMoSelected ? 'Tutup Detail' : 'Lihat Part'}
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -292,6 +336,196 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* PANEL LANGSUNG: DAFTAR LIST KEBUTUHAN PART & JASA SESUAI UPDATE BREAKDOWN UNTUK NO MO TERPILIH */}
+        {selectedMoBreakdown && (
+          <div className="mt-4 bg-stone-950 border border-amber-500/40 rounded-2xl p-4 sm:p-5 space-y-4 shadow-xl animate-fade-in">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-stone-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded bg-amber-500 text-stone-950 font-mono text-[10px] font-black">
+                    MO: {selectedMoBreakdown.noMaintenanceOrder || selectedMoBreakdown.noNotifikasi}
+                  </span>
+                  <span className="text-sm font-mono font-bold text-stone-100">
+                    Daftar Kebutuhan Part &amp; Jasa — Unit {selectedMoBreakdown.noUnit} ({selectedMoBreakdown.namaAlat || selectedMoBreakdown.jenis || '-'})
+                  </span>
+                </div>
+                <p className="text-xs text-stone-400 font-sans">
+                  Sesuai input pada Modul 3 Update Breakdown · Komponen:{' '}
+                  <span className="text-amber-300 font-semibold">{selectedMoBreakdown.component}</span> · Problem:{' '}
+                  <span className="text-stone-200">{selectedMoBreakdown.detailProblem || '-'}</span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {canOrderPart && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenOrderPart(selectedMoBreakdown)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold shadow transition cursor-pointer"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>Proses Order Part (Isi Otomatis)</span>
+                  </button>
+                )}
+
+                {canInsert && selectedMoPartsJasa.some((p) => p.jenis !== 'Jasa') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const partItems = selectedMoPartsJasa
+                        .filter((p) => p.jenis !== 'Jasa')
+                        .map((p) => {
+                          const stockMatch = spareParts.find(
+                            (sp) =>
+                              (p.partNumber && p.partNumber !== '-' && sp.partNumber.trim().toLowerCase() === p.partNumber.trim().toLowerCase()) ||
+                              sp.namaBarang.trim().toLowerCase() === p.namaPart.trim().toLowerCase()
+                          );
+                          const currentStock = stockMatch ? stockMatch.qty : 0;
+                          const shortage = currentStock < p.qty ? p.qty - currentStock : p.qty;
+                          return {
+                            partNumber: p.partNumber === '-' ? '' : p.partNumber,
+                            namaBarang: p.namaPart,
+                            qtyDiminta: shortage,
+                            satuan: p.satuan,
+                            keterangan: currentStock <= 0 ? 'Stok Gudang Kosong (Reff MO)' : `Stok Gudang: ${currentStock} ${p.satuan}`,
+                          };
+                        });
+
+                      handleTriggerPermintaanBarang({
+                        noMaintenanceOrder: selectedMoBreakdown.noMaintenanceOrder || selectedMoBreakdown.noNotifikasi,
+                        noUnit: selectedMoBreakdown.noUnit,
+                        namaAlat: selectedMoBreakdown.namaAlat || selectedMoBreakdown.noLama,
+                        items: partItems,
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-mono font-bold transition cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Buat SPB dari List Ini</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMoBreakdownId(null)}
+                  className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-mono font-bold transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+
+            {selectedMoPartsJasa.length === 0 ? (
+              <div className="py-8 text-center border border-dashed border-stone-800 rounded-xl text-stone-500 font-mono text-xs">
+                Belum ada daftar kebutuhan Spare Part maupun Jasa yang dicatat pada Update Breakdown untuk No. MO ini.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-stone-800">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-stone-900 text-[10px] uppercase text-stone-400 border-b border-stone-800">
+                    <tr>
+                      <th className="px-3 py-2.5 w-10 text-center">No</th>
+                      <th className="px-3 py-2.5 w-20 text-center">Jenis</th>
+                      <th className="px-3 py-2.5">Nama Spare Part / Jasa</th>
+                      <th className="px-3 py-2.5 w-36">Part Number (PN)</th>
+                      <th className="px-3 py-2.5 w-24 text-right">Qty Diminta</th>
+                      <th className="px-3 py-2.5 w-20">Satuan</th>
+                      <th className="px-3 py-2.5 w-28">Tgl Req BD</th>
+                      <th className="px-3 py-2.5 w-44">Cek Stok Gudang</th>
+                      <th className="px-3 py-2.5 w-36 text-center">Status Supply Malang</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-800/60">
+                    {selectedMoPartsJasa.map((item, idx) => {
+                      const isJasa = item.jenis === 'Jasa';
+                      const matchedStock = !isJasa
+                        ? spareParts.find(
+                            (sp) =>
+                              (item.partNumber && item.partNumber !== '-' && sp.partNumber.trim().toLowerCase() === item.partNumber.trim().toLowerCase()) ||
+                              sp.namaBarang.trim().toLowerCase() === item.namaPart.trim().toLowerCase()
+                          )
+                        : undefined;
+                      const stockQty = matchedStock ? matchedStock.qty : 0;
+                      const isEnough = stockQty >= item.qty;
+
+                      const moRef = selectedMoBreakdown.noMaintenanceOrder || selectedMoBreakdown.noNotifikasi;
+                      const tracked = allSupplyTrackings.find(
+                        (t) =>
+                          (t.breakdownId === selectedMoBreakdown.id || t.refNumber === moRef) &&
+                          t.namaPart.trim().toLowerCase() === item.namaPart.trim().toLowerCase()
+                      );
+
+                      return (
+                        <tr key={`${item.namaPart}_${item.partNumber}_${idx}`} className="hover:bg-stone-900/60">
+                          <td className="px-3 py-2.5 text-center text-stone-500">{idx + 1}</td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                isJasa
+                                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                              }`}
+                            >
+                              {item.jenis}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 font-sans font-bold text-stone-100">
+                            {item.namaPart}
+                          </td>
+                          <td className="px-3 py-2.5 text-amber-300 font-bold">
+                            {item.partNumber || '-'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-bold text-stone-100 tabular-nums">
+                            {item.qty}
+                          </td>
+                          <td className="px-3 py-2.5 text-stone-300">
+                            {item.satuan}
+                          </td>
+                          <td className="px-3 py-2.5 text-stone-400 tabular-nums">
+                            {item.tanggalRequest || selectedMoBreakdown.tanggal}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {isJasa ? (
+                              <span className="text-[11px] text-purple-300">Jasa / Pekerjaan Luar</span>
+                            ) : matchedStock ? (
+                              stockQty <= 0 ? (
+                                <span className="text-[11px] text-rose-400 font-bold">Kosong (0 {matchedStock.satuan})</span>
+                              ) : isEnough ? (
+                                <span className="text-[11px] text-emerald-400 font-bold">Tersedia: {stockQty} {matchedStock.satuan}</span>
+                              ) : (
+                                <span className="text-[11px] text-amber-400 font-bold">Kurang (Sisa {stockQty})</span>
+                              )
+                            ) : (
+                              <span className="text-[11px] text-stone-500 italic">Belum ada di Master Stok</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                tracked?.status === 'TERPENUHI'
+                                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                  : tracked?.status === 'PARSIAL'
+                                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                  : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
+                              }`}
+                            >
+                              {tracked?.status === 'TERPENUHI'
+                                ? 'TERPENUHI'
+                                : tracked?.status === 'PARSIAL'
+                                ? 'PARSIAL'
+                                : 'OUTSTANDING'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

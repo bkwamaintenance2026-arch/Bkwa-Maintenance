@@ -78,6 +78,13 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
   useEffect(() => {
     loadData();
+    const handleSync = () => loadData();
+    window.addEventListener('bkwa-firestore-synced', handleSync);
+    window.addEventListener('bkwa-purchase-requests-changed', handleSync);
+    return () => {
+      window.removeEventListener('bkwa-firestore-synced', handleSync);
+      window.removeEventListener('bkwa-purchase-requests-changed', handleSync);
+    };
   }, []);
 
   // Handler: Tambah / Edit Part

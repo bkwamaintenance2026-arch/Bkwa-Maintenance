@@ -22,7 +22,9 @@ import {
   canUserEditModule,
   canUserDeleteModule,
   canUserPrintPreviewModule,
-  isDeveloper
+  isDeveloper,
+  extractBreakdownPartsJasa,
+  getAllPartSupplyTrackings
 } from '../../utils/storage';
 import { 
   Clock, 
@@ -1242,10 +1244,11 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                   <button
                                     type="button"
                                     onClick={() => setSinglePrintRecord(b)}
-                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-950 border border-stone-800 hover:border-amber-500/50 text-stone-300 hover:text-amber-300 text-[10px] font-mono font-bold transition cursor-pointer"
+                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 hover:bg-amber-500 hover:text-stone-950 text-amber-300 text-[10px] font-mono font-bold transition cursor-pointer"
+                                    title="Print Preview Update Progres Perbaikan beserta Daftar Kebutuhan Part & Jasa"
                                   >
                                     <Printer className="w-3 h-3" />
-                                    <span>Print SPK Unit</span>
+                                    <span>Print Progres &amp; Part</span>
                                   </button>
                                 )}
                                 <button
@@ -2193,50 +2196,122 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                               </td>
                             </tr>
 
-                            {/* Jika unit di-expand, ikut ter-print runtutan update nya */}
-                            {isExpanded && sortedUpdates.length > 0 && (
-                              <tr className="bg-stone-50">
-                                <td colSpan={10} className="p-2 pl-6">
-                                  <div className="text-[9px] font-mono font-bold text-amber-800 mb-1">
-                                    Runtutan Log Update Pekerjaan ({b.noUnit} - MO: {b.noMaintenanceOrder || b.noNotifikasi}):
-                                  </div>
-                                  <table className="w-full text-left text-[9px] font-mono border border-stone-300">
-                                    <thead className="bg-stone-100 text-stone-700">
-                                      <tr>
-                                        <th className="p-1 w-14">Urutan</th>
-                                        <th className="p-1 w-24">Waktu</th>
-                                        <th className="p-1">Tindakan / Detail Perbaikan</th>
-                                        <th className="p-1 w-20">Progress</th>
-                                        <th className="p-1 w-16">Status</th>
-                                        <th className="p-1 w-24">PIC</th>
-                                        <th className="p-1">Part / Remark</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-stone-300">
-                                      {sortedUpdates.map((u, ui) => (
-                                        <tr key={u.id || ui}>
-                                          <td className="p-1 font-bold">
-                                            {ui === 0 ? '#Terbaru' : `#${sortedUpdates.length - ui}`}
-                                          </td>
-                                          <td className="p-1">{u.tanggal} {u.jamStart || ''}</td>
-                                          <td className="p-1 font-sans">{u.detailKerusakan || u.detailPekerjaan || '-'}</td>
-                                          <td className="p-1">{u.progress || '-'}</td>
-                                          <td className="p-1 font-bold">{u.statusUnit || '-'}</td>
-                                          <td className="p-1 font-sans">{[u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-'}</td>
-                                          <td className="p-1 font-sans">
-                                            {u.partsJasa && u.partsJasa.length > 0 ? (
-                                              <span>{u.partsJasa.map(p => `${p.namaPart} (${p.qty} ${p.satuan})`).join(', ')}</span>
-                                            ) : (
-                                              u.remark || '-'
-                                            )}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </td>
-                              </tr>
-                            )}
+                            {/* Jika unit di-expand, ikut ter-print runtutan update & daftar kebutuhan Part & Jasa nya */}
+                            {isExpanded && (sortedUpdates.length > 0 || extractBreakdownPartsJasa(b).length > 0 || (formInputs[b.id]?.partsJasa?.length || 0) > 0) && (() => {
+                              const savedParts = extractBreakdownPartsJasa(b);
+                              const draftParts = (formInputs[b.id]?.partsJasa || []).filter((dp) => {
+                                const dn = (dp.namaPart || '').trim().toLowerCase();
+                                const dpn = (dp.partNumber || '').trim().toLowerCase();
+                                return !savedParts.some(
+                                  (sp) =>
+                                    sp.namaPart.trim().toLowerCase() === dn &&
+                                    (sp.partNumber === '-' ? '' : sp.partNumber).trim().toLowerCase() === dpn
+                                );
+                              });
+                              const combinedParts = [
+                                ...savedParts.map((sp) => ({ ...sp, isDraft: false })),
+                                ...draftParts.map((dp, dIdx) => ({
+                                  no: savedParts.length + dIdx + 1,
+                                  jenis: (dp.jenis === 'Jasa' ? 'Jasa' : 'Part') as 'Part' | 'Jasa',
+                                  namaPart: dp.namaPart,
+                                  partNumber: dp.partNumber || '-',
+                                  qty: Number(dp.qty) || 1,
+                                  satuan: String(dp.satuan || 'Pcs'),
+                                  tanggalRequest: formInputs[b.id]?.startDate || b.tanggal,
+                                  isDraft: true,
+                                })),
+                              ];
+
+                              return (
+                                <tr className="bg-stone-50">
+                                  <td colSpan={10} className="p-2 pl-6 space-y-2">
+                                    {sortedUpdates.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] font-mono font-bold text-amber-800 mb-1">
+                                          Runtutan Log Update Pekerjaan ({b.noUnit} - MO: {b.noMaintenanceOrder || b.noNotifikasi}):
+                                        </div>
+                                        <table className="w-full text-left text-[9px] font-mono border border-stone-300">
+                                          <thead className="bg-stone-100 text-stone-700">
+                                            <tr>
+                                              <th className="p-1 w-14">Urutan</th>
+                                              <th className="p-1 w-24">Waktu</th>
+                                              <th className="p-1">Tindakan / Detail Perbaikan</th>
+                                              <th className="p-1 w-20">Progress</th>
+                                              <th className="p-1 w-16">Status</th>
+                                              <th className="p-1 w-24">PIC</th>
+                                              <th className="p-1">Part / Remark</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-stone-300">
+                                            {sortedUpdates.map((u, ui) => (
+                                              <tr key={u.id || ui}>
+                                                <td className="p-1 font-bold">
+                                                  {ui === 0 ? '#Terbaru' : `#${sortedUpdates.length - ui}`}
+                                                </td>
+                                                <td className="p-1">
+                                                  {u.tanggal} {u.jamStart || ''}{u.jamFinish ? ` s/d ${u.jamFinish}` : ''}
+                                                </td>
+                                                <td className="p-1 font-sans">{u.detailKerusakan || u.detailPekerjaan || '-'}</td>
+                                                <td className="p-1">{u.progress || '-'}</td>
+                                                <td className="p-1 font-bold">{u.statusUnit || '-'}</td>
+                                                <td className="p-1 font-sans">{[u.pic1, u.pic2, u.pic3].filter(Boolean).join(', ') || '-'}</td>
+                                                <td className="p-1 font-sans">
+                                                  {u.partsJasa && u.partsJasa.length > 0 ? (
+                                                    <span>
+                                                      {u.partsJasa
+                                                        .map((p) => `[${p.jenis || 'Part'}] ${p.namaPart}${p.partNumber ? ` (PN: ${p.partNumber})` : ''} — ${p.qty} ${p.satuan}`)
+                                                        .join('; ')}
+                                                    </span>
+                                                  ) : (
+                                                    u.remark || '-'
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+
+                                    {combinedParts.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] font-mono font-bold text-stone-800 mb-1">
+                                          Daftar Kebutuhan Part &amp; Jasa ({b.noUnit} - MO: {b.noMaintenanceOrder || b.noNotifikasi}):
+                                        </div>
+                                        <table className="w-full text-left text-[9px] font-mono border border-stone-300">
+                                          <thead className="bg-stone-100 text-stone-700">
+                                            <tr>
+                                              <th className="p-1 w-8 text-center">No</th>
+                                              <th className="p-1 w-14">Jenis</th>
+                                              <th className="p-1">Nama Part / Jasa</th>
+                                              <th className="p-1 w-28">Part Number</th>
+                                              <th className="p-1 w-14 text-right">Qty</th>
+                                              <th className="p-1 w-16">Satuan</th>
+                                              <th className="p-1 w-22">Tgl Req</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-stone-300">
+                                            {combinedParts.map((pt, pIdx) => (
+                                              <tr key={pIdx}>
+                                                <td className="p-1 text-center">{pIdx + 1}</td>
+                                                <td className="p-1 font-bold">{pt.jenis}</td>
+                                                <td className="p-1 font-sans">
+                                                  {pt.namaPart} {pt.isDraft ? '[Draft Form]' : ''}
+                                                </td>
+                                                <td className="p-1">{pt.partNumber || '-'}</td>
+                                                <td className="p-1 text-right font-bold">{pt.qty}</td>
+                                                <td className="p-1">{pt.satuan}</td>
+                                                <td className="p-1">{pt.tanggalRequest || '-'}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })()}
                           </React.Fragment>
                         );
                       })}
@@ -2277,171 +2352,278 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
         </div>
       )}
 
-      {/* ================= MODAL CETAK PER UNIT (SINGLE MO SPK & LOG) ================= */}
-      {singlePrintRecord && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto no-print-backdrop">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
-            {/* Modal Header */}
-            <div className="p-3.5 sm:p-4 border-b border-stone-800 flex items-center justify-between bg-stone-950 no-print">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                  <FileText className="w-4 h-4" />
+      {/* ================= MODAL CETAK PER UNIT (SINGLE MO SPK, UPDATE PROGRES & KEBUTUHAN PART) ================= */}
+      {singlePrintRecord && (() => {
+        const liveRecord = breakdowns.find((x) => x.id === singlePrintRecord.id) || singlePrintRecord;
+        const moRef = liveRecord.noMaintenanceOrder || liveRecord.noNotifikasi;
+        const savedParts = extractBreakdownPartsJasa(liveRecord);
+        const draftFormParts = (formInputs[liveRecord.id]?.partsJasa || []).filter((dp) => {
+          const dn = (dp.namaPart || '').trim().toLowerCase();
+          const dpn = (dp.partNumber || '').trim().toLowerCase();
+          return !savedParts.some(
+            (sp) =>
+              sp.namaPart.trim().toLowerCase() === dn &&
+              (sp.partNumber === '-' ? '' : sp.partNumber).trim().toLowerCase() === dpn
+          );
+        });
+        const allTrackings = getAllPartSupplyTrackings().filter(
+          (t) => t.breakdownId === liveRecord.id || t.refNumber === moRef
+        );
+        const mergedPartsForPrint = [
+          ...savedParts.map((sp) => {
+            const matchedTrack = allTrackings.find(
+              (t) =>
+                t.namaPart.trim().toLowerCase() === sp.namaPart.trim().toLowerCase() &&
+                (t.partNumber || '-').trim().toLowerCase() === (sp.partNumber || '-').trim().toLowerCase()
+            );
+            return {
+              ...sp,
+              isDraft: false,
+              supplyStatus: matchedTrack?.status || 'PENDING',
+              tanggalSupply: matchedTrack?.tanggalSupply || '',
+            };
+          }),
+          ...draftFormParts.map((dp, idx) => ({
+            no: savedParts.length + idx + 1,
+            jenis: (dp.jenis === 'Jasa' ? 'Jasa' : 'Part') as 'Part' | 'Jasa',
+            namaPart: dp.namaPart,
+            partNumber: dp.partNumber || '-',
+            qty: Number(dp.qty) || 1,
+            satuan: String(dp.satuan || 'Pcs'),
+            remark: dp.remark || '',
+            tanggalRequest: formInputs[liveRecord.id]?.startDate || liveRecord.tanggal,
+            isDraft: true,
+            supplyStatus: 'DRAFT',
+            tanggalSupply: '',
+          })),
+        ];
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto no-print-backdrop">
+            <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
+              {/* Modal Header */}
+              <div className="p-3.5 sm:p-4 border-b border-stone-800 flex items-center justify-between bg-stone-950 no-print flex-wrap gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold font-mono text-stone-100">
+                      PRINT UPDATE PROGRES PERBAIKAN &amp; KEBUTUHAN PART
+                    </h3>
+                    <p className="text-[10px] text-stone-400 font-sans">
+                      PT BATU KALI WELANG AMPUH (ETIKA09) • No. MO: {moRef} • Unit: {liveRecord.noUnit}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold font-mono text-stone-100">
-                    SURAT PERINTAH KERJA (SPK) &amp; LOG PERBAIKAN UNIT
-                  </h3>
-                  <p className="text-[10px] text-stone-400 font-sans">
-                    PT BATU KALI WELANG AMPUH (ETIKA09) • No. MO: {singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi} • Unit: {singlePrintRecord.noUnit}
-                  </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDirectPrintElement('printable-single-mo-area', `SPK_Progres_Part_MO_${moRef}_Unit_${liveRecord.noUnit}_PT_BKWA`)}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Cetak Dokumen</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSinglePrintRecord(null)}
+                    className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDirectPrintElement('printable-single-mo-area', `SPK_MO_${singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi}_Unit_${singlePrintRecord.noUnit}_PT_BATU_KALI_WELANG_AMPUH_ETIKA09`)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-mono font-bold transition shadow cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Cetak Dokumen</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSinglePrintRecord(null)}
-                  className="p-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+              {/* Document Sheet */}
+              <div className="p-4 sm:p-6 overflow-y-auto bg-stone-950 text-stone-200 font-sans space-y-4 printable-report-modal">
+                <div id="printable-single-mo-area" className="space-y-4 bg-white text-stone-950 p-4 rounded-xl">
+                  {/* Kop Surat PT BATU KALI WELANG AMPUH (ETIKA09) */}
+                  <div className="header border-b-2 border-stone-800 pb-2 text-center space-y-0.5">
+                    <h2 className="text-base font-black tracking-wider uppercase font-mono text-stone-900">
+                      PT. BATU KALI WELANG AMPUH (ETIKA09)
+                    </h2>
+                    <h3 className="text-xs font-bold font-mono text-amber-700">
+                      LEMBAR UPDATE PROGRES PERBAIKAN, KEBUTUHAN PART &amp; SPK UNIT
+                    </h3>
+                    <p className="text-[9px] text-stone-600 font-mono">
+                      Quarry Purwosari, Pasuruan - Jawa Timur • Dicetak: {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} pk {getCurrentTimeString()} WIB
+                    </p>
+                  </div>
 
-            {/* Document Sheet */}
-            <div className="p-4 sm:p-6 overflow-y-auto bg-stone-950 text-stone-200 font-sans space-y-4 printable-report-modal">
-              <div id="printable-single-mo-area" className="space-y-4 bg-white text-stone-950 p-4 rounded-xl">
-                {/* Kop Surat PT BATU KALI WELANG AMPUH (ETIKA09) */}
-                <div className="header border-b-2 border-stone-800 pb-2 text-center space-y-0.5">
-                  <h2 className="text-base font-black tracking-wider uppercase font-mono text-stone-900">
-                    PT. BATU KALI WELANG AMPUH (ETIKA09)
-                  </h2>
-                  <h3 className="text-xs font-bold font-mono text-amber-700">
-                    LEMBAR SPK &amp; HISTORI REPAIR PERBAIKAN ALAT BERAT
-                  </h3>
-                  <p className="text-[9px] text-stone-600 font-mono">
-                    Quarry Purwosari, Pasuruan - Jawa Timur
-                  </p>
-                </div>
-
-                {/* Data Unit & Kerusakan */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-stone-50 p-3 rounded border border-stone-300 font-mono text-xs">
-                  <div>
-                    <span className="text-stone-600 block text-[9px]">NO. REFF MO</span>
-                    <span className="font-bold text-stone-900">{singlePrintRecord.noMaintenanceOrder || singlePrintRecord.noNotifikasi}</span>
-                  </div>
-                  <div>
-                    <span className="text-stone-600 block text-[9px]">UNIT ALAT</span>
-                    <span className="font-bold text-stone-900">{singlePrintRecord.noUnit} ({singlePrintRecord.namaAlat || '-'})</span>
-                  </div>
-                  <div>
-                    <span className="text-stone-600 block text-[9px]">TIPE BREAKDOWN</span>
-                    <span className="font-bold text-stone-900">{singlePrintRecord.breakdownType || 'UNSCHEDULE'}</span>
-                  </div>
-                  <div>
-                    <span className="text-stone-600 block text-[9px]">WAKTU BREAKDOWN</span>
-                    <span className="font-bold text-stone-900">{singlePrintRecord.tanggal} pk {singlePrintRecord.jamBreakdown || '-'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-stone-600 block text-[9px]">KOMPONEN &amp; PROBLEM AWAL</span>
-                    <span className="font-bold text-stone-900">[{singlePrintRecord.component || 'Other'}] {singlePrintRecord.detailProblem || '-'}</span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-stone-600 block text-[9px]">DOWNTIME BERJALAN</span>
-                    <span className="font-bold text-amber-800">{calculateDowntime(singlePrintRecord.tanggal, singlePrintRecord.jamBreakdown).formatted}</span>
-                  </div>
-                </div>
-
-                {/* Runtutan Log Perbaikan */}
-                <div className="space-y-1.5">
-                  <h4 className="text-xs font-mono font-bold text-stone-900">
-                    RUNTUTAN TINDAKAN &amp; LOG PERBAIKAN MEKANIK (Terbaru di Atas):
-                  </h4>
-                  {getSortedUpdates(singlePrintRecord).length === 0 ? (
-                    <div className="p-3 text-center border border-dashed border-stone-300 rounded text-stone-500 font-mono text-xs">
-                      Belum ada catatan update perbaikan.
+                  {/* Data Unit & Kerusakan */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-stone-50 p-3 rounded border border-stone-300 font-mono text-xs">
+                    <div>
+                      <span className="text-stone-600 block text-[9px]">NO. REFF MO</span>
+                      <span className="font-bold text-stone-900">{moRef}</span>
                     </div>
-                  ) : (
-                    <table className="w-full text-left text-xs font-mono border border-stone-400 rounded overflow-hidden">
-                      <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
-                        <tr>
-                          <th className="p-1.5 w-12 text-center">Urutan</th>
-                          <th className="p-1.5 w-28">Waktu Pengerjaan</th>
-                          <th className="p-1.5">Tindakan / Uraian Pekerjaan</th>
-                          <th className="p-1.5 w-20">Progress</th>
-                          <th className="p-1.5 w-20">Status</th>
-                          <th className="p-1.5 w-28">Teknisi / PIC</th>
-                          <th className="p-1.5">Part / Remark</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-300 text-[10px]">
-                        {getSortedUpdates(singlePrintRecord).map((upd, idx) => (
-                          <tr key={upd.id || idx}>
-                            <td className="p-1.5 text-center font-bold">
-                              {idx === 0 ? '#Terbaru' : `#${getSortedUpdates(singlePrintRecord).length - idx}`}
-                            </td>
-                            <td className="p-1.5">
-                              {upd.tanggal} pk {upd.jamStart || '-'} {upd.jamFinish ? `s/d ${upd.jamFinish}` : ''}
-                              {upd.endDate && upd.endDate !== upd.tanggal && ` (${upd.endDate})`}
-                            </td>
-                            <td className="p-1.5 font-sans text-stone-900">{upd.detailKerusakan || upd.detailPekerjaan || '-'}</td>
-                            <td className="p-1.5">{upd.progress || '-'}</td>
-                            <td className="p-1.5 font-bold">{upd.statusUnit || '-'}</td>
-                            <td className="p-1.5 font-sans">{[upd.pic1, upd.pic2, upd.pic3].filter(Boolean).join(', ') || '-'}</td>
-                            <td className="p-1.5 font-sans">
-                              {upd.partsJasa && upd.partsJasa.length > 0 ? (
-                                <span>{upd.partsJasa.map(p => `${p.namaPart} (${p.qty} ${p.satuan})`).join(', ')}</span>
-                              ) : (
-                                upd.remark || '-'
-                              )}
-                            </td>
+                    <div>
+                      <span className="text-stone-600 block text-[9px]">UNIT ALAT</span>
+                      <span className="font-bold text-stone-900">{liveRecord.noUnit} ({liveRecord.namaAlat || '-'})</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-600 block text-[9px]">TIPE &amp; STATUS UNIT</span>
+                      <span className="font-bold text-stone-900">{liveRecord.breakdownType || 'UNSCHEDULE'} • {liveRecord.statusUnit || 'BREAKDOWN'}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-600 block text-[9px]">WAKTU BREAKDOWN</span>
+                      <span className="font-bold text-stone-900">{liveRecord.tanggal} pk {liveRecord.jamBreakdown || '-'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-stone-600 block text-[9px]">KOMPONEN &amp; PROBLEM AWAL</span>
+                      <span className="font-bold text-stone-900">[{liveRecord.component || 'Other'}] {liveRecord.detailProblem || '-'}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-stone-600 block text-[9px]">DOWNTIME BERJALAN</span>
+                      <span className="font-bold text-amber-800">{calculateDowntime(liveRecord.tanggal, liveRecord.jamBreakdown).formatted}</span>
+                    </div>
+                  </div>
+
+                  {/* Daftar Kebutuhan Spare Part & Jasa Perbaikan */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-mono font-bold text-stone-900 uppercase">
+                        DAFTAR KEBUTUHAN SPARE PART &amp; JASA PERBAIKAN ({mergedPartsForPrint.length} Item):
+                      </h4>
+                    </div>
+                    {mergedPartsForPrint.length === 0 ? (
+                      <div className="p-2.5 text-center border border-dashed border-stone-300 rounded text-stone-500 font-mono text-[10px]">
+                        Belum ada kebutuhan Spare Part / Jasa yang dicatat pada Update Progres Perbaikan unit ini.
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs font-mono border border-stone-400 rounded overflow-hidden">
+                        <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
+                          <tr>
+                            <th className="p-1.5 w-8 text-center">No</th>
+                            <th className="p-1.5 w-14">Jenis</th>
+                            <th className="p-1.5">Nama Spare Part / Jasa</th>
+                            <th className="p-1.5 w-28">Part Number</th>
+                            <th className="p-1.5 w-14 text-right">Qty</th>
+                            <th className="p-1.5 w-16">Satuan</th>
+                            <th className="p-1.5 w-22">Tgl Req</th>
+                            <th className="p-1.5 w-24 text-center">Status Supply</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                        </thead>
+                        <tbody className="divide-y divide-stone-300 text-[10px]">
+                          {mergedPartsForPrint.map((item, idx) => (
+                            <tr key={`${item.namaPart}_${item.partNumber}_${idx}`}>
+                              <td className="p-1.5 text-center">{idx + 1}</td>
+                              <td className="p-1.5 font-bold">{item.jenis}</td>
+                              <td className="p-1.5 font-sans font-semibold text-stone-900">
+                                {item.namaPart}
+                                {item.isDraft && <span className="ml-1 text-[9px] font-mono text-amber-700">[Draft Form]</span>}
+                              </td>
+                              <td className="p-1.5 font-bold text-stone-800">{item.partNumber || '-'}</td>
+                              <td className="p-1.5 text-right font-bold">{item.qty}</td>
+                              <td className="p-1.5">{item.satuan}</td>
+                              <td className="p-1.5">{item.tanggalRequest || '-'}</td>
+                              <td className="p-1.5 text-center font-bold">
+                                {item.supplyStatus === 'TERPENUHI'
+                                  ? `TERPENUHI${item.tanggalSupply ? ` (${item.tanggalSupply})` : ''}`
+                                  : item.supplyStatus === 'PARSIAL'
+                                  ? 'PARSIAL'
+                                  : item.supplyStatus === 'DRAFT'
+                                  ? 'DRAFT'
+                                  : 'OUTSTANDING'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
 
-                {/* Tanda Tangan 3 Pihak Sesuai Setup Validasi */}
-                <div className="signatures pt-4 grid grid-cols-3 gap-3 text-center text-xs font-mono">
-                  <div className="sign-box">
-                    <span className="sign-title">Dibuat Oleh:</span>
-                    <span className="sign-job">{signatories.pembuatJabatan || 'Administrasi'}</span>
-                    <div className="sign-space h-12" />
-                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( {signatories.pembuatName || '....................'} )
-                    </div>
+                  {/* Runtutan Log Perbaikan */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-xs font-mono font-bold text-stone-900">
+                      RUNTUTAN TINDAKAN &amp; LOG PERBAIKAN MEKANIK (Terbaru di Atas):
+                    </h4>
+                    {getSortedUpdates(liveRecord).length === 0 ? (
+                      <div className="p-3 text-center border border-dashed border-stone-300 rounded text-stone-500 font-mono text-xs">
+                        Belum ada catatan update perbaikan.
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs font-mono border border-stone-400 rounded overflow-hidden">
+                        <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
+                          <tr>
+                            <th className="p-1.5 w-12 text-center">Urutan</th>
+                            <th className="p-1.5 w-28">Waktu Pengerjaan</th>
+                            <th className="p-1.5">Tindakan / Uraian Pekerjaan</th>
+                            <th className="p-1.5 w-20">Progress</th>
+                            <th className="p-1.5 w-20">Status</th>
+                            <th className="p-1.5 w-28">Teknisi / PIC</th>
+                            <th className="p-1.5">Kebutuhan Part / Remark</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-300 text-[10px]">
+                          {getSortedUpdates(liveRecord).map((upd, idx) => (
+                            <tr key={upd.id || idx}>
+                              <td className="p-1.5 text-center font-bold">
+                                {idx === 0 ? '#Terbaru' : `#${getSortedUpdates(liveRecord).length - idx}`}
+                              </td>
+                              <td className="p-1.5">
+                                {upd.tanggal} pk {upd.jamStart || '-'} {upd.jamFinish ? `s/d ${upd.jamFinish}` : ''}
+                                {upd.endDate && upd.endDate !== upd.tanggal && ` (${upd.endDate})`}
+                              </td>
+                              <td className="p-1.5 font-sans text-stone-900">{upd.detailKerusakan || upd.detailPekerjaan || '-'}</td>
+                              <td className="p-1.5">{upd.progress || '-'}</td>
+                              <td className="p-1.5 font-bold">{upd.statusUnit || '-'}</td>
+                              <td className="p-1.5 font-sans">{[upd.pic1, upd.pic2, upd.pic3].filter(Boolean).join(', ') || '-'}</td>
+                              <td className="p-1.5 font-sans">
+                                {upd.partsJasa && upd.partsJasa.length > 0 ? (
+                                  <div>
+                                    <div>
+                                      {upd.partsJasa
+                                        .map((p) => `[${p.jenis || 'Part'}] ${p.namaPart}${p.partNumber ? ` (PN: ${p.partNumber})` : ''} — ${p.qty} ${p.satuan}`)
+                                        .join('; ')}
+                                    </div>
+                                    {upd.remark && <div className="text-stone-600 mt-0.5">Remark: {upd.remark}</div>}
+                                  </div>
+                                ) : (
+                                  upd.remark || '-'
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
                   </div>
-                  <div className="sign-box">
-                    <span className="sign-title">Diperiksa Oleh:</span>
-                    <span className="sign-job">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
-                    <div className="sign-space h-12" />
-                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( {signatories.diperiksaName || '....................'} )
+
+                  {/* Tanda Tangan 3 Pihak Sesuai Setup Validasi */}
+                  <div className="signatures pt-4 grid grid-cols-3 gap-3 text-center text-xs font-mono">
+                    <div className="sign-box">
+                      <span className="sign-title">Dibuat Oleh:</span>
+                      <span className="sign-job">{signatories.pembuatJabatan || 'Administrasi'}</span>
+                      <div className="sign-space h-12" />
+                      <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                        ( {signatories.pembuatName || '....................'} )
+                      </div>
                     </div>
-                  </div>
-                  <div className="sign-box">
-                    <span className="sign-title">Disetujui Oleh:</span>
-                    <span className="sign-job">{signatories.disetujuiJabatan || 'Kabag Workshop'}</span>
-                    <div className="sign-space h-12" />
-                    <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
-                      ( {signatories.disetujuiName || 'DODIK MARIYADI'} )
+                    <div className="sign-box">
+                      <span className="sign-title">Diperiksa Oleh:</span>
+                      <span className="sign-job">{signatories.diperiksaJabatan || 'Supervisor Maintenance'}</span>
+                      <div className="sign-space h-12" />
+                      <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                        ( {signatories.diperiksaName || '....................'} )
+                      </div>
+                    </div>
+                    <div className="sign-box">
+                      <span className="sign-title">Disetujui Oleh:</span>
+                      <span className="sign-job">{signatories.disetujuiJabatan || 'Kabag Workshop'}</span>
+                      <div className="sign-space h-12" />
+                      <div className="sign-name border-t border-stone-600 w-32 mx-auto pt-1 font-bold text-[10px]">
+                        ( {signatories.disetujuiName || 'DODIK MARIYADI'} )
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

@@ -89,6 +89,12 @@ service cloud.firestore {
     match /purchase_requests/{prId} {
       allow read, write: if true;
     }
+    match /part_supply_trackings/{trackingId} {
+      allow read, write: if true;
+    }
+    match /non_unit_purchase_requests/{reqId} {
+      allow read, write: if true;
+    }
 
     // Dokumen Tyre Management (Modul 7)
     match /tyre_records/{tyreId} {

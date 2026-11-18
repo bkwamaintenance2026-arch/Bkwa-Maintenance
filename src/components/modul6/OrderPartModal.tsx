@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BreakdownRecord, 
   SparePartItem, 
@@ -6,8 +6,8 @@ import {
   SparePartTransactionItem,
   UserAccount 
 } from '../../types';
+import { extractBreakdownPartsJasa } from '../../utils/storage';
 import { 
-  Package, 
   X, 
   Plus, 
   Trash2, 
@@ -16,13 +16,9 @@ import {
   ArrowRight, 
   ShoppingCart, 
   FileText,
-  Calendar,
-  Clock,
-  User,
   Hash,
   Truck,
-  Wrench,
-  Search
+  Wrench
 } from 'lucide-react';
 
 interface OrderPartModalProps {
@@ -52,6 +48,15 @@ interface OrderPartModalProps {
   }) => void;
 }
 
+interface OrderDraftRow {
+  jenis: 'Part' | 'Jasa';
+  partNumber: string;
+  namaBarang: string;
+  qtyDiminta: number;
+  satuan: string;
+  keterangan: string;
+}
+
 export const OrderPartModal: React.FC<OrderPartModalProps> = ({
   isOpen,
   onClose,
@@ -62,22 +67,15 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
   onRecordTransaction,
   onRequestPermintaanBarang,
 }) => {
-  if (!isOpen || !breakdown) return null;
-
   const [tanggal, setTanggal] = useState(new Date().toISOString().split('T')[0]);
   const [jam, setJam] = useState(new Date().toTimeString().slice(0, 5));
   const [pemohonMekanik, setPemohonMekanik] = useState(currentUser.fullName || currentUser.username);
   const [catatan, setCatatan] = useState('');
+  const [loadedFromBreakdownCount, setLoadedFromBreakdownCount] = useState(0);
 
-  // Items table
-  const [orderItems, setOrderItems] = useState<Array<{
-    partNumber: string;
-    namaBarang: string;
-    qtyDiminta: number;
-    satuan: string;
-    keterangan: string;
-  }>>([
+  const [orderItems, setOrderItems] = useState<OrderDraftRow[]>([
     {
+      jenis: 'Part',
       partNumber: '',
       namaBarang: '',
       qtyDiminta: 1,
@@ -92,6 +90,46 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
     shortageItems?: SparePartTransactionItem[];
     trxNo?: string;
   } | null>(null);
+
+  // Sinkronkan isi form secara otomatis dengan Daftar Kebutuhan Part & Jasa dari Modul 3 Update Breakdown
+  useEffect(() => {
+    if (!isOpen || !breakdown) return;
+    const now = new Date();
+    setTanggal(now.toISOString().split('T')[0]);
+    setJam(now.toTimeString().slice(0, 5));
+    setPemohonMekanik(currentUser.fullName || currentUser.username);
+    setCatatan('');
+    setFeedback(null);
+
+    const extracted = extractBreakdownPartsJasa(breakdown);
+    if (extracted.length > 0) {
+      setLoadedFromBreakdownCount(extracted.length);
+      setOrderItems(
+        extracted.map((item) => ({
+          jenis: item.jenis,
+          partNumber: item.partNumber === '-' ? '' : item.partNumber,
+          namaBarang: item.namaPart,
+          qtyDiminta: Number(item.qty) || 1,
+          satuan: item.satuan || 'Pcs',
+          keterangan: item.remark || (item.tanggalRequest ? `Req BD: ${item.tanggalRequest}` : ''),
+        }))
+      );
+    } else {
+      setLoadedFromBreakdownCount(0);
+      setOrderItems([
+        {
+          jenis: 'Part',
+          partNumber: '',
+          namaBarang: '',
+          qtyDiminta: 1,
+          satuan: 'Pcs',
+          keterangan: '',
+        },
+      ]);
+    }
+  }, [isOpen, breakdown, currentUser]);
+
+  if (!isOpen || !breakdown) return null;
 
   // Helper untuk mencari data part di inventory
   const findPartInfo = (pn: string, name: string) => {
@@ -110,6 +148,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
       const copy = [...prev];
       copy[index] = {
         ...copy[index],
+        jenis: 'Part',
         partNumber: selected.partNumber,
         namaBarang: selected.namaBarang,
         satuan: selected.satuan,
@@ -123,6 +162,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
     setOrderItems((prev) => [
       ...prev,
       {
+        jenis: 'Part',
         partNumber: '',
         namaBarang: '',
         qtyDiminta: 1,
@@ -137,7 +177,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
     setOrderItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleItemChange = (index: number, field: string, value: any) => {
+  const handleItemChange = (index: number, field: keyof OrderDraftRow, value: any) => {
     setOrderItems((prev) => {
       const copy = [...prev];
       copy[index] = { ...copy[index], [field]: value };
@@ -158,6 +198,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
 
     const payloadItems: SparePartTransactionItem[] = orderItems.map((item, idx) => ({
       no: idx + 1,
+      jenis: item.jenis,
       partNumber: item.partNumber.trim(),
       namaBarang: item.namaBarang.trim(),
       qtyDiminta: Number(item.qtyDiminta) || 1,
@@ -205,7 +246,10 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
   };
 
   const handleOpenPermintaanBarang = () => {
-    const shortage = feedback?.shortageItems || orderItems.map((it) => {
+    const partOnlyRows = orderItems.filter((it) => it.jenis !== 'Jasa');
+    const sourceRows = partOnlyRows.length > 0 ? partOnlyRows : orderItems;
+
+    const shortage = feedback?.shortageItems || sourceRows.map((it) => {
       const existing = findPartInfo(it.partNumber, it.namaBarang);
       const stock = existing ? existing.qty : 0;
       return {
@@ -213,7 +257,11 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
         namaBarang: it.namaBarang,
         qtyDiminta: stock < it.qtyDiminta ? it.qtyDiminta - stock : it.qtyDiminta,
         satuan: it.satuan,
-        keterangan: stock <= 0 ? 'Stok Gudang Kosong' : `Stok Kurang (Sisa ${stock})`,
+        keterangan: it.jenis === 'Jasa'
+          ? 'Permintaan Jasa Perbaikan'
+          : stock <= 0
+          ? 'Stok Gudang Kosong'
+          : `Stok Kurang (Sisa ${stock})`,
       };
     });
 
@@ -228,7 +276,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-5xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="p-4 sm:p-5 bg-stone-950 border-b border-stone-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -237,10 +285,10 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-mono font-bold text-stone-100 flex items-center gap-2">
-                <span>FORM ORDER PART / PENGELUARAN SUKU CADANG</span>
+                <span>FORM ORDER PART &amp; KEBUTUHAN JASA UNIT</span>
               </h3>
               <p className="text-xs text-stone-400 font-sans">
-                Pengambilan spare part workshop untuk perbaikan unit breakdown
+                Pengeluaran suku cadang &amp; sinkronisasi kebutuhan dari Update Breakdown Modul 3
               </p>
             </div>
           </div>
@@ -255,6 +303,18 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
 
         {/* Content Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1">
+          {/* Info Sinkronisasi Update Breakdown */}
+          {loadedFromBreakdownCount > 0 && (
+            <div className="px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2 text-xs font-mono text-amber-200">
+              <div className="flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  Terisi otomatis <strong>{loadedFromBreakdownCount} item Part &amp; Jasa</strong> sesuai daftar kebutuhan di <strong>Update Breakdown (No MO: {breakdown.noMaintenanceOrder || breakdown.noNotifikasi})</strong>.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Banner Feedback */}
           {feedback && (
             <div
@@ -283,7 +343,6 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                     </div>
                   )}
 
-                  {/* Jika ada item yang kurang / tidak ada stok -> beri tombol aksi Buat Permintaan Barang */}
                   {feedback.shortageItems && feedback.shortageItems.length > 0 && (
                     <div className="mt-3 p-3 rounded-lg bg-stone-900/90 border border-amber-500/30">
                       <p className="text-[11px] font-bold text-amber-300 mb-2">
@@ -408,15 +467,15 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
               </div>
             </div>
 
-            {/* TABEL ORDER PART: No, PN, Nama Part, Qty, Satuan, Ketersediaan Stok */}
+            {/* TABEL ORDER PART */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
-                    Daftar Order Part (Suku Cadang yang Diambil)
+                    Daftar Kebutuhan Part &amp; Jasa (Sesuai Update Breakdown)
                   </h4>
                   <p className="text-[11px] text-stone-400">
-                    Pilih part dari katalog atau ketik langsung PN & Nama Part. Stok akan dipotong otomatis jika tersedia.
+                    Daftar di bawah terisi langsung dari Update Breakdown. Item bertipe Part otomatis memeriksa &amp; memotong stok gudang.
                   </p>
                 </div>
                 <button
@@ -425,7 +484,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-stone-950 border border-amber-500/40 text-xs font-mono font-bold transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Tambah Baris Part</span>
+                  <span>Tambah Baris</span>
                 </button>
               </div>
 
@@ -433,34 +492,53 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                 <table className="w-full text-left text-xs">
                   <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
                     <tr>
-                      <th className="px-3 py-2.5 w-10 text-center">No</th>
-                      <th className="px-3 py-2.5 w-48">Pilih dari Master Stok</th>
-                      <th className="px-3 py-2.5 w-36">Part Number (PN)</th>
-                      <th className="px-3 py-2.5">Nama Part</th>
-                      <th className="px-3 py-2.5 w-20 text-center">Qty</th>
-                      <th className="px-3 py-2.5 w-24">Satuan</th>
-                      <th className="px-3 py-2.5 w-44">Status Stok Gudang</th>
-                      <th className="px-3 py-2.5 w-10 text-center">Aksi</th>
+                      <th className="px-2.5 py-2.5 w-10 text-center">No</th>
+                      <th className="px-2.5 py-2.5 w-24">Jenis</th>
+                      <th className="px-2.5 py-2.5 w-44">Pilih dari Master Stok</th>
+                      <th className="px-2.5 py-2.5 w-32">Part Number (PN)</th>
+                      <th className="px-2.5 py-2.5 min-w-[180px]">Nama Part / Jasa</th>
+                      <th className="px-2.5 py-2.5 w-20 text-center">Qty</th>
+                      <th className="px-2.5 py-2.5 w-20">Satuan</th>
+                      <th className="px-2.5 py-2.5 w-44">Status Stok Gudang</th>
+                      <th className="px-2.5 py-2.5 w-10 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-800/60 font-mono">
                     {orderItems.map((item, idx) => {
-                      const matchedStock = findPartInfo(item.partNumber, item.namaBarang);
+                      const isJasa = item.jenis === 'Jasa';
+                      const matchedStock = !isJasa ? findPartInfo(item.partNumber, item.namaBarang) : undefined;
                       const currentQty = matchedStock ? matchedStock.qty : 0;
                       const hasStock = currentQty >= (Number(item.qtyDiminta) || 1);
                       const isZero = currentQty <= 0;
 
                       return (
                         <tr key={idx} className="hover:bg-stone-800/40">
-                          <td className="px-3 py-2 text-center text-stone-400 font-bold">{idx + 1}</td>
-                          
-                          {/* Dropdown Master */}
-                          <td className="px-3 py-2">
+                          <td className="px-2.5 py-2 text-center text-stone-400 font-bold">{idx + 1}</td>
+
+                          {/* Jenis: Part / Jasa */}
+                          <td className="px-2.5 py-2">
                             <select
-                              onChange={(e) => handleSelectCatalogPart(idx, e.target.value)}
-                              className="w-full bg-stone-800/90 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              value={item.jenis}
+                              onChange={(e) => handleItemChange(idx, 'jenis', e.target.value as 'Part' | 'Jasa')}
+                              className={`w-full border rounded-lg px-2 py-1.5 text-[11px] font-bold focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                                isJasa
+                                  ? 'bg-purple-950/60 border-purple-500/40 text-purple-300'
+                                  : 'bg-blue-950/60 border-blue-500/40 text-blue-300'
+                              }`}
                             >
-                              <option value="">-- Cari di Master --</option>
+                              <option value="Part">Part</option>
+                              <option value="Jasa">Jasa</option>
+                            </select>
+                          </td>
+
+                          {/* Dropdown Master */}
+                          <td className="px-2.5 py-2">
+                            <select
+                              disabled={isJasa}
+                              onChange={(e) => handleSelectCatalogPart(idx, e.target.value)}
+                              className="w-full bg-stone-800/90 border border-stone-700 rounded-lg px-2 py-1.5 text-[11px] text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-40"
+                            >
+                              <option value="">{isJasa ? '-- Non-Stok (Jasa) --' : '-- Cari di Master --'}</option>
                               {availableSpareParts.map((sp) => (
                                 <option key={sp.id} value={sp.id}>
                                   {sp.partNumber} ({sp.qty} {sp.satuan}) - {sp.namaBarang}
@@ -470,30 +548,30 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                           </td>
 
                           {/* PN */}
-                          <td className="px-3 py-2">
+                          <td className="px-2.5 py-2">
                             <input
                               type="text"
                               value={item.partNumber}
                               onChange={(e) => handleItemChange(idx, 'partNumber', e.target.value)}
-                              placeholder="PN Part..."
+                              placeholder={isJasa ? 'Jasa / -' : 'PN Part...'}
                               className="w-full bg-stone-800/90 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-amber-300 font-bold placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                             />
                           </td>
 
-                          {/* Nama Part */}
-                          <td className="px-3 py-2">
+                          {/* Nama Part / Jasa */}
+                          <td className="px-2.5 py-2">
                             <input
                               type="text"
                               required
                               value={item.namaBarang}
                               onChange={(e) => handleItemChange(idx, 'namaBarang', e.target.value)}
-                              placeholder="Nama spare part..."
+                              placeholder={isJasa ? 'Nama jasa perbaikan...' : 'Nama spare part...'}
                               className="w-full bg-stone-800/90 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                             />
                           </td>
 
                           {/* Qty */}
-                          <td className="px-3 py-2">
+                          <td className="px-2.5 py-2">
                             <input
                               type="number"
                               min="1"
@@ -505,7 +583,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                           </td>
 
                           {/* Satuan */}
-                          <td className="px-3 py-2">
+                          <td className="px-2.5 py-2">
                             <input
                               type="text"
                               value={item.satuan}
@@ -516,8 +594,12 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                           </td>
 
                           {/* Status Stok */}
-                          <td className="px-3 py-2 whitespace-nowrap">
-                            {matchedStock ? (
+                          <td className="px-2.5 py-2 whitespace-nowrap">
+                            {isJasa ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold">
+                                Jasa / Pekerjaan Luar
+                              </span>
+                            ) : matchedStock ? (
                               isZero ? (
                                 <div className="flex items-center gap-1.5 text-[11px] text-rose-400 font-bold">
                                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
@@ -542,7 +624,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                           </td>
 
                           {/* Aksi Remove */}
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-2.5 py-2 text-center">
                             <button
                               type="button"
                               onClick={() => handleRemoveItemRow(idx)}
@@ -594,7 +676,7 @@ export const OrderPartModal: React.FC<OrderPartModalProps> = ({
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-black shadow-lg shadow-amber-500/20 transition"
                 >
                   <ShoppingCart className="w-4 h-4" />
-                  <span>Simpan Order & Kurangi Stok</span>
+                  <span>Simpan Order &amp; Kurangi Stok</span>
                 </button>
               </div>
             </div>

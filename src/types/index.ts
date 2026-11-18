@@ -909,6 +909,7 @@ export interface SparePartItem {
 
 export interface SparePartTransactionItem {
   no: number;
+  jenis?: 'Part' | 'Jasa';
   partNumber: string;
   namaBarang: string;
   qtyDiminta: number;
@@ -938,6 +939,7 @@ export interface SparePartTransaction {
 
 export interface PurchaseRequestItem {
   no: number;
+  jenis?: 'Part' | 'Jasa';
   partNumber: string;
   namaBarang: string;
   qtyDiminta: number;
@@ -982,6 +984,7 @@ export const SUPPLY_STATUS_OPTIONS: {
 export interface PartSupplyItemTracking {
   id: string;
   sourceType: 'UNIT_BREAKDOWN' | 'NON_UNIT';
+  jenis?: 'Part' | 'Jasa';         // Jenis kebutuhan: Part atau Jasa perbaikan
   refNumber: string;               // No MO (cth: 260001) atau No SPB Non-Unit (cth: SPB-NU-260001)
   breakdownId?: string;            // ID Breakdown Record terkait
   noUnit?: string;                 // CN New
@@ -993,7 +996,8 @@ export interface PartSupplyItemTracking {
   qtyDiterima: number;
   satuan: string;
   status: SupplyFulfillmentStatus;
-  tanggalSupply?: string;          // YYYY-MM-DD kedatangan dari Malang
+  tanggalRequest?: string;         // YYYY-MM-DD tanggal permintaan dari Update Breakdown / SPB
+  tanggalSupply?: string;          // YYYY-MM-DD kedatangan / selesai supply
   noSuratJalanMalang?: string;     // No DO / Resi / Surat Jalan dari Malang
   catatan?: string;
   updatedBy?: string;

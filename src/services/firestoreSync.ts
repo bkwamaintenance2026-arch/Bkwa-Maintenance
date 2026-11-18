@@ -156,6 +156,14 @@ export function getDeterministicDocId(collectionName: string, item: any): string
     const id = (item.id || item.packagePn || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     return id ? `rpl_${id}` : `rpl_${Date.now()}`;
   }
+  if (collectionName === 'part_supply_trackings') {
+    const key = (item.partKey || item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return key ? `pst_${key.slice(0, 110)}` : `pst_${Date.now()}`;
+  }
+  if (collectionName === 'non_unit_purchase_requests') {
+    const key = (item.noPermintaan || item.id || '').toString().trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return key ? `spb_nu_${key}` : `spb_nu_${Date.now()}`;
+  }
 
   return String(item.id || Date.now());
 }
@@ -582,6 +590,36 @@ export function deduplicateEntityList(collectionName: string, list: any[]): any[
     return Array.from(map.values());
   }
 
+  if (collectionName === 'part_supply_trackings') {
+    const map = new Map<string, any>();
+    list.forEach((item) => {
+      if (!item) return;
+      const key = String(item.partKey || item.id || '').trim().toLowerCase();
+      if (!key) return;
+      if (map.has(key)) {
+        map.set(key, mergeByRecency(map.get(key), item));
+      } else {
+        map.set(key, item);
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  if (collectionName === 'non_unit_purchase_requests') {
+    const map = new Map<string, any>();
+    list.forEach((item) => {
+      if (!item) return;
+      const key = String(item.noPermintaan || item.id || '').trim().toLowerCase();
+      if (!key) return;
+      if (map.has(key)) {
+        map.set(key, mergeByRecency(map.get(key), item));
+      } else {
+        map.set(key, item);
+      }
+    });
+    return Array.from(map.values());
+  }
+
   // Default: deduplikasi berdasarkan id
   const map = new Map<string, any>();
   list.forEach((item) => {
@@ -633,6 +671,8 @@ export function cleanLocalDuplicates(): void {
     cleanKey('bkwa_inventory_grease_dist_v1', 'grease_distributions');
     cleanKey('bkwa_master_parts_v1', 'master_parts');
     cleanKey('bkwa_rpl_packages_v1', 'rpl_packages');
+    cleanKey('bkwa_part_supply_trackings_v1', 'part_supply_trackings');
+    cleanKey('bkwa_non_unit_purchase_requests_v1', 'non_unit_purchase_requests');
   } catch (e) {
     console.warn('Error saat membersihkan duplikat lokal:', e);
   }
@@ -727,10 +767,12 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
     // 6. Modul 5: P2H Records
     await uploadCollectionFromKey('bkwa_p2h_records_v1', 'p2h_records', 'p2h_records');
 
-    // 7. Modul 6: Spare Parts & Purchase Requests
+    // 7. Modul 6: Spare Parts, PR, Monitoring Supply & SPB Non-Unit
     await uploadCollectionFromKey('bkwa_spare_parts_v1', 'spare_parts', 'spare_parts');
     await uploadCollectionFromKey('bkwa_sp_transactions_v1', 'spare_part_transactions', 'spare_part_transactions');
     await uploadCollectionFromKey('bkwa_purchase_requests_v1', 'purchase_requests', 'purchase_requests');
+    await uploadCollectionFromKey('bkwa_part_supply_trackings_v1', 'part_supply_trackings', 'part_supply_trackings');
+    await uploadCollectionFromKey('bkwa_non_unit_purchase_requests_v1', 'non_unit_purchase_requests', 'non_unit_purchase_requests');
 
     // 8. Modul 7: Tyre Management System
     await uploadCollectionFromKey('bkwa_tyre_registrations_v1', 'tyre_records', 'tyre_records');
@@ -831,10 +873,12 @@ export async function downloadAllFirestoreDataToLocal(): Promise<{
     // 6. Modul 5: P2H Records
     await pullCollection('p2h_records', 'bkwa_p2h_records_v1', 'p2h_records');
 
-    // 7. Modul 6: Spare Parts & PR
+    // 7. Modul 6: Spare Parts, PR, Monitoring Supply & SPB Non-Unit
     await pullCollection('spare_parts', 'bkwa_spare_parts_v1', 'spare_parts');
     await pullCollection('spare_part_transactions', 'bkwa_sp_transactions_v1', 'spare_part_transactions');
     await pullCollection('purchase_requests', 'bkwa_purchase_requests_v1', 'purchase_requests');
+    await pullCollection('part_supply_trackings', 'bkwa_part_supply_trackings_v1', 'part_supply_trackings');
+    await pullCollection('non_unit_purchase_requests', 'bkwa_non_unit_purchase_requests_v1', 'non_unit_purchase_requests');
 
     // 8. Modul 7: Tyre Management System
     await pullCollection('tyre_records', 'bkwa_tyre_registrations_v1', 'tyre_records');
@@ -896,6 +940,8 @@ export async function checkFirestoreDatabaseCounts(): Promise<{
     { module: 'Modul 5', name: 'Pemeriksaan P2H Harian Unit', collection: 'p2h_records' },
     { module: 'Modul 6', name: 'Inventory Master Spare Part', collection: 'spare_parts' },
     { module: 'Modul 6', name: 'Purchase Request (PR)', collection: 'purchase_requests' },
+    { module: 'Modul 6', name: 'Monitoring Supply Part & Jasa', collection: 'part_supply_trackings' },
+    { module: 'Modul 6', name: 'SPB Non-Unit Workshop', collection: 'non_unit_purchase_requests' },
     { module: 'Modul 7', name: 'Registrasi Master Tyre (Ban)', collection: 'tyre_records' },
     { module: 'Modul 8', name: 'Master Part & Material Katalog', collection: 'master_parts' },
     { module: 'Modul 8', name: 'Paket RPL Service Periodic', collection: 'rpl_packages' },
@@ -1015,10 +1061,12 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
   // 6. Modul 5: P2H Records
   attachListener('p2h_records', 'bkwa_p2h_records_v1', 'p2h_records');
 
-  // 7. Modul 6: Spare Parts & PR
+  // 7. Modul 6: Spare Parts, PR, Monitoring Supply & SPB Non-Unit
   attachListener('spare_parts', 'bkwa_spare_parts_v1', 'spare_parts');
   attachListener('spare_part_transactions', 'bkwa_sp_transactions_v1', 'spare_part_transactions');
   attachListener('purchase_requests', 'bkwa_purchase_requests_v1', 'purchase_requests');
+  attachListener('part_supply_trackings', 'bkwa_part_supply_trackings_v1', 'part_supply_trackings');
+  attachListener('non_unit_purchase_requests', 'bkwa_non_unit_purchase_requests_v1', 'non_unit_purchase_requests');
 
   // 8. Modul 7: Tyre Management System
   attachListener('tyre_records', 'bkwa_tyre_registrations_v1', 'tyre_records');
