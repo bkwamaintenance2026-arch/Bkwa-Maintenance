@@ -619,8 +619,8 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
 
       {/* Modal Add / Edit */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-3xl w-full max-w-lg p-6 shadow-2xl space-y-4 my-8">
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 my-auto">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <h3 className="text-sm font-bold font-mono text-stone-100 flex items-center gap-2">
                 <Package className="w-4 h-4 text-amber-400" />
@@ -747,8 +747,8 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
                       <label className="block text-stone-400 mb-1">Nama Jenis Grease (Input Bebas Manual) *</label>
                       <input
                         type="text"
@@ -876,8 +876,8 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                     </select>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="sm:col-span-2">
                       <label className="block text-stone-400 mb-1">Jenis Grease (Input Bebas Manual) *</label>
                       <input
                         type="text"

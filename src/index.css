@@ -1,5 +1,68 @@
 @import "tailwindcss";
 
+@layer base {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+    -webkit-text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+
+  #root {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+  }
+}
+
+/* Memastikan setiap wadah tabel / tab horizontal geser halus di HP & Tablet tanpa menggeser seluruh layar */
+.overflow-x-auto {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.5) rgba(28, 25, 23, 0.7);
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  height: 7px;
+  width: 7px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: rgba(28, 25, 23, 0.65);
+  border-radius: 9999px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.45);
+  border-radius: 9999px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.75);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mencegah iOS Safari auto-zoom merusak rasio layar saat mengetik di HP */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    max-width: 100%;
+  }
+}
+
 @media print {
   body {
     background-color: #ffffff !important;
@@ -42,4 +105,3 @@
     visibility: hidden !important;
   }
 }
-

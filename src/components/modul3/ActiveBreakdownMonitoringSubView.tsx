@@ -1002,8 +1002,9 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
             </p>
           </div>
         ) : (
-          <table className="w-full text-left text-xs text-stone-300 table-auto sm:table-fixed">
-            <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-stone-300 table-auto xl:table-fixed min-w-[920px] xl:min-w-full">
+              <thead className="bg-stone-950 text-[10px] font-mono uppercase text-stone-400 border-b border-stone-800">
               <tr>
                 <th className="p-2 w-8 text-center">+</th>
                 <th className="p-2 w-7 text-center">No</th>
@@ -1914,6 +1915,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -2118,7 +2120,7 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                 </div>
 
                 {/* KPI Ringkasan */}
-                <div className="kpi-row grid grid-cols-4 gap-2 text-center text-xs font-mono">
+                <div className="kpi-row grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
                   <div className="kpi-col p-1.5 rounded border border-stone-400 bg-stone-50">
                     <span className="kpi-label text-[9px] text-stone-600 block">TOTAL UNIT BD</span>
                     <span className="kpi-value font-bold text-stone-900">{stats.total} Unit</span>
@@ -2138,8 +2140,8 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                 </div>
 
                 {/* Tabel Cetak */}
-                <div className="border border-stone-400 rounded overflow-hidden">
-                  <table className="w-full text-left text-[10px] border-collapse">
+                <div className="border border-stone-400 rounded overflow-x-auto">
+                  <table className="w-full text-left text-[10px] border-collapse min-w-[700px] print:min-w-full">
                     <thead className="bg-stone-100 text-[9px] font-mono uppercase text-stone-800 border-b border-stone-400">
                       <tr>
                         <th className="p-1.5 w-7 text-center">No</th>
@@ -2492,45 +2494,47 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         Belum ada kebutuhan Spare Part / Jasa yang dicatat pada Update Progres Perbaikan unit ini.
                       </div>
                     ) : (
-                      <table className="w-full text-left text-xs font-mono border border-stone-400 rounded overflow-hidden">
-                        <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
-                          <tr>
-                            <th className="p-1.5 w-8 text-center">No</th>
-                            <th className="p-1.5 w-14">Jenis</th>
-                            <th className="p-1.5">Nama Spare Part / Jasa</th>
-                            <th className="p-1.5 w-28">Part Number</th>
-                            <th className="p-1.5 w-14 text-right">Qty</th>
-                            <th className="p-1.5 w-16">Satuan</th>
-                            <th className="p-1.5 w-22">Tgl Req</th>
-                            <th className="p-1.5 w-24 text-center">Status Supply</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-300 text-[10px]">
-                          {mergedPartsForPrint.map((item, idx) => (
-                            <tr key={`${item.namaPart}_${item.partNumber}_${idx}`}>
-                              <td className="p-1.5 text-center">{idx + 1}</td>
-                              <td className="p-1.5 font-bold">{item.jenis}</td>
-                              <td className="p-1.5 font-sans font-semibold text-stone-900">
-                                {item.namaPart}
-                                {item.isDraft && <span className="ml-1 text-[9px] font-mono text-amber-700">[Draft Form]</span>}
-                              </td>
-                              <td className="p-1.5 font-bold text-stone-800">{item.partNumber || '-'}</td>
-                              <td className="p-1.5 text-right font-bold">{item.qty}</td>
-                              <td className="p-1.5">{item.satuan}</td>
-                              <td className="p-1.5">{item.tanggalRequest || '-'}</td>
-                              <td className="p-1.5 text-center font-bold">
-                                {item.supplyStatus === 'TERPENUHI'
-                                  ? `TERPENUHI${item.tanggalSupply ? ` (${item.tanggalSupply})` : ''}`
-                                  : item.supplyStatus === 'PARSIAL'
-                                  ? 'PARSIAL'
-                                  : item.supplyStatus === 'DRAFT'
-                                  ? 'DRAFT'
-                                  : 'OUTSTANDING'}
-                              </td>
+                      <div className="overflow-x-auto border border-stone-400 rounded">
+                        <table className="w-full text-left text-xs font-mono min-w-[640px] print:min-w-full">
+                          <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
+                            <tr>
+                              <th className="p-1.5 w-8 text-center">No</th>
+                              <th className="p-1.5 w-14">Jenis</th>
+                              <th className="p-1.5">Nama Spare Part / Jasa</th>
+                              <th className="p-1.5 w-28">Part Number</th>
+                              <th className="p-1.5 w-14 text-right">Qty</th>
+                              <th className="p-1.5 w-16">Satuan</th>
+                              <th className="p-1.5 w-22">Tgl Req</th>
+                              <th className="p-1.5 w-24 text-center">Status Supply</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-stone-300 text-[10px]">
+                            {mergedPartsForPrint.map((item, idx) => (
+                              <tr key={`${item.namaPart}_${item.partNumber}_${idx}`}>
+                                <td className="p-1.5 text-center">{idx + 1}</td>
+                                <td className="p-1.5 font-bold">{item.jenis}</td>
+                                <td className="p-1.5 font-sans font-semibold text-stone-900">
+                                  {item.namaPart}
+                                  {item.isDraft && <span className="ml-1 text-[9px] font-mono text-amber-700">[Draft Form]</span>}
+                                </td>
+                                <td className="p-1.5 font-bold text-stone-800">{item.partNumber || '-'}</td>
+                                <td className="p-1.5 text-right font-bold">{item.qty}</td>
+                                <td className="p-1.5">{item.satuan}</td>
+                                <td className="p-1.5">{item.tanggalRequest || '-'}</td>
+                                <td className="p-1.5 text-center font-bold">
+                                  {item.supplyStatus === 'TERPENUHI'
+                                    ? `TERPENUHI${item.tanggalSupply ? ` (${item.tanggalSupply})` : ''}`
+                                    : item.supplyStatus === 'PARSIAL'
+                                    ? 'PARSIAL'
+                                    : item.supplyStatus === 'DRAFT'
+                                    ? 'DRAFT'
+                                    : 'OUTSTANDING'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
 
@@ -2544,50 +2548,52 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                         Belum ada catatan update perbaikan.
                       </div>
                     ) : (
-                      <table className="w-full text-left text-xs font-mono border border-stone-400 rounded overflow-hidden">
-                        <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
-                          <tr>
-                            <th className="p-1.5 w-12 text-center">Urutan</th>
-                            <th className="p-1.5 w-28">Waktu Pengerjaan</th>
-                            <th className="p-1.5">Tindakan / Uraian Pekerjaan</th>
-                            <th className="p-1.5 w-20">Progress</th>
-                            <th className="p-1.5 w-20">Status</th>
-                            <th className="p-1.5 w-28">Teknisi / PIC</th>
-                            <th className="p-1.5">Kebutuhan Part / Remark</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-stone-300 text-[10px]">
-                          {getSortedUpdates(liveRecord).map((upd, idx) => (
-                            <tr key={upd.id || idx}>
-                              <td className="p-1.5 text-center font-bold">
-                                {idx === 0 ? '#Terbaru' : `#${getSortedUpdates(liveRecord).length - idx}`}
-                              </td>
-                              <td className="p-1.5">
-                                {upd.tanggal} pk {upd.jamStart || '-'} {upd.jamFinish ? `s/d ${upd.jamFinish}` : ''}
-                                {upd.endDate && upd.endDate !== upd.tanggal && ` (${upd.endDate})`}
-                              </td>
-                              <td className="p-1.5 font-sans text-stone-900">{upd.detailKerusakan || upd.detailPekerjaan || '-'}</td>
-                              <td className="p-1.5">{upd.progress || '-'}</td>
-                              <td className="p-1.5 font-bold">{upd.statusUnit || '-'}</td>
-                              <td className="p-1.5 font-sans">{[upd.pic1, upd.pic2, upd.pic3].filter(Boolean).join(', ') || '-'}</td>
-                              <td className="p-1.5 font-sans">
-                                {upd.partsJasa && upd.partsJasa.length > 0 ? (
-                                  <div>
-                                    <div>
-                                      {upd.partsJasa
-                                        .map((p) => `[${p.jenis || 'Part'}] ${p.namaPart}${p.partNumber ? ` (PN: ${p.partNumber})` : ''} — ${p.qty} ${p.satuan}`)
-                                        .join('; ')}
-                                    </div>
-                                    {upd.remark && <div className="text-stone-600 mt-0.5">Remark: {upd.remark}</div>}
-                                  </div>
-                                ) : (
-                                  upd.remark || '-'
-                                )}
-                              </td>
+                      <div className="overflow-x-auto border border-stone-400 rounded">
+                        <table className="w-full text-left text-xs font-mono min-w-[680px] print:min-w-full">
+                          <thead className="bg-stone-100 text-[9px] uppercase text-stone-700">
+                            <tr>
+                              <th className="p-1.5 w-12 text-center">Urutan</th>
+                              <th className="p-1.5 w-28">Waktu Pengerjaan</th>
+                              <th className="p-1.5">Tindakan / Uraian Pekerjaan</th>
+                              <th className="p-1.5 w-20">Progress</th>
+                              <th className="p-1.5 w-20">Status</th>
+                              <th className="p-1.5 w-28">Teknisi / PIC</th>
+                              <th className="p-1.5">Kebutuhan Part / Remark</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-stone-300 text-[10px]">
+                            {getSortedUpdates(liveRecord).map((upd, idx) => (
+                              <tr key={upd.id || idx}>
+                                <td className="p-1.5 text-center font-bold">
+                                  {idx === 0 ? '#Terbaru' : `#${getSortedUpdates(liveRecord).length - idx}`}
+                                </td>
+                                <td className="p-1.5">
+                                  {upd.tanggal} pk {upd.jamStart || '-'} {upd.jamFinish ? `s/d ${upd.jamFinish}` : ''}
+                                  {upd.endDate && upd.endDate !== upd.tanggal && ` (${upd.endDate})`}
+                                </td>
+                                <td className="p-1.5 font-sans text-stone-900">{upd.detailKerusakan || upd.detailPekerjaan || '-'}</td>
+                                <td className="p-1.5">{upd.progress || '-'}</td>
+                                <td className="p-1.5 font-bold">{upd.statusUnit || '-'}</td>
+                                <td className="p-1.5 font-sans">{[upd.pic1, upd.pic2, upd.pic3].filter(Boolean).join(', ') || '-'}</td>
+                                <td className="p-1.5 font-sans">
+                                  {upd.partsJasa && upd.partsJasa.length > 0 ? (
+                                    <div>
+                                      <div>
+                                        {upd.partsJasa
+                                          .map((p) => `[${p.jenis || 'Part'}] ${p.namaPart}${p.partNumber ? ` (PN: ${p.partNumber})` : ''} — ${p.qty} ${p.satuan}`)
+                                          .join('; ')}
+                                      </div>
+                                      {upd.remark && <div className="text-stone-600 mt-0.5">Remark: {upd.remark}</div>}
+                                    </div>
+                                  ) : (
+                                    upd.remark || '-'
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
 

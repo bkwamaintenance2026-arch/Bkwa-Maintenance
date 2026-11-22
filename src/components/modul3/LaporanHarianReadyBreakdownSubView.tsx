@@ -1644,7 +1644,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
               </div>
 
               {/* KPI Ringkasan Box */}
-              <div className="grid grid-cols-4 gap-2 text-center text-xs font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
                 <div className="p-2 border border-stone-300 rounded bg-stone-50">
                   <span className="text-[10px] text-stone-500 uppercase block">Total Unit</span>
                   <span className="text-base font-black text-stone-800">{totalUnitMaster} Unit</span>
@@ -1668,7 +1668,8 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 <h3 className="font-mono font-bold text-xs uppercase bg-emerald-100 text-emerald-900 px-2 py-1 rounded">
                   1. DAFTAR UNIT READY OPERASIONAL (SUMBER DATA: FORM INSPEKSI P2H MODUL 5)
                 </h3>
-                <table className="w-full mt-2 border-collapse border border-stone-300 text-[10.5px]">
+                <div className="overflow-x-auto mt-2">
+                  <table className="w-full border-collapse border border-stone-300 text-[10.5px] min-w-[640px] print:min-w-full">
                   <thead>
                     <tr className="bg-stone-100 text-stone-800 font-mono text-[10px]">
                       <th className="border border-stone-300 p-1.5 text-center w-8">No</th>
@@ -1710,6 +1711,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Tabel 2: Unit Breakdown */}
@@ -1717,7 +1719,8 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 <h3 className="font-mono font-bold text-xs uppercase bg-rose-100 text-rose-900 px-2 py-1 rounded">
                   2. DAFTAR UNIT BREAKDOWN &amp; DALAM PERBAIKAN (SUMBER DATA: MODUL 3 MAINTENANCE)
                 </h3>
-                <table className="w-full mt-2 border-collapse border border-stone-300 text-[10.5px]">
+                <div className="overflow-x-auto mt-2">
+                  <table className="w-full border-collapse border border-stone-300 text-[10.5px] min-w-[680px] print:min-w-full">
                   <thead>
                     <tr className="bg-stone-100 text-stone-800 font-mono text-[10px]">
                       <th className="border border-stone-300 p-1.5 text-center w-8">No</th>
@@ -1773,6 +1776,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                     )}
                   </tbody>
                 </table>
+                </div>
               </div>
 
               {/* Lembar Tanda Tangan (3 Pihak Seragam) */}

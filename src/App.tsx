@@ -693,11 +693,11 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col selection:bg-amber-600 selection:text-white font-sans antialiased">
+    <div className="min-h-dvh w-full max-w-full overflow-x-clip bg-stone-950 text-stone-100 flex flex-col selection:bg-amber-600 selection:text-white font-sans antialiased">
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2.5 transition-all duration-300 border ${
+          className={`fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:max-w-md z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2.5 transition-all duration-300 border ${
             toast.type === 'success'
               ? 'bg-emerald-950/90 text-emerald-200 border-emerald-700'
               : toast.type === 'error'
@@ -709,7 +709,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 1. Header Clean: Logo + "Maintenance Management System" + PT Batu Kaliwelang Ampuh + Quarry Purwosari + Tombol Menu Utama + Sapaan Sesuai User/Developer */}
+      {/* 1. Header Clean */}
       <Navbar
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -719,9 +719,12 @@ export default function App() {
         onOpenCloudSync={() => setIsCloudSyncOpen(true)}
         isSimulating={!!originalAdminUser}
         onExitSimulation={handleExitSimulation}
+        activeModuleId={activeModuleId}
+        modules={modules}
+        onSelectModule={handleSelectModule}
       />
 
-      {/* 2. Tombol 5 Modul Besar Terintegrasi */}
+      {/* 2. Tombol Modul Terintegrasi */}
       <ModuleTabs
         activeModuleId={activeModuleId}
         onSelectModule={handleSelectModule}
@@ -734,7 +737,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {activeModuleId === 0 ? (
           /* Tampilan Menu Utama (Dashboard Launcher & Ringkasan Modul) */
           <MenuUtamaLauncher

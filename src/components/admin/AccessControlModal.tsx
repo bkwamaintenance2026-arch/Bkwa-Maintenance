@@ -740,7 +740,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                   <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     
                     {/* Profil & Akun */}
-                    <div className="flex items-start gap-3.5 min-w-[280px]">
+                    <div className="flex items-start gap-3 sm:gap-3.5 min-w-0 sm:min-w-[280px]">
                       <div
                         className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border shadow-md mt-0.5 ${
                           isDev
@@ -1079,7 +1079,7 @@ export const AccessControlModal: React.FC<AccessControlModalProps> = ({
                                 </div>
 
                                 {/* Kontrol Granular: View / Input / Edit / Hapus / Export */}
-                                <div className="grid grid-cols-5 gap-1 pt-1">
+                                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 pt-1">
                                   {(
                                     [
                                       { key: 'viewer', label: 'View' },

@@ -614,7 +614,7 @@ export const MonitoringSupplySubView: React.FC<MonitoringSupplySubViewProps> = (
               </select>
             </div>
 
-            <div className="relative min-w-[200px]">
+            <div className="relative w-full sm:w-auto sm:min-w-[200px]">
               <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"

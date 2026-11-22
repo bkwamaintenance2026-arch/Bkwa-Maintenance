@@ -448,8 +448,8 @@ export const InputSparePartSubView: React.FC<InputSparePartSubViewProps> = ({
           </div>
 
           {/* Quick Search & Filters */}
-          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-            <div className="relative min-w-[200px]">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono w-full md:w-auto">
+            <div className="relative w-full sm:w-auto sm:min-w-[200px]">
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
               <input
                 type="text"

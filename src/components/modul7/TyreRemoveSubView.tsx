@@ -690,7 +690,7 @@ export const TyreRemoveSubView: React.FC<TyreRemoveSubViewProps> = ({
                 <label className="block text-stone-300 font-semibold mb-1">
                   Status Ban Setelah Dilepas <span className="text-amber-400">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setStatusSetelahDilepas('SCRAP')}

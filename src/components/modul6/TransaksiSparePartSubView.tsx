@@ -185,8 +185,8 @@ export const TransaksiSparePartSubView: React.FC<TransaksiSparePartSubViewProps>
           </div>
 
           {/* Search & Filters */}
-          <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-            <div className="relative min-w-[220px]">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-mono w-full md:w-auto">
+            <div className="relative w-full sm:w-auto sm:min-w-[220px]">
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
               <input
                 type="text"

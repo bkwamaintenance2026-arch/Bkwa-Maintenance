@@ -223,31 +223,31 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
     switch (tier) {
       case 'DEVELOPER':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-xs font-mono font-bold">
-            <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-            <span>AKUN DEVELOPER (FULL ACCESS)</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[10px] sm:text-xs font-mono font-bold max-w-full">
+            <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span className="truncate sm:whitespace-normal">AKUN DEVELOPER (FULL ACCESS)</span>
           </div>
         );
       case 'ADMIN':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-mono font-bold">
-            <Award className="w-3.5 h-3.5 text-blue-400" />
-            <span>AKUN ADMIN (INPUT & EXPORT MODUL 3, 4, 5)</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[10px] sm:text-xs font-mono font-bold max-w-full">
+            <Award className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            <span className="truncate sm:whitespace-normal">AKUN ADMIN (MODUL 3, 4, 5)</span>
           </div>
         );
       case 'KHUSUS':
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-mono font-bold">
-            <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>AKUN KHUSUS (EXPORT MODUL 1, 2, 3, 4, 5)</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] sm:text-xs font-mono font-bold max-w-full">
+            <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate sm:whitespace-normal">AKUN KHUSUS (EXPORT)</span>
           </div>
         );
       case 'MEMBER':
       default:
         return (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-mono font-bold">
-            <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-            <span>AKUN MEMBER (VIEWER MODUL 3 & INPUT FORM P2H)</span>
+          <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] sm:text-xs font-mono font-bold max-w-full">
+            <UserCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="truncate sm:whitespace-normal">AKUN MEMBER (VIEW &amp; P2H)</span>
           </div>
         );
     }
@@ -256,22 +256,22 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
   return (
     <div className="space-y-6 sm:space-y-8 animate-fadeIn">
       {/* 1. Header Profile & Role Overview Banner */}
-      <div className="relative overflow-hidden bg-stone-900/90 border border-stone-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-md">
+      <div className="relative overflow-hidden bg-stone-900/90 border border-stone-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 shadow-2xl backdrop-blur-md">
         <div className="absolute -right-16 -bottom-16 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
         
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div className="flex items-start sm:items-center gap-4">
-            <div className="shrink-0 p-1 bg-stone-950 rounded-2xl border border-stone-800 shadow-xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 relative z-10 min-w-0">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+            <div className="shrink-0 p-1 bg-stone-950 rounded-2xl border border-stone-800 shadow-xl hidden sm:block">
               <BkwaLogo size="md" variant="card" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1.5 min-w-0">
                 {renderRoleBadge()}
-                <span className="text-[11px] font-mono text-stone-400 px-2 py-0.5 rounded bg-stone-950 border border-stone-800">
+                <span className="text-[11px] font-mono text-stone-400 px-2 py-0.5 rounded bg-stone-950 border border-stone-800 max-w-full truncate">
                   {currentUser.email}
                 </span>
               </div>
-              <h1 className="text-xl sm:text-2xl font-black text-stone-100 font-mono tracking-wide">
+              <h1 className="text-lg sm:text-2xl font-black text-stone-100 font-mono tracking-wide">
                 MENU UTAMA APLIKASI
               </h1>
               <p className="text-xs sm:text-sm text-stone-400 mt-1 max-w-2xl">
@@ -282,7 +282,7 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-stretch lg:self-auto">
             {/* Google Sheets Sync Indicator */}
             <button
               id="btn-main-sheets-sync"
@@ -358,19 +358,19 @@ export const MenuUtamaLauncher: React.FC<MenuUtamaLauncherProps> = ({
 
       {/* 2. Grid of 5 Modules - Clean & Structured */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3.5 sm:mb-4">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <h2 className="text-sm font-mono font-bold uppercase tracking-wider text-stone-300">
+            <h2 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-wider text-stone-300">
               Daftar Modul Operasional PT BKWA
             </h2>
           </div>
-          <span className="text-xs text-stone-400 font-mono">
-            Klik kartu untuk membuka modul
+          <span className="text-[11px] sm:text-xs text-stone-400 font-mono">
+            Ketuk kartu untuk membuka modul
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5">
           {modules.map((m) => {
             const Icon = m.icon;
             const isAccessible = m.isViewable;
