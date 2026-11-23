@@ -3239,7 +3239,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                 <div className="text-right text-[10px] font-mono text-stone-600">
                   <div>Tanggal: <strong>{filterDate || todayStr}</strong></div>
                   <div>Shift: <strong>{filterShift}</strong></div>
-                  <div>Waktu Cetak: {new Date().toLocaleString('id-ID')}</div>
+                  <div>Waktu Cetak: {new Date().toLocaleString('id-ID', { hour12: false })}</div>
                 </div>
               </div>
 
@@ -3628,7 +3628,7 @@ export const SettingFleetSubView: React.FC<SettingFleetSubViewProps> = ({
                   <div>Tanggal: <strong>{filterDate || todayStr}</strong></div>
                   <div>Shift: <strong>{filterShift}</strong></div>
                   <div>Pos Lokasi: <strong>{filterLokasi === 'ALL' ? 'Seluruh Pos Tambang' : filterLokasi}</strong></div>
-                  <div>Waktu Cetak: {new Date().toLocaleString('id-ID')}</div>
+                  <div>Waktu Cetak: {new Date().toLocaleString('id-ID', { hour12: false })}</div>
                 </div>
               </div>
 

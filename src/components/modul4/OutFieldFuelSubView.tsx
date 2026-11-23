@@ -1662,7 +1662,7 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
                     className="w-full"
                   />
                   <span className="text-[10px] text-stone-500 block mt-1">
-                    Waktu operasi 00:00 s/d 23:59
+                    Waktu operasi 01:00 s/d 24:00
                   </span>
                 </div>
               </div>

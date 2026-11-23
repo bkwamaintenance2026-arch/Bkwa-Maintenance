@@ -279,7 +279,7 @@ export const DashboardMaintenanceSubView: React.FC<DashboardMaintenanceSubViewPr
       ['PT BATU KALI WELANG AMPUH'],
       ['LAPORAN REKAPITULASI MAINTENANCE & PHYSICAL AVAILABILITY (PA)'],
       [`Periode Filter:`, `${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Kini'} | Bulan: ${filterBulan || 'Semua'} | Tahun: ${filterTahun || 'Semua'}`],
-      [`Tanggal Export:`, `${new Date().toLocaleString('id-ID')}`],
+      [`Tanggal Export:`, `${new Date().toLocaleString('id-ID', { hour12: false })}`],
       [`Diexport Oleh:`, `${currentUser?.nama || currentUser?.username || 'User'} (${currentUser?.accountTier || currentUser?.role})`],
       [],
       ['--- RINGKASAN METRIK KPI FLEET AVAILABILITY ---'],

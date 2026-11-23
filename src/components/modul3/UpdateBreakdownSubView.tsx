@@ -176,9 +176,10 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
 
   const getCurrent24HourTime = (): string => {
     const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
+    const h = now.getHours();
+    const m = now.getMinutes();
+    if (h === 0 && m === 0) return '24:00';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
   const resetForm = () => {
@@ -622,7 +623,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
               <p className="text-[10px] text-stone-500 mt-1">Tanggal pekerjaan perbaikan dimulai</p>
             </div>
 
-            {/* Jam Start Pekerjaan (Model 24 Jam: 00:00 - 23:59 Tanpa AM/PM) */}
+            {/* Jam Start Pekerjaan (Model 24 Jam: 01:00 - 24:00 Tanpa AM/PM) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400">
@@ -661,10 +662,10 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                 onChange={(val) => setJamStart(val)}
                 placeholder="08:00"
               />
-              <p className="text-[10px] text-stone-500 mt-1">Format 24 Jam (00:00 - 23:59)</p>
+              <p className="text-[10px] text-stone-500 mt-1">Format 24 Jam (01:00 - 24:00)</p>
             </div>
 
-            {/* Jam Finish Pekerjaan (Model 24 Jam: 00:00 - 23:59 Tanpa AM/PM) */}
+            {/* Jam Finish Pekerjaan (Model 24 Jam: 01:00 - 24:00 Tanpa AM/PM) */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-amber-400">
@@ -713,7 +714,7 @@ export const UpdateBreakdownSubView: React.FC<UpdateBreakdownSubViewProps> = ({
                     ✓ Durasi Kerja: {calculateWorkDuration(jamStart, jamFinish)}
                   </span>
                 ) : (
-                  'Format 24 Jam (00:00 - 23:59)'
+                  'Format 24 Jam (01:00 - 24:00)'
                 )}
               </p>
             </div>

@@ -27,6 +27,7 @@ import {
   X,
   Fuel
 } from 'lucide-react';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 
 interface FogDistributionSubViewProps {
   units: AssetUnit[];
@@ -358,15 +359,13 @@ export const FogDistributionSubView: React.FC<FogDistributionSubViewProps> = ({
 
             <div className="space-y-1.5">
               <label htmlFor="fuel-dist-jam" className="block text-xs font-bold uppercase tracking-wider text-stone-300">
-                b. Jam Pengisian <span className="text-rose-500">*</span>
+                b. Jam Pengisian (24 Jam) <span className="text-rose-500">*</span>
               </label>
-              <input
+              <TimeInput24Hour
                 id="fuel-dist-jam"
-                type="time"
                 value={jam}
-                onChange={(e) => setJam(e.target.value)}
-                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 focus:outline-none focus:border-amber-500 font-mono"
-                required
+                onChange={(val) => setJam(val)}
+                placeholder="08:00"
               />
             </div>
 

@@ -7,6 +7,7 @@ import {
   KETERANGAN_CATATAN_MANPOWER_OPTIONS,
   UserAccount 
 } from '../../types';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { 
   Calendar, 
   Clock, 
@@ -1163,34 +1164,24 @@ export const CatatanHarianManpowerSubView: React.FC<CatatanHarianManpowerSubView
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 items-center">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
                 <div>
-                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Mulai:</span>
-                  <input
-                    type="time"
+                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Mulai (01-24):</span>
+                  <TimeInput24Hour
                     value={isFullday ? '07:00' : jamStart}
                     disabled={isFullday}
-                    onChange={(e) => setJamStart(e.target.value)}
-                    className={`w-full bg-stone-800 border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 [color-scheme:dark] ${
-                      isFullday
-                        ? 'border-amber-500/40 text-amber-300 bg-amber-950/20 cursor-not-allowed'
-                        : 'border-stone-700 text-stone-100'
-                    }`}
+                    onChange={(val) => setJamStart(val)}
+                    placeholder="07:00"
                   />
                 </div>
 
                 <div>
-                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Selesai:</span>
-                  <input
-                    type="time"
+                  <span className="block text-[10px] font-mono text-stone-400 mb-1">Jam Selesai (01-24):</span>
+                  <TimeInput24Hour
                     value={isFullday ? '16:00' : jamStop}
                     disabled={isFullday}
-                    onChange={(e) => setJamStop(e.target.value)}
-                    className={`w-full bg-stone-800 border rounded-xl px-3 py-1.5 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500 [color-scheme:dark] ${
-                      isFullday
-                        ? 'border-amber-500/40 text-amber-300 bg-amber-950/20 cursor-not-allowed'
-                        : 'border-stone-700 text-stone-100'
-                    }`}
+                    onChange={(val) => setJamStop(val)}
+                    placeholder="16:00"
                   />
                 </div>
 

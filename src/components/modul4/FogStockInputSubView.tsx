@@ -9,6 +9,7 @@ import {
   ManpowerData, 
   UserAccount 
 } from '../../types';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { 
   Fuel, 
   Calendar, 
@@ -329,15 +330,13 @@ export const FogStockInputSubView: React.FC<FogStockInputSubViewProps> = ({
             {/* b. Jam */}
             <div className="space-y-1.5">
               <label htmlFor="fog-input-jam" className="block text-xs font-bold uppercase tracking-wider text-stone-300">
-                b. Jam (WIB) <span className="text-rose-500">*</span>
+                b. Jam (24 Jam WIB) <span className="text-rose-500">*</span>
               </label>
-              <input
+              <TimeInput24Hour
                 id="fog-input-jam"
-                type="time"
                 value={jam}
-                onChange={(e) => setJam(e.target.value)}
-                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 font-mono"
-                required
+                onChange={(val) => setJam(val)}
+                placeholder="08:00"
               />
             </div>
 

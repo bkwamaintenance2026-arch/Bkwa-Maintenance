@@ -1339,7 +1339,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
                     REKAPITULASI PENGGUNAAN OLI &amp; INFORMASI SALDO SETIAP TYPE
                   </h3>
                   <p className="text-xs text-stone-400 print:text-gray-600 font-mono">
-                    Quarry Purwosari • Tanggal Cetak: {new Date().toLocaleString('id-ID')}
+                    Quarry Purwosari • Tanggal Cetak: {new Date().toLocaleString('id-ID', { hour12: false })}
                   </p>
                 </div>
 

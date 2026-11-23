@@ -23,6 +23,7 @@ import {
   Lock,
   Download
 } from 'lucide-react';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import {
   isDeveloper,
   canUserInsertModule,
@@ -535,14 +536,12 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
                 <div>
                   <label className="block text-stone-300 font-semibold mb-1">
-                    Jam Input <span className="text-amber-400">*</span>
+                    Jam Input (24 Jam) <span className="text-amber-400">*</span>
                   </label>
-                  <input
-                    type="time"
-                    required
+                  <TimeInput24Hour
                     value={jam}
-                    onChange={(e) => setJam(e.target.value)}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-emerald-500/60 font-mono"
+                    onChange={(val) => setJam(val)}
+                    placeholder="08:00"
                   />
                 </div>
               </div>

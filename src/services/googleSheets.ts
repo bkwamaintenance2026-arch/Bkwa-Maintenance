@@ -591,7 +591,7 @@ export async function syncAllDataToGoogleSheets(
   const totalFuelDist = data.fuelDistributions.reduce((acc, f) => acc + (f.qty || 0), 0);
   const p2hList = data.p2hRecords || [];
 
-  const nowStr = new Date().toLocaleString('id-ID', { timeZoneName: 'short' });
+  const nowStr = new Date().toLocaleString('id-ID', { timeZoneName: 'short', hour12: false });
 
   const sheetPayloads = [
     {

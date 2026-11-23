@@ -36,6 +36,7 @@ import {
   Lock,
   Eye
 } from 'lucide-react';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 
 interface GreaseSubViewProps {
   units: HeavyEquipment[];
@@ -650,13 +651,11 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-stone-400 mb-1">Jam</label>
-                      <input
-                        type="time"
-                        required
+                      <label className="block text-stone-400 mb-1">Jam (24 Jam)</label>
+                      <TimeInput24Hour
                         value={distJam}
-                        onChange={(e) => setDistJam(e.target.value)}
-                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100"
+                        onChange={(val) => setDistJam(val)}
+                        placeholder="08:00"
                       />
                     </div>
                   </div>
@@ -849,13 +848,11 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-stone-400 mb-1">Jam</label>
-                      <input
-                        type="time"
-                        required
+                      <label className="block text-stone-400 mb-1">Jam (24 Jam)</label>
+                      <TimeInput24Hour
                         value={stockJam}
-                        onChange={(e) => setStockJam(e.target.value)}
-                        className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100"
+                        onChange={(val) => setStockJam(val)}
+                        placeholder="08:00"
                       />
                     </div>
                   </div>

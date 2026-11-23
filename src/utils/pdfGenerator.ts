@@ -47,7 +47,7 @@ export const generatePartRequirementPDF = (
 
   const moNumber = breakdown.noMaintenanceOrder || breakdown.noNotifikasi || '-';
   const notifNumber = breakdown.noNotifikasi || '-';
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const dateStr = breakdown.tanggal || new Date().toISOString().split('T')[0];
 
   // Primary colors
@@ -383,7 +383,7 @@ export const generateDailyBreakdownPDF = (options: {
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Maintenance';
 
   const primaryColor: [number, number, number] = [180, 83, 9]; // Amber-700
@@ -767,7 +767,7 @@ export const generateDetailHistoryPDF = (
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Maintenance';
   const primaryColor: [number, number, number] = [180, 83, 9];
   const darkTextColor: [number, number, number] = [30, 41, 59];
@@ -1179,7 +1179,7 @@ export const generateUnitHistorySummaryPDF = (
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Maintenance';
   const primaryColor: [number, number, number] = [180, 83, 9];
   const darkTextColor: [number, number, number] = [30, 41, 59];
@@ -1675,7 +1675,7 @@ export const generateFuelOilTransactionsPDF = ({
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || 'Admin FOG / Maintenance';
 
   // Helper filter tanggal
@@ -2962,7 +2962,7 @@ export const generateOilSummaryReportPDF = ({
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Administrasi FOG';
 
   // Helper filter tanggal
@@ -3532,7 +3532,7 @@ export const generateOperatorSettingPDF = ({
   });
 
   const now = new Date();
-  const nowStr = now.toLocaleString('id-ID');
+  const nowStr = now.toLocaleString('id-ID', { hour12: false });
   const dateStr = now.toISOString().split('T')[0];
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / Workshop';
 
@@ -3861,7 +3861,7 @@ export const generateAssetListPDF = ({
   });
 
   const now = new Date();
-  const nowStr = now.toLocaleString('id-ID');
+  const nowStr = now.toLocaleString('id-ID', { hour12: false });
   const dateStr = now.toISOString().split('T')[0];
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / Workshop';
 
@@ -4112,7 +4112,7 @@ export const generateManpowerListPDF = ({
   });
 
   const now = new Date();
-  const nowStr = now.toLocaleString('id-ID');
+  const nowStr = now.toLocaleString('id-ID', { hour12: false });
   const dateStr = now.toISOString().split('T')[0];
   const exporterName = currentUser?.fullName || currentUser?.username || 'Staff Admin / HRD';
 
@@ -4343,7 +4343,7 @@ export const generateRplPackagePDF = ({
   });
 
   const now = new Date();
-  const nowStr = now.toLocaleString('id-ID');
+  const nowStr = now.toLocaleString('id-ID', { hour12: false });
   const dateStr = now.toISOString().split('T')[0];
   const exporterName = currentUser?.fullName || currentUser?.username || 'Planner / Admin Workshop';
 
@@ -4593,7 +4593,7 @@ export const generatePurchaseRequestPDF = ({
     format: 'a4',
   });
 
-  const nowStr = new Date().toLocaleString('id-ID');
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
   const exporterName = currentUser?.fullName || currentUser?.username || pr.pemohon || 'Admin Workshop';
   const primaryColor: [number, number, number] = [180, 83, 9];
   const darkTextColor: [number, number, number] = [30, 41, 59];

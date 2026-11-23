@@ -1077,7 +1077,7 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                     placeholder="08:00"
                   />
                   <p className="text-[10px] text-stone-500 mt-1">
-                    Format 24 jam (00:00 - 23:59) tanpa AM/PM.
+                    Format 24 jam (01:00 - 24:00) tanpa AM/PM.
                   </p>
                 </div>
               </div>

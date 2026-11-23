@@ -68,16 +68,20 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
     new Set(units.map((u) => u.jenis).filter((j) => Boolean(j && j.trim())))
   );
 
-  // Helper jam 24 jam Indonesia saat ini (HH:mm)
+  // Helper jam 24 jam Indonesia saat ini (HH:mm, format 01:00 - 24:00)
   const getCurrent24HourTime = (): string => {
     const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    return `${h}:${m}`;
+    const h = now.getHours();
+    const m = now.getMinutes();
+    if (h === 0 && m === 0) return '24:00';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
-  // Pilihan Jam (00 - 23) dan Menit (00 - 59) sederhana format 24 jam
-  const JAM_24_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+  // Pilihan Jam (01 - 24) dan Menit (00 - 59) sederhana format 24 jam tanpa AM/PM
+  const JAM_24_OPTIONS = [
+    ...Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, '0')),
+    '00',
+  ];
   const MENIT_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
 
   // Form State
@@ -444,18 +448,18 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   </div>
                 </div>
 
-                {/* Dropdown Container: Jam (00 - 23) dan Menit (00 - 59) */}
+                {/* Dropdown Container: Jam (01 - 24) dan Menit (00 - 59) */}
                 <div className="flex items-center gap-2 bg-stone-800/90 border border-stone-700 rounded-xl px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-amber-500">
                   <span className="text-xs font-mono font-bold text-stone-400 pl-1">Jam</span>
 
-                  {/* Dropdown Pilihan Jam (00 s/d 23) */}
+                  {/* Dropdown Pilihan Jam (01 s/d 24) */}
                   <div className="flex-1">
                     <select
                       id="field-breakdown-jam-hour"
                       value={selectedHour}
                       onChange={(e) => {
                         const newH = e.target.value;
-                        const m = selectedMinute || '00';
+                        const m = newH === '24' ? '00' : (selectedMinute || '00');
                         setFormData((prev) => ({ ...prev, jamBreakdown: `${newH}:${m}` }));
                       }}
                       className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-stone-100 text-center focus:outline-none focus:border-amber-500 cursor-pointer"
@@ -474,13 +478,14 @@ export const InputBreakdownSubView: React.FC<InputBreakdownSubViewProps> = ({
                   <div className="flex-1">
                     <select
                       id="field-breakdown-jam-minute"
-                      value={selectedMinute}
+                      value={selectedHour === '24' ? '00' : selectedMinute}
+                      disabled={selectedHour === '24'}
                       onChange={(e) => {
                         const newM = e.target.value;
                         const h = selectedHour || '07';
-                        setFormData((prev) => ({ ...prev, jamBreakdown: `${h}:${newM}` }));
+                        setFormData((prev) => ({ ...prev, jamBreakdown: `${h}:${h === '24' ? '00' : newM}` }));
                       }}
-                      className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-stone-100 text-center focus:outline-none focus:border-amber-500 cursor-pointer"
+                      className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-2 text-xs font-mono font-bold text-stone-100 text-center focus:outline-none focus:border-amber-500 cursor-pointer disabled:opacity-50"
                     >
                       {MENIT_OPTIONS.map((m) => (
                         <option key={m} value={m}>

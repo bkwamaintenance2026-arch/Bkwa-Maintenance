@@ -9,6 +9,7 @@ import {
   SparePartTransaction,
   ManpowerData
 } from '../../types';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { 
   Search, 
   Filter, 
@@ -1521,21 +1522,17 @@ export const DetailBreakdownHistorySubView: React.FC<DetailBreakdownHistorySubVi
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input
-                                      type="time"
+                                    <TimeInput24Hour
+                                      compact
                                       value={inlineEditForm.startJob}
-                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, startJob: e.target.value }))}
-                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-1 text-stone-100 font-mono text-[11px] focus:border-amber-400"
-                                      title="Jam Mulai Pekerjaan"
+                                      onChange={(val) => setInlineEditForm(prev => ({ ...prev, startJob: val }))}
                                     />
                                   </td>
                                   <td className="p-2">
-                                    <input
-                                      type="time"
+                                    <TimeInput24Hour
+                                      compact
                                       value={inlineEditForm.finishJob}
-                                      onChange={(e) => setInlineEditForm(prev => ({ ...prev, finishJob: e.target.value }))}
-                                      className="w-full bg-stone-900 border border-stone-700 rounded px-1.5 py-1 text-stone-100 font-mono text-[11px] focus:border-amber-400"
-                                      title="Jam Selesai Pekerjaan"
+                                      onChange={(val) => setInlineEditForm(prev => ({ ...prev, finishJob: val }))}
                                     />
                                   </td>
                                   <td className="p-2">

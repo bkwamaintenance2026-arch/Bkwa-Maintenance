@@ -26,6 +26,7 @@ import {
   extractBreakdownPartsJasa,
   getAllPartSupplyTrackings
 } from '../../utils/storage';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { 
   Clock, 
   AlertTriangle, 
@@ -174,9 +175,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
   const getTodayDateString = () => new Date().toISOString().split('T')[0];
   const getCurrentTimeString = () => {
     const d = new Date();
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
+    const h = d.getHours();
+    const m = d.getMinutes();
+    if (h === 0 && m === 0) return '24:00';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
   interface InlineFormState {
@@ -1331,11 +1333,10 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                       Sekarang
                                     </button>
                                   </div>
-                                  <input
-                                    type="time"
+                                  <TimeInput24Hour
+                                    compact
                                     value={inlineForm.startTime}
-                                    onChange={(e) => updateInlineFormField(b.id, 'startTime', e.target.value)}
-                                    className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs text-amber-300 font-mono font-bold focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                                    onChange={(val) => updateInlineFormField(b.id, 'startTime', val)}
                                   />
                                 </div>
 
@@ -1352,11 +1353,11 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                   />
                                 </div>
 
-                                {/* End Time (24 Jam) */}
+                                {/* End Time (24 Jam: 01-24) */}
                                 <div>
                                   <div className="flex items-center justify-between mb-0.5">
                                     <label className="text-[9px] font-mono text-amber-400 font-bold">
-                                      End Time (24 Jam)
+                                      End Time (01-24)
                                     </label>
                                     <div className="flex items-center gap-1 text-[9px] font-mono">
                                       <button
@@ -1377,16 +1378,11 @@ export const ActiveBreakdownMonitoringSubView: React.FC<ActiveBreakdownMonitorin
                                       )}
                                     </div>
                                   </div>
-                                  <input
+                                  <TimeInput24Hour
                                     id={`inline-end-time-${b.id}`}
-                                    type="time"
+                                    compact
                                     value={inlineForm.endTime}
-                                    onChange={(e) => updateInlineFormField(b.id, 'endTime', e.target.value)}
-                                    className={`w-full bg-stone-900 border rounded-lg px-2 py-1.5 text-xs font-mono focus:ring-1 focus:ring-amber-500 focus:outline-none ${
-                                      inlineForm.editingUpdateId
-                                        ? 'border-amber-500 text-amber-300 font-bold ring-1 ring-amber-500/40'
-                                        : 'border-stone-700 text-stone-200'
-                                    }`}
+                                    onChange={(val) => updateInlineFormField(b.id, 'endTime', val)}
                                   />
                                 </div>
                               </div>

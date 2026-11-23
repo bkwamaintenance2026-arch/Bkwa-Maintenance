@@ -301,7 +301,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
       return;
     }
 
-    const nowStr = new Date().toLocaleString('id-ID');
+    const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
     const exporterName = currentUser?.nama || currentUser?.username || 'User';
 
     const lines: string[] = [
@@ -428,7 +428,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
       return;
     }
 
-    const nowStr = new Date().toLocaleString('id-ID');
+    const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
     const exporterName = currentUser?.nama || currentUser?.username || 'User';
 
     const wordHTML = `
@@ -1637,7 +1637,7 @@ export const LaporanHarianReadyBreakdownSubView: React.FC<LaporanHarianReadyBrea
                 <div className="text-[11px] text-stone-600 mt-1 flex items-center justify-center gap-4 font-mono">
                   <span>Tanggal Laporan: <strong>{formattedSelectedDate}</strong></span>
                   <span>•</span>
-                  <span>Waktu Cetak: {new Date().toLocaleString('id-ID')}</span>
+                  <span>Waktu Cetak: {new Date().toLocaleString('id-ID', { hour12: false })}</span>
                   <span>•</span>
                   <span>Oleh: {currentUser?.nama || currentUser?.username}</span>
                 </div>

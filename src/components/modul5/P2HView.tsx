@@ -156,12 +156,13 @@ export const P2HView: React.FC<P2HViewProps> = ({
   const [activeTab, setActiveTab] = useState<'form' | 'riwayat'>('form');
 
   const get24HourTime = (date: Date = new Date()) => {
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
+    const h = date.getHours();
+    const m = date.getMinutes();
+    if (h === 0 && m === 0) return '24:00';
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   };
 
-  // Real-time auto timestamp clock (Format 24 Jam: 00:00 - 23:59 tanpa AM/PM)
+  // Real-time auto timestamp clock (Format 24 Jam: 01:00 - 24:00 tanpa AM/PM)
   const [currentRealTime, setCurrentRealTime] = useState({
     date: new Date().toISOString().split('T')[0],
     time: get24HourTime(),

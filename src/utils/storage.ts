@@ -1606,7 +1606,7 @@ export function logActivity(
   const logs = getActivityLogs();
   const newLog: ActivityLog = {
     id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-    tanggal: new Date().toLocaleString('id-ID'),
+    tanggal: new Date().toLocaleString('id-ID', { hour12: false }),
     aksi: log.aksi,
     user: log.user || current?.fullName || 'User BKWA',
     role: log.role || current?.role || 'KARYAWAN',

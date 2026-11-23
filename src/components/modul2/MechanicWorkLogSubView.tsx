@@ -6,6 +6,7 @@ import {
   ManpowerData, 
   UserAccount 
 } from '../../types';
+import { TimeInput24Hour } from '../common/TimeInput24Hour';
 import { 
   Wrench, 
   Plus, 
@@ -713,25 +714,23 @@ export const MechanicWorkLogSubView: React.FC<MechanicWorkLogSubViewProps> = ({
 
                 <div>
                   <label className="block text-stone-300 font-semibold mb-1">
-                    Jam Mulai
+                    Jam Mulai (01-24)
                   </label>
-                  <input
-                    type="time"
+                  <TimeInput24Hour
                     value={formData.jamMulai}
-                    onChange={(e) => setFormData({ ...formData, jamMulai: e.target.value })}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono"
+                    onChange={(val) => setFormData({ ...formData, jamMulai: val })}
+                    placeholder="08:00"
                   />
                 </div>
 
                 <div>
                   <label className="block text-stone-300 font-semibold mb-1">
-                    Jam Selesai
+                    Jam Selesai (01-24)
                   </label>
-                  <input
-                    type="time"
+                  <TimeInput24Hour
                     value={formData.jamSelesai}
-                    onChange={(e) => setFormData({ ...formData, jamSelesai: e.target.value })}
-                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 focus:outline-none focus:border-blue-500/60 font-mono"
+                    onChange={(val) => setFormData({ ...formData, jamSelesai: val })}
+                    placeholder="17:00"
                   />
                 </div>
               </div>

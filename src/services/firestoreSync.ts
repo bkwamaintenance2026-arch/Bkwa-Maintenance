@@ -245,7 +245,7 @@ export async function syncItemToFirestore(collectionName: string, rawId: string,
       _updatedAtServer: new Date().toISOString()
     });
     await setDoc(docRef, cleanData, { merge: true });
-    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID') });
+    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }) });
   } catch (err) {
     console.error(`Gagal sync ke Firestore [${collectionName}/${rawId}]:`, err);
   }
@@ -286,7 +286,7 @@ export async function batchSyncToFirestore(collectionName: string, items: any[])
       });
       await batch.commit();
     }
-    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID') });
+    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }) });
   } catch (err) {
     console.error(`Gagal batch sync [${collectionName}]:`, err);
     throw err;
@@ -339,7 +339,7 @@ export async function deleteItemFromFirestore(collectionName: string, rawId: str
         console.warn(`deleteDoc notice [${collectionName}/${docId}]:`, e);
       }
     }
-    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID') });
+    updateStatus({ connected: true, lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }) });
   } catch (err) {
     console.error(`Gagal hapus di Firestore [${collectionName}/${rawId}]:`, err);
   }
@@ -789,7 +789,7 @@ export async function uploadAllLocalDataToFirestore(): Promise<{ success: boolea
     updateStatus({
       connected: true,
       isSyncing: false,
-      lastSyncTime: new Date().toLocaleTimeString('id-ID'),
+      lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }),
       totalSyncedItems: count,
     });
 
@@ -895,7 +895,7 @@ export async function downloadAllFirestoreDataToLocal(): Promise<{
     updateStatus({
       connected: true,
       isSyncing: false,
-      lastSyncTime: new Date().toLocaleTimeString('id-ID'),
+      lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }),
       totalSyncedItems: totalCount,
     });
 
@@ -1005,7 +1005,7 @@ export function setupRealtimeFirestoreListeners(onUpdateCallback?: (collection: 
             
             updateStatus({ 
               connected: true, 
-              lastSyncTime: new Date().toLocaleTimeString('id-ID'),
+              lastSyncTime: new Date().toLocaleTimeString('id-ID', { hour12: false }),
               totalSyncedItems: deduped.length
             });
 
