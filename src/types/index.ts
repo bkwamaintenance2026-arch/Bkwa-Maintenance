@@ -1291,7 +1291,8 @@ export interface RplPackage {
   packageName: string;               // Nama Paket Service Periodic
   serviceInterval: string;           // 250 HM, 500 HM, 1000 HM, 2000 HM, dll
   jenisUnit: string;                 // Jenis Unit target atau Non Unit / Semua Unit
-  noUnit?: string;                   // No Unit spesifik / ALL / NON-UNIT
+  modelUnit?: string;                // Model Unit target (berdasarkan Modul 1)
+  noUnit?: string;                   // Daftar No Unit terkait / ALL / NON-UNIT
   notes?: string;                    // Catatan tambahan paket
   items: RplPackageItem[];
   createdBy?: string;

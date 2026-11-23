@@ -4395,7 +4395,11 @@ export const generateRplPackagePDF = ({
   const cards = [
     { label: 'PN PAKET RPL', val: pkg.packagePn || '-', color: [180, 83, 9] as [number, number, number] },
     { label: 'INTERVAL SERVICE', val: pkg.serviceInterval || '-', color: [30, 41, 59] as [number, number, number] },
-    { label: 'TARGET UNIT / KATEGORI', val: `${pkg.jenisUnit || '-'}${pkg.noUnit ? ` (${pkg.noUnit})` : ''}`, color: [37, 99, 235] as [number, number, number] },
+    {
+      label: 'TARGET JENIS / MODEL UNIT',
+      val: `${pkg.jenisUnit || '-'}${pkg.modelUnit && pkg.modelUnit !== 'NON-UNIT' ? ` · ${pkg.modelUnit}` : ''}${pkg.noUnit ? ` (${pkg.noUnit})` : ''}`,
+      color: [37, 99, 235] as [number, number, number],
+    },
     { label: 'TOTAL ITEM & QTY PAKET', val: `${pkg.items.length} PN / ${totalQtyNeeded} Pcs`, color: [16, 185, 129] as [number, number, number] },
   ];
 

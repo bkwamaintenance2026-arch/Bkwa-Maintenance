@@ -94,9 +94,11 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     createdPr?: PurchaseRequest;
   } | null>(null);
 
-  // Quick package caller state
+  // Quick package caller state & Tab RPL Jenis -> Model Unit filter
   const [callerQuery, setCallerQuery] = useState('');
   const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [tabJenisFilter, setTabJenisFilter] = useState<string>('ALL');
+  const [tabModelFilter, setTabModelFilter] = useState<string>('ALL');
   const [expandedInterchangePartIds, setExpandedInterchangePartIds] = useState<
     Record<string, boolean>
   >({});
@@ -105,14 +107,14 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [listSearch, setListSearch] = useState('');
   const [listIntervalFilter, setListIntervalFilter] = useState('ALL');
 
-  // Form create/edit state (1. PN Paket RPL, 2. Nama Paket Service, 3. Interval Service, 4. JENIS, 5. NO UNIT, 6. Catatan Paket)
+  // Form create/edit state (1. PN Paket RPL, 2. Nama Paket Service, 3. Interval Service, 4. JENIS, 5. MODEL UNIT, 6. Catatan Paket)
   const [showBuilder, setShowBuilder] = useState(false);
   const [editingPkgId, setEditingPkgId] = useState<string | null>(null);
   const [packagePn, setPackagePn] = useState('');
   const [packageName, setPackageName] = useState('');
   const [serviceInterval, setServiceInterval] = useState<string>('250 HM');
   const [targetJenisUnit, setTargetJenisUnit] = useState<string>('Semua Unit');
-  const [targetNoUnit, setTargetNoUnit] = useState<string>('');
+  const [targetModelUnit, setTargetModelUnit] = useState<string>('');
   const [packageNotes, setPackageNotes] = useState<string>('');
   const [draftItems, setDraftItems] = useState<RplPackageItem[]>([]);
 
@@ -173,6 +175,16 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     return map;
   }, [masterParts]);
 
+  // Lookup cepat unit berdasarkan No Unit (cnNew) dari Modul 1
+  const unitByCnMap = useMemo(() => {
+    const map = new Map<string, AssetUnit>();
+    units.forEach((u) => {
+      const cn = (u.cnNew || '').trim().toLowerCase();
+      if (cn) map.set(cn, u);
+    });
+    return map;
+  }, [units]);
+
   // Pengelompokan JENIS berdasarkan Modul 1
   const jenisCountsModul1 = useMemo(() => {
     const map = new Map<string, number>();
@@ -193,30 +205,161 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [jenisCountsModul1, masterParts]);
 
-  // Pengelompokan NO UNIT berdasarkan Modul 1 sesuai JENIS terpilih
-  const groupedNoUnitsModul1 = useMemo(() => {
-    if (targetJenisUnit === 'Non Unit') return [];
-    const list =
-      targetJenisUnit === 'Semua Unit'
-        ? units
-        : units.filter(
-            (u) => (u.jenis || '').trim().toLowerCase() === targetJenisUnit.toLowerCase()
-          );
+  // Helper: daftar unit Modul 1 untuk kombinasi (jenis, modelUnit)
+  const getUnitsByJenisAndModel = (jenisVal: string, modelVal: string): AssetUnit[] => {
+    if (jenisVal === 'Non Unit') return [];
+    const filterAllJenis = !jenisVal || jenisVal === 'ALL' || jenisVal === 'Semua Unit';
+    const filterAllModel = !modelVal || modelVal === 'ALL';
+
+    const list = units.filter((u) => {
+      if (!filterAllJenis && (u.jenis || '').trim().toLowerCase() !== jenisVal.trim().toLowerCase()) {
+        return false;
+      }
+      if (!filterAllModel) {
+        const uModel = (u.modelUnit || '').trim() || 'Tanpa Model';
+        if (uModel.toLowerCase() !== modelVal.trim().toLowerCase()) {
+          return false;
+        }
+      }
+      return true;
+    });
+
     return [...list].sort((a, b) => (a.cnNew || '').localeCompare(b.cnNew || ''));
-  }, [units, targetJenisUnit]);
+  };
+
+  // Helper: daftar opsi Model Unit yang tersedia berdasarkan Jenis terpilih (Modul 1 + fallback Master Part)
+  const buildModelOptionsForJenis = (jenisVal: string) => {
+    if (jenisVal === 'Non Unit') return [];
+    const filterAllJenis = !jenisVal || jenisVal === 'ALL' || jenisVal === 'Semua Unit';
+    const map = new Map<string, { model: string; count: number; unitNumbers: string[] }>();
+
+    units.forEach((u) => {
+      if (!filterAllJenis && (u.jenis || '').trim().toLowerCase() !== jenisVal.trim().toLowerCase()) {
+        return;
+      }
+      const model = (u.modelUnit || '').trim() || 'Tanpa Model';
+      const entry = map.get(model) || { model, count: 0, unitNumbers: [] };
+      entry.count += 1;
+      if (u.cnNew && !entry.unitNumbers.includes(u.cnNew)) {
+        entry.unitNumbers.push(u.cnNew);
+      }
+      map.set(model, entry);
+    });
+
+    // Sertakan juga modelUnit dari Master Part jika belum ada di unit Modul 1
+    masterParts.forEach((p) => {
+      const pJenis = (p.jenisUnit || '').trim();
+      if (pJenis === 'Non Unit') return;
+      if (!filterAllJenis && pJenis.toLowerCase() !== jenisVal.trim().toLowerCase()) return;
+      const pModel = (p.modelUnit || '').trim();
+      if (pModel && !map.has(pModel)) {
+        map.set(pModel, { model: pModel, count: 0, unitNumbers: [] });
+      }
+    });
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        unitNumbers: [...item.unitNumbers].sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.model.localeCompare(b.model));
+  };
+
+  // --- DERIVASI FILTER TAB RPL UTAMA (JENIS -> MODEL UNIT -> KETERANGAN NO UNIT) ---
+  const tabModelOptions = useMemo(
+    () => buildModelOptionsForJenis(tabJenisFilter),
+    [units, masterParts, tabJenisFilter]
+  );
+
+  const tabMatchingUnits = useMemo(
+    () => getUnitsByJenisAndModel(tabJenisFilter, tabModelFilter),
+    [units, tabJenisFilter, tabModelFilter]
+  );
+
+  // --- DERIVASI FILTER FORM + PAKET RPL BARU (JENIS -> MODEL UNIT -> KETERANGAN NO UNIT) ---
+  const builderModelOptions = useMemo(
+    () => buildModelOptionsForJenis(targetJenisUnit),
+    [units, masterParts, targetJenisUnit]
+  );
+
+  const builderMatchingUnits = useMemo(
+    () => getUnitsByJenisAndModel(targetJenisUnit, targetModelUnit),
+    [units, targetJenisUnit, targetModelUnit]
+  );
+
+  // Helper resolve Model Unit & daftar No Unit untuk sebuah RplPackage (support data baru & legacy)
+  const resolvePackageTargetInfo = (pkg: RplPackage) => {
+    const jenis = pkg.jenisUnit || 'Semua Unit';
+    if (jenis === 'Non Unit') {
+      return {
+        jenis: 'Non Unit',
+        modelUnit: '',
+        matchingUnits: [] as AssetUnit[],
+        noUnitSummary: 'NON-UNIT',
+      };
+    }
+
+    let resolvedModel = (pkg.modelUnit || '').trim();
+    if (!resolvedModel && pkg.noUnit && pkg.noUnit !== 'NON-UNIT') {
+      const firstCn = pkg.noUnit.split(',')[0]?.trim().toLowerCase();
+      if (firstCn) {
+        const matched = unitByCnMap.get(firstCn);
+        if (matched?.modelUnit) resolvedModel = matched.modelUnit.trim();
+      }
+    }
+
+    const matchingUnits = resolvedModel
+      ? getUnitsByJenisAndModel(jenis, resolvedModel)
+      : jenis !== 'Semua Unit'
+      ? getUnitsByJenisAndModel(jenis, '')
+      : [];
+
+    const cnList = matchingUnits.map((u) => u.cnNew).filter(Boolean);
+    const noUnitSummary =
+      cnList.length > 0 ? cnList.join(', ') : (pkg.noUnit || '').trim();
+
+    return {
+      jenis,
+      modelUnit: resolvedModel,
+      matchingUnits,
+      noUnitSummary,
+    };
+  };
+
+  const doesPackageMatchTabFilter = (pkg: RplPackage): boolean => {
+    const info = resolvePackageTargetInfo(pkg);
+    if (tabJenisFilter !== 'ALL') {
+      if (tabJenisFilter === 'Non Unit') {
+        if (info.jenis !== 'Non Unit') return false;
+      } else if (info.jenis.toLowerCase() !== tabJenisFilter.toLowerCase()) {
+        return false;
+      }
+    }
+    if (tabModelFilter !== 'ALL' && tabJenisFilter !== 'Non Unit') {
+      if (!info.modelUnit) return false;
+      if (info.modelUnit.toLowerCase() !== tabModelFilter.toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
+  };
 
   const matchingCallerPackages = useMemo(() => {
+    const byTarget = packages.filter((p) => doesPackageMatchTabFilter(p));
     const q = callerQuery.trim().toLowerCase();
-    if (!q) return packages;
-    return packages.filter(
-      (p) =>
+    if (!q) return byTarget;
+    return byTarget.filter((p) => {
+      const info = resolvePackageTargetInfo(p);
+      return (
         p.packagePn.toLowerCase().includes(q) ||
         p.packageName.toLowerCase().includes(q) ||
         p.serviceInterval.toLowerCase().includes(q) ||
-        (p.jenisUnit || '').toLowerCase().includes(q) ||
-        (p.noUnit || '').toLowerCase().includes(q)
-    );
-  }, [packages, callerQuery]);
+        info.jenis.toLowerCase().includes(q) ||
+        info.modelUnit.toLowerCase().includes(q) ||
+        info.noUnitSummary.toLowerCase().includes(q)
+      );
+    });
+  }, [packages, callerQuery, tabJenisFilter, tabModelFilter, units]);
 
   const activePackage = useMemo(() => {
     if (selectedPackageId) {
@@ -233,26 +376,35 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
 
   const filteredPackageList = useMemo(() => {
     return packages.filter((p) => {
+      if (!doesPackageMatchTabFilter(p)) return false;
       if (listIntervalFilter !== 'ALL' && p.serviceInterval !== listIntervalFilter) {
         return false;
       }
       if (listSearch.trim()) {
         const q = listSearch.toLowerCase();
-        const hay = `${p.packagePn} ${p.packageName} ${p.serviceInterval} ${p.jenisUnit} ${p.noUnit || ''} ${p.notes || ''}`.toLowerCase();
+        const info = resolvePackageTargetInfo(p);
+        const hay = `${p.packagePn} ${p.packageName} ${p.serviceInterval} ${info.jenis} ${info.modelUnit} ${info.noUnitSummary} ${p.notes || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [packages, listIntervalFilter, listSearch]);
+  }, [packages, listIntervalFilter, listSearch, tabJenisFilter, tabModelFilter, units]);
 
-  // List Katalog Master Part Terdaftar yang sudah terfilter sesuai JENIS (#4) dan NO UNIT (#5)
+  // List Katalog Master Part Terdaftar yang sudah terfilter sesuai JENIS (#4) dan MODEL UNIT (#5)
   const filteredMasterPickerParts = useMemo(() => {
+    const matchingCnSet = new Set(
+      builderMatchingUnits.map((u) => (u.cnNew || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const hasSpecificModel = Boolean(targetModelUnit.trim() && targetModelUnit !== 'ALL');
+
     return masterParts.filter((p) => {
       const partJenis = (p.jenisUnit || '').trim().toLowerCase();
       const partNoUnit = (p.noUnit || '').trim().toLowerCase();
+      const unitMeta = unitByCnMap.get(partNoUnit);
+      const partModel = ((p.modelUnit || unitMeta?.modelUnit || '').trim() || 'Tanpa Model').toLowerCase();
       const isPartNonUnit = partJenis === 'non unit' || partNoUnit === 'non-unit';
 
-      // Filter berdasar 4. JENIS & 5. NO UNIT
+      // Filter berdasar 4. JENIS & 5. MODEL UNIT
       if (targetJenisUnit === 'Non Unit') {
         if (!isPartNonUnit) return false;
       } else if (targetJenisUnit !== 'Semua Unit') {
@@ -260,14 +412,18 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         if (!(matchesJenis || (includeNonUnitInPicker && isPartNonUnit))) {
           return false;
         }
-        if (targetNoUnit.trim() && !(includeNonUnitInPicker && isPartNonUnit)) {
-          if (partNoUnit !== targetNoUnit.trim().toLowerCase()) {
+        if (hasSpecificModel && !(includeNonUnitInPicker && isPartNonUnit)) {
+          const matchesModel = partModel === targetModelUnit.trim().toLowerCase();
+          const matchesUnitCn = matchingCnSet.has(partNoUnit);
+          if (!matchesModel && !matchesUnitCn) {
             return false;
           }
         }
-      } else if (targetNoUnit.trim()) {
-        // Semua Unit, tapi user memilih spesifik No Unit
-        if (partNoUnit !== targetNoUnit.trim().toLowerCase() && !(includeNonUnitInPicker && isPartNonUnit)) {
+      } else if (hasSpecificModel) {
+        // Semua Unit, tapi user memilih spesifik Model Unit
+        const matchesModel = partModel === targetModelUnit.trim().toLowerCase();
+        const matchesUnitCn = matchingCnSet.has(partNoUnit);
+        if (!matchesModel && !matchesUnitCn && !(includeNonUnitInPicker && isPartNonUnit)) {
           return false;
         }
       }
@@ -280,7 +436,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         const subText = (p.interchangeParts || [])
           .map((s) => `${s.pn} ${s.namaPart} ${s.merk}`)
           .join(' ');
-        const hay = `${p.pn} ${p.namaPart} ${p.merk} ${p.noUnit} ${p.jenisUnit} ${p.modelUnit || ''} ${subText}`.toLowerCase();
+        const hay = `${p.pn} ${p.namaPart} ${p.merk} ${p.noUnit} ${p.jenisUnit} ${p.modelUnit || ''} ${unitMeta?.modelUnit || ''} ${subText}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -288,7 +444,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   }, [
     masterParts,
     targetJenisUnit,
-    targetNoUnit,
+    targetModelUnit,
+    builderMatchingUnits,
+    unitByCnMap,
     includeNonUnitInPicker,
     pickerSearch,
     pickerKategoriFilter,
@@ -306,7 +464,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setPackageName('');
     setServiceInterval('250 HM');
     setTargetJenisUnit('Semua Unit');
-    setTargetNoUnit('');
+    setTargetModelUnit('');
     setPackageNotes('');
     setDraftItems([]);
     setPickerSearch('');
@@ -317,17 +475,26 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const handleOpenNewBuilder = () => {
     if (!canInsert) return;
     resetBuilderForm();
+    if (tabJenisFilter !== 'ALL') {
+      setTargetJenisUnit(tabJenisFilter);
+      if (tabJenisFilter !== 'Non Unit' && tabModelFilter !== 'ALL') {
+        setTargetModelUnit(tabModelFilter);
+      }
+    } else if (tabModelFilter !== 'ALL') {
+      setTargetModelUnit(tabModelFilter);
+    }
     setShowBuilder(true);
   };
 
   const handleOpenEditPackage = (pkg: RplPackage) => {
     if (!canEdit) return;
+    const info = resolvePackageTargetInfo(pkg);
     setEditingPkgId(pkg.id);
     setPackagePn(pkg.packagePn);
     setPackageName(pkg.packageName);
     setServiceInterval(pkg.serviceInterval || '250 HM');
-    setTargetJenisUnit(pkg.jenisUnit || 'Semua Unit');
-    setTargetNoUnit(pkg.noUnit || '');
+    setTargetJenisUnit(info.jenis || 'Semua Unit');
+    setTargetModelUnit(info.jenis === 'Non Unit' ? '' : info.modelUnit);
     setPackageNotes(pkg.notes || '');
     setDraftItems(pkg.items.map((item) => ({ ...item })));
     setShowBuilder(true);
@@ -401,6 +568,12 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     );
   };
 
+  const buildDerivedNoUnitSummary = () => {
+    if (targetJenisUnit === 'Non Unit') return 'NON-UNIT';
+    if (!targetModelUnit.trim()) return '';
+    return builderMatchingUnits.map((u) => u.cnNew).filter(Boolean).join(', ');
+  };
+
   const buildDraftPreviewPackage = (): RplPackage => {
     const now = new Date().toISOString();
     return {
@@ -409,7 +582,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       packageName: packageName.trim() || `Paket Service Periodic ${serviceInterval}`,
       serviceInterval,
       jenisUnit: targetJenisUnit || 'Semua Unit',
-      noUnit: targetNoUnit.trim(),
+      modelUnit: targetJenisUnit === 'Non Unit' ? 'NON-UNIT' : targetModelUnit.trim(),
+      noUnit: buildDerivedNoUnitSummary(),
       notes: packageNotes.trim(),
       items: draftItems,
       createdBy: currentUser.fullName || currentUser.username,
@@ -445,7 +619,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         packageName: packageName.trim(),
         serviceInterval,
         jenisUnit: targetJenisUnit || 'Semua Unit',
-        noUnit: targetNoUnit.trim(),
+        modelUnit: targetJenisUnit === 'Non Unit' ? 'NON-UNIT' : targetModelUnit.trim(),
+        noUnit: buildDerivedNoUnitSummary(),
         notes: packageNotes.trim(),
         items: draftItems,
         createdBy: currentUser.fullName || currentUser.username,
@@ -556,14 +731,17 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       return;
     }
 
-    const matchedUnit = pkg.noUnit
-      ? units.find((u) => (u.cnNew || '').toLowerCase() === pkg.noUnit!.toLowerCase())
-      : undefined;
-
-    const resolvedNoUnit = pkg.noUnit || (pkg.jenisUnit === 'Non Unit' ? 'NON-UNIT' : pkg.jenisUnit || 'ALL');
-    const resolvedNamaAlat = matchedUnit
-      ? `${matchedUnit.namaAlat}${matchedUnit.modelUnit ? ` (${matchedUnit.modelUnit})` : ''}`
-      : `${pkg.jenisUnit || 'Service Periodic'} — ${pkg.serviceInterval}`;
+    const info = resolvePackageTargetInfo(pkg);
+    const resolvedNoUnit =
+      info.jenis === 'Non Unit'
+        ? 'NON-UNIT'
+        : info.noUnitSummary || info.modelUnit || info.jenis || 'ALL';
+    const resolvedNamaAlat =
+      info.modelUnit
+        ? `${info.jenis} — Model ${info.modelUnit}`
+        : info.matchingUnits[0]
+        ? `${info.matchingUnits[0].namaAlat}${info.matchingUnits[0].modelUnit ? ` (${info.matchingUnits[0].modelUnit})` : ''}`
+        : `${info.jenis || 'Service Periodic'} — ${pkg.serviceInterval}`;
 
     setSpbModalState({
       isOpen: true,
@@ -571,7 +749,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       noMaintenanceOrder: `${pkg.packagePn} (${pkg.serviceInterval})`,
       noUnit: resolvedNoUnit,
       namaAlat: resolvedNamaAlat,
-      defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Paket RPL ${pkg.packagePn} (${pkg.packageName}).`,
+      defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Paket RPL ${pkg.packagePn} (${pkg.packageName})${info.modelUnit ? ` untuk Model ${info.modelUnit}` : ''}.`,
       items: pkg.items.map((item) => {
         const live = masterPartsMap.get(item.masterPartId);
         return {
@@ -640,6 +818,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       'Catatan Item',
     ];
 
+    const info = resolvePackageTargetInfo(pkg);
+    const targetLabel = `${info.jenis}${info.modelUnit ? ` · ${info.modelUnit}` : ''}${info.noUnitSummary && info.noUnitSummary !== 'NON-UNIT' ? ` (${info.noUnitSummary})` : ''}`;
+
     const rows = pkg.items.map((item, idx) => {
       const live = masterPartsMap.get(item.masterPartId);
       const tipe = live?.partRelationType || 'In Line';
@@ -651,7 +832,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         `"${pkg.packagePn}"`,
         `"${pkg.packageName.replace(/"/g, '""')}"`,
         `"${pkg.serviceInterval}"`,
-        `"${pkg.jenisUnit}${pkg.noUnit ? ` (${pkg.noUnit})` : ''}"`,
+        `"${targetLabel.replace(/"/g, '""')}"`,
         `"${(live?.pn || item.pn || '-').replace(/"/g, '""')}"`,
         `"${(live?.namaPart || item.namaPart).replace(/"/g, '""')}"`,
         `"${(live?.merk || item.merk || '-').replace(/"/g, '""')}"`,
@@ -740,7 +921,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
             <Package className="w-4 h-4 text-amber-500" />
             <span>Panggil PN Paket RPL (Service Periodic)</span>
             <span className="text-xs text-stone-400 font-normal">
-              · Ketik atau pilih PN Paket untuk memunculkan seluruh rincian Part Number
+              · Filter Jenis &amp; Model Unit (Modul 1) atau ketik langsung PN Paket
             </span>
           </div>
 
@@ -752,7 +933,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-lg transition-colors whitespace-nowrap shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Buat Paket RPL Baru</span>
+                <span>Paket RPL Baru</span>
               </button>
             ) : (
               <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono text-stone-500 bg-stone-950 border border-stone-800 rounded-lg whitespace-nowrap">
@@ -764,6 +945,147 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         </div>
 
         <div className="p-5 space-y-5">
+          {/* Filter Jenis -> Model Unit di Tab RPL + Keterangan Hasil Filter No Unit */}
+          <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-4 space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+              <div className="md:col-span-5">
+                <label className="block text-xs font-semibold text-stone-300 mb-1">
+                  Filter Jenis Alat (Modul 1)
+                </label>
+                <select
+                  value={tabJenisFilter}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTabJenisFilter(val);
+                    setTabModelFilter('ALL');
+                  }}
+                  className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="ALL">Semua Jenis Unit ({units.length} unit)</option>
+                  <option value="Non Unit">Non Unit (Umum / Workshop)</option>
+                  {availableJenisOptions.map((j) => (
+                    <option key={j} value={j}>
+                      {j} ({jenisCountsModul1.get(j) || 0} unit)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-5">
+                <label className="block text-xs font-semibold text-stone-300 mb-1">
+                  Pilih Model Unit (Berdasarkan Jenis)
+                </label>
+                <select
+                  value={tabModelFilter}
+                  onChange={(e) => setTabModelFilter(e.target.value)}
+                  disabled={tabJenisFilter === 'Non Unit'}
+                  className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none ${
+                    tabJenisFilter === 'Non Unit'
+                      ? 'border-stone-800 text-stone-500 cursor-not-allowed'
+                      : 'border-stone-700 text-stone-100 focus:border-amber-500'
+                  }`}
+                >
+                  {tabJenisFilter === 'Non Unit' ? (
+                    <option value="ALL">NON-UNIT (Umum / Workshop)</option>
+                  ) : (
+                    <>
+                      <option value="ALL">
+                        Semua Model Unit ({tabModelOptions.length} model · {tabMatchingUnits.length} unit)
+                      </option>
+                      {tabModelOptions.map((m) => (
+                        <option key={m.model} value={m.model}>
+                          {m.model} ({m.count} unit)
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div className="md:col-span-2 flex items-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTabJenisFilter('ALL');
+                    setTabModelFilter('ALL');
+                  }}
+                  className="w-full px-3 py-2 text-xs font-medium text-stone-300 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  Reset Filter
+                </button>
+              </div>
+            </div>
+
+            {/* Keterangan / Hasil Filter No Unit di Bawah Pilihan Jenis & Model Unit */}
+            <div className="pt-2.5 border-t border-stone-800/80 text-xs">
+              {tabJenisFilter === 'Non Unit' ? (
+                <div className="text-stone-300">
+                  <span className="font-semibold text-sky-300">Hasil Filter Target:</span>{' '}
+                  Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Berlaku untuk kebutuhan umum / workshop tanpa unit spesifik.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-stone-300">
+                      <strong className="text-amber-400">Hasil Filter No Unit (Modul 1):</strong>{' '}
+                      {tabModelFilter !== 'ALL' ? (
+                        <>
+                          Model <strong className="text-stone-100 font-mono">{tabModelFilter}</strong>
+                          {tabJenisFilter !== 'ALL' ? ` (${tabJenisFilter})` : ''} mencakup{' '}
+                          <strong className="text-emerald-400 font-mono tabular-nums">
+                            {tabMatchingUnits.length} No Unit
+                          </strong>
+                        </>
+                      ) : tabJenisFilter !== 'ALL' ? (
+                        <>
+                          Jenis <strong className="text-stone-100">{tabJenisFilter}</strong> mencakup{' '}
+                          <strong className="text-emerald-400 font-mono tabular-nums">
+                            {tabMatchingUnits.length} No Unit
+                          </strong>{' '}
+                          <span className="text-stone-400">
+                            (Pilih Model Unit untuk menyaring ke unit dengan model yang sama)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Menampilkan seluruh{' '}
+                          <strong className="text-stone-100 font-mono tabular-nums">
+                            {tabMatchingUnits.length} Unit
+                          </strong>{' '}
+                          terdaftar · Pilih Jenis &amp; Model Unit untuk melihat daftar No Unit yang sama.
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {(tabJenisFilter !== 'ALL' || tabModelFilter !== 'ALL') && (
+                    tabMatchingUnits.length === 0 ? (
+                      <p className="text-stone-500 text-[11px]">
+                        Belum ada No Unit terdaftar di Modul 1 untuk filter Jenis / Model Unit ini.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                        {tabMatchingUnits.map((u) => (
+                          <div
+                            key={u.id}
+                            className="bg-stone-900/90 border border-stone-800 rounded-md px-2.5 py-1.5 text-[11px]"
+                          >
+                            <div className="font-mono font-bold text-amber-300 truncate">
+                              {u.cnNew}
+                            </div>
+                            <div className="text-[10px] text-stone-400 truncate">
+                              {u.modelUnit || '-'} · {u.brandMerk || u.namaAlat || '-'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Quick Call Bar */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
             <div className="md:col-span-5 relative">
@@ -806,11 +1128,15 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 className="w-full bg-stone-950 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 font-mono"
               >
                 <option value="">-- Pilih PN Paket Service Periodic --</option>
-                {matchingCallerPackages.map((pkg) => (
-                  <option key={pkg.id} value={pkg.id}>
-                    {pkg.packagePn} — {pkg.packageName} ({pkg.serviceInterval}) [{pkg.items.length} PN]
-                  </option>
-                ))}
+                {matchingCallerPackages.map((pkg) => {
+                  const info = resolvePackageTargetInfo(pkg);
+                  return (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.packagePn} — {pkg.packageName} ({pkg.serviceInterval}
+                      {info.modelUnit ? ` · ${info.modelUnit}` : ''}) [{pkg.items.length} PN]
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -830,7 +1156,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
           </div>
 
           {/* Active Called Package Detail */}
-          {activePackage ? (
+          {activePackage ? (() => {
+            const activeInfo = resolvePackageTargetInfo(activePackage);
+            return (
             <div className="border border-stone-800 rounded-xl bg-stone-950/70 overflow-hidden">
               <div className="p-4 border-b border-stone-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -847,9 +1175,25 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                     <span>Interval: <strong className="text-stone-200 font-mono">{activePackage.serviceInterval}</strong></span>
                     <span aria-hidden="true">·</span>
                     <span>
-                      Target: <strong className="text-stone-200">{activePackage.jenisUnit}</strong>
-                      {activePackage.noUnit ? ` (${activePackage.noUnit})` : ''}
+                      Jenis: <strong className="text-stone-200">{activeInfo.jenis}</strong>
                     </span>
+                    {activeInfo.modelUnit && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          Model Unit: <strong className="text-amber-300 font-mono">{activeInfo.modelUnit}</strong>
+                        </span>
+                      </>
+                    )}
+                    {activeInfo.noUnitSummary && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          Cakupan No Unit ({activeInfo.matchingUnits.length || (activeInfo.jenis === 'Non Unit' ? 0 : 1)}):{' '}
+                          <strong className="text-emerald-300 font-mono">{activeInfo.noUnitSummary}</strong>
+                        </span>
+                      </>
+                    )}
                     <span aria-hidden="true">·</span>
                     <span>
                       Total Item: <strong className="text-amber-400 font-mono tabular-nums">{activePackage.items.length} Part</strong>
@@ -1085,7 +1429,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 </table>
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             <div className="border border-dashed border-stone-800 rounded-xl p-8 text-center text-stone-400 text-xs">
               <Package className="w-8 h-8 mx-auto mb-2 opacity-40 text-amber-400" />
               <p className="text-sm font-medium text-stone-300">
@@ -1188,7 +1533,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                     onChange={(e) => {
                       const val = e.target.value;
                       setTargetJenisUnit(val);
-                      setTargetNoUnit(val === 'Non Unit' ? 'NON-UNIT' : '');
+                      setTargetModelUnit('');
                     }}
                     className="w-full bg-stone-900 border border-stone-700 text-stone-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500"
                   >
@@ -1202,14 +1547,14 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   </select>
                 </div>
 
-                {/* 5. NO UNIT (Dikelompokkan dari Modul 1 berdasar JENIS) */}
+                {/* 5. MODEL UNIT (Dikelompokkan dari Modul 1 berdasar JENIS) */}
                 <div>
                   <label className="block text-xs font-semibold text-stone-300 mb-1">
-                    5. NO UNIT (Modul 1)
+                    5. MODEL UNIT (Modul 1)
                   </label>
                   <select
-                    value={targetNoUnit}
-                    onChange={(e) => setTargetNoUnit(e.target.value)}
+                    value={targetModelUnit}
+                    onChange={(e) => setTargetModelUnit(e.target.value)}
                     disabled={targetJenisUnit === 'Non Unit'}
                     className={`w-full bg-stone-900 border text-sm rounded-lg px-3 py-2 focus:outline-none font-mono ${
                       targetJenisUnit === 'Non Unit'
@@ -1218,15 +1563,15 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                     }`}
                   >
                     {targetJenisUnit === 'Non Unit' ? (
-                      <option value="NON-UNIT">NON-UNIT (Umum / Workshop)</option>
+                      <option value="">NON-UNIT (Umum / Workshop)</option>
                     ) : (
                       <>
                         <option value="">
-                          Semua No Unit ({groupedNoUnitsModul1.length} unit)
+                          Semua Model Unit ({builderModelOptions.length} model · {builderMatchingUnits.length} unit)
                         </option>
-                        {groupedNoUnitsModul1.map((u) => (
-                          <option key={u.id} value={u.cnNew}>
-                            {u.cnNew} — {u.namaAlat || u.jenis} ({u.modelUnit || '-'})
+                        {builderModelOptions.map((m) => (
+                          <option key={m.model} value={m.model}>
+                            {m.model} ({m.count} unit)
                           </option>
                         ))}
                       </>
@@ -1248,6 +1593,74 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Keterangan / Hasil Filter No Unit Berdasarkan Model Unit yang Sama */}
+              <div className="mt-4 pt-3 border-t border-stone-800/80 text-xs space-y-2">
+                {targetJenisUnit === 'Non Unit' ? (
+                  <div className="text-stone-300">
+                    <strong className="text-sky-300">Hasil Filter Target:</strong>{' '}
+                    Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Paket berlaku untuk item umum / workshop.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-stone-300">
+                        <strong className="text-amber-400">Keterangan Hasil Filter No Unit (Modul 1):</strong>{' '}
+                        {targetModelUnit ? (
+                          <>
+                            Model Unit <strong className="font-mono text-stone-100">{targetModelUnit}</strong>
+                            {targetJenisUnit !== 'Semua Unit' ? ` (${targetJenisUnit})` : ''} berlaku untuk{' '}
+                            <strong className="text-emerald-400 font-mono tabular-nums">
+                              {builderMatchingUnits.length} No Unit
+                            </strong>{' '}
+                            berikut:
+                          </>
+                        ) : targetJenisUnit !== 'Semua Unit' ? (
+                          <>
+                            Jenis <strong className="text-stone-100">{targetJenisUnit}</strong> memiliki{' '}
+                            <strong className="text-emerald-400 font-mono tabular-nums">
+                              {builderMatchingUnits.length} No Unit
+                            </strong>{' '}
+                            <span className="text-stone-400">
+                              — Pilih Model Unit di kolom 5 untuk mengelompokkan RPL berdasarkan model unit yang sama.
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            Total terdaftar{' '}
+                            <strong className="text-stone-100 font-mono tabular-nums">
+                              {builderMatchingUnits.length} No Unit
+                            </strong>{' '}
+                            — Pilih Jenis &amp; Model Unit di atas untuk melihat daftar No Unit yang dicakup paket RPL ini.
+                          </>
+                        )}
+                      </span>
+                    </div>
+
+                    {builderMatchingUnits.length === 0 ? (
+                      <p className="text-[11px] text-stone-500">
+                        Belum ada No Unit terdaftar di Modul 1 untuk kombinasi Jenis dan Model Unit ini.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                        {builderMatchingUnits.map((u) => (
+                          <div
+                            key={u.id}
+                            className="bg-stone-900 border border-stone-800 rounded-md px-2.5 py-1.5 text-[11px]"
+                          >
+                            <div className="font-mono font-bold text-amber-300 truncate">
+                              {u.cnNew}
+                            </div>
+                            <div className="text-[10px] text-stone-400 truncate">
+                              {u.modelUnit || '-'} · {u.brandMerk || u.namaAlat || '-'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* List Katalog Master Terdaftar Sesuai Filtrasi dengan Kotak Centang di Sisi Kiri */}
@@ -1267,7 +1680,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   </div>
                   <p className="text-[11px] text-stone-400 mt-1">
                     Menampilkan part sesuai filter <strong className="text-stone-200">{targetJenisUnit}</strong>
-                    {targetNoUnit ? ` (${targetNoUnit})` : ''}. Centang kotak di sisi kiri untuk memasukkan part ke paket RPL.
+                    {targetModelUnit ? ` · Model ${targetModelUnit}` : ''}. Centang kotak di sisi kiri untuk memasukkan part ke paket RPL.
                   </p>
                 </div>
 
@@ -1323,7 +1736,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         />
                       </th>
                       <th className="py-2.5 px-2 w-10 text-center">No</th>
-                      <th className="py-2.5 px-3 w-28">No Unit / Jenis</th>
+                      <th className="py-2.5 px-3 w-36">Model / No Unit</th>
                       <th className="py-2.5 px-3 w-36">Part Number (PN)</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Nama Part</th>
                       <th className="py-2.5 px-3 w-28">Merk</th>
@@ -1340,7 +1753,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         <td colSpan={11} className="py-10 text-center text-stone-500 text-xs">
                           Tidak ada part terdaftar di Katalog Master Part untuk filter{' '}
                           <strong className="text-stone-300">{targetJenisUnit}</strong>
-                          {targetNoUnit ? ` (${targetNoUnit})` : ''}. Daftarkan part terlebih dahulu di Tab Katalog Master Part.
+                          {targetModelUnit ? ` · Model ${targetModelUnit}` : ''}. Daftarkan part terlebih dahulu di Tab Katalog Master Part.
                         </td>
                       </tr>
                     ) : (
@@ -1348,6 +1761,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         const selectedItem = draftItemsMap.get(part.id);
                         const isChecked = Boolean(selectedItem);
                         const tipe = part.partRelationType || 'In Line';
+                        const resolvedPartModel =
+                          part.modelUnit || unitByCnMap.get((part.noUnit || '').trim().toLowerCase())?.modelUnit || '';
 
                         return (
                           <tr
@@ -1370,10 +1785,10 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                             </td>
                             <td className="py-2.5 px-3">
                               <span className="font-mono font-bold text-amber-400 block">
-                                {part.noUnit || '-'}
+                                {resolvedPartModel || part.noUnit || '-'}
                               </span>
-                              <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
-                                {part.jenisUnit}
+                              <span className="text-[10px] text-stone-400 block truncate max-w-[130px] font-mono">
+                                {part.noUnit || '-'} · {part.jenisUnit}
                               </span>
                             </td>
                             <td className="py-2.5 px-3 font-mono font-semibold text-amber-300">
@@ -1580,7 +1995,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 <th className="py-3 px-3 w-44">PN Paket</th>
                 <th className="py-3 px-3 min-w-[200px]">Nama Paket</th>
                 <th className="py-3 px-3 w-28 text-center">Interval</th>
-                <th className="py-3 px-3 w-40">Target Unit</th>
+                <th className="py-3 px-3 w-52">Target Jenis / Model &amp; No Unit</th>
                 <th className="py-3 px-3 w-24 text-center">Jumlah PN</th>
                 <th className="py-3 px-3 w-24 text-center">Total Qty</th>
                 <th className="py-3 px-3 w-56 text-center">Aksi</th>
@@ -1590,13 +2005,14 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
               {filteredPackageList.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-10 text-center text-stone-500">
-                    Belum ada Paket RPL Service Periodic yang terdaftar.
+                    Belum ada Paket RPL Service Periodic yang sesuai filter saat ini.
                   </td>
                 </tr>
               ) : (
                 filteredPackageList.map((pkg, idx) => {
                   const totalQty = pkg.items.reduce((a, b) => a + (Number(b.qtyNeeded) || 0), 0);
                   const isActive = activePackage?.id === pkg.id;
+                  const info = resolvePackageTargetInfo(pkg);
                   return (
                     <tr
                       key={pkg.id}
@@ -1624,10 +2040,15 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         {pkg.serviceInterval}
                       </td>
                       <td className="py-3 px-3 text-stone-300">
-                        <span>{pkg.jenisUnit || 'Semua Unit'}</span>
-                        {pkg.noUnit && (
-                          <span className="block font-mono text-[10px] text-stone-400">
-                            {pkg.noUnit}
+                        <span className="font-medium text-stone-200">
+                          {info.jenis}
+                          {info.modelUnit ? (
+                            <span className="text-amber-300 font-mono"> · {info.modelUnit}</span>
+                          ) : null}
+                        </span>
+                        {info.noUnitSummary && (
+                          <span className="block font-mono text-[10px] text-stone-400 mt-0.5 break-words">
+                            Unit: {info.noUnitSummary}
                           </span>
                         )}
                       </td>
