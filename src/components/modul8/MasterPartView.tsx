@@ -15,9 +15,12 @@ import {
 } from '../../types';
 import { 
   getAllMasterParts, 
-  addOrUpdateMasterPart, 
+  consolidateLegacyMasterParts,
+  getNormalizedMasterPartKey,
+  updateMasterPartGroupSpecs,
   batchAddMasterParts, 
   deleteMasterPart,
+  deleteMasterPartGroup,
   addOrUpdateMasterPartInterchange,
   deleteMasterPartInterchange,
   getAllRplPackages,
@@ -28,6 +31,7 @@ import {
   canUserExportModule
 } from '../../utils/storage';
 import { RplSubView } from './RplSubView';
+import { UnitRefDetailModal, UnitRefEntry } from './UnitRefDetailModal';
 import { 
   Boxes, 
   Plus, 
@@ -121,6 +125,20 @@ const COMMON_SATUAN_OPTIONS = ['Pcs', 'Set', 'Ea', 'Assy', 'Roll', 'Unit', 'Box'
 const NON_UNIT_JENIS = 'Non Unit';
 const NON_UNIT_CODE = 'NON-UNIT';
 
+interface GroupedMasterPart {
+  groupKey: string;
+  primary: MasterPartItem;
+  entries: MasterPartItem[];
+  entryIds: string[];
+  unitRefs: UnitRefEntry[];
+  unitCount: number;
+  isAllNonUnit: boolean;
+  unitSummaryLabel: string;
+  reffUnitText: string;
+  mergedInterchangeParts: MasterPartInterchangeItem[];
+  isInterchange: boolean;
+}
+
 export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUser }) => {
   const isDev = isDeveloper(currentUser);
   const canInsert = canUserInsertModule(currentUser, 8) || isDev;
@@ -135,6 +153,21 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const [masterParts, setMasterParts] = useState<MasterPartItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Unit detail popup state
+  const [unitModalState, setUnitModalState] = useState<{
+    isOpen: boolean;
+    groupKey: string;
+    title: string;
+    subtitle: string;
+    entries: UnitRefEntry[];
+  }>({
+    isOpen: false,
+    groupKey: '',
+    title: '',
+    subtitle: '',
+    entries: [],
+  });
+
   // Reload master parts from storage
   const loadParts = () => {
     setIsLoading(true);
@@ -145,7 +178,14 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   };
 
   useEffect(() => {
+    const consolidated = consolidateLegacyMasterParts();
     loadParts();
+    if (consolidated.mergedCount > 0) {
+      setFeedback({
+        type: 'success',
+        message: `${consolidated.mergedCount} data Master Part duplikat lama ber-PN sama berhasil digabungkan otomatis.`,
+      });
+    }
     const handleStorageChange = () => loadParts();
     window.addEventListener('bkwa-master-parts-changed', handleStorageChange);
     window.addEventListener('bkwa-rpl-packages-changed', handleStorageChange);
@@ -501,13 +541,109 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const [filterRelationType, setFilterRelationType] = useState<string>('ALL');
   const [expandedInterchangeIds, setExpandedInterchangeIds] = useState<Record<string, boolean>>({});
 
-  // Filtered master parts
+  const unitByCnMap = useMemo(() => {
+    const map = new Map<string, AssetUnit>();
+    units.forEach((u) => {
+      const cn = (u.cnNew || '').trim().toLowerCase();
+      if (cn) map.set(cn, u);
+    });
+    return map;
+  }, [units]);
+
+  // Pengelompokan data Master Part berdasarkan PN yang sama (1 PN = 1 baris katalog)
+  const groupedMasterParts = useMemo<GroupedMasterPart[]>(() => {
+    const buckets = new Map<string, MasterPartItem[]>();
+    masterParts.forEach((item) => {
+      const key = getNormalizedMasterPartKey(item);
+      const list = buckets.get(key) || [];
+      list.push(item);
+      buckets.set(key, list);
+    });
+
+    const groups: GroupedMasterPart[] = [];
+    buckets.forEach((entries, groupKey) => {
+      const sortedEntries = [...entries].sort((a, b) =>
+        (a.noUnit || '').localeCompare(b.noUnit || '')
+      );
+      const primary = [...entries].sort((a, b) => {
+        const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        return tB - tA;
+      })[0];
+
+      const unitRefs: UnitRefEntry[] = sortedEntries.map((e) => {
+        const matchedUnit = unitByCnMap.get((e.noUnit || '').trim().toLowerCase());
+        const isNonUnit =
+          (e.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
+          (e.noUnit || '').toUpperCase() === NON_UNIT_CODE;
+        return {
+          key: e.id,
+          recordId: e.id,
+          noUnit: e.noUnit || '-',
+          jenisUnit: e.jenisUnit || matchedUnit?.jenis || '-',
+          brandMerk: e.brandMerk || matchedUnit?.brandMerk || '-',
+          modelUnit: e.modelUnit && e.modelUnit !== '-' ? e.modelUnit : matchedUnit?.modelUnit || '-',
+          qty: Number(e.qty) || 0,
+          minStock: Number(e.minStock ?? 0),
+          satuan: e.satuan || 'Pcs',
+          isNonUnit,
+        };
+      });
+
+      const subDedup = new Map<string, MasterPartInterchangeItem>();
+      entries.forEach((e) => {
+        (e.interchangeParts || []).forEach((s) => {
+          const sKey = `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`;
+          if (!subDedup.has(sKey)) {
+            subDedup.set(sKey, s);
+          }
+        });
+      });
+      const mergedInterchangeParts = Array.from(subDedup.values()).map((s, idx) => ({
+        ...s,
+        noUrut: idx + 1,
+      }));
+      const isInterchange =
+        entries.some((e) => e.partRelationType === 'Interchange') ||
+        mergedInterchangeParts.length > 0;
+
+      const isAllNonUnit = unitRefs.every((u) => u.isNonUnit);
+      const unitCount = unitRefs.length;
+      const unitSummaryLabel = isAllNonUnit
+        ? NON_UNIT_CODE
+        : unitCount === 1
+        ? unitRefs[0].noUnit
+        : `${unitCount} Unit`;
+      const reffUnitText = unitRefs
+        .map((u) => `${u.noUnit} ${u.jenisUnit} ${u.brandMerk} ${u.modelUnit}`)
+        .join(' ');
+
+      groups.push({
+        groupKey,
+        primary,
+        entries: sortedEntries,
+        entryIds: sortedEntries.map((e) => e.id),
+        unitRefs,
+        unitCount,
+        isAllNonUnit,
+        unitSummaryLabel,
+        reffUnitText,
+        mergedInterchangeParts,
+        isInterchange,
+      });
+    });
+
+    return groups;
+  }, [masterParts, unitByCnMap]);
+
+  // Filtered grouped master parts
   const filteredMasterParts = useMemo(() => {
-    return masterParts.filter((item) => {
-      // Search query (cek induk dan sub-part interchange)
+    return groupedMasterParts.filter((group) => {
+      const item = group.primary;
+      // Search query (cek induk, sub-part interchange, dan daftar unit cakupan)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const subText = (item.interchangeParts || [])
+        const subText = group.mergedInterchangeParts
           .map((s) => `${s.namaPart} ${s.pn} ${s.merk} ${s.remark || ''}`)
           .join(' ');
         const matchText = (
@@ -517,26 +653,30 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           ' ' +
           (item.merk || '') +
           ' ' +
-          (item.brandMerk || '') +
-          ' ' +
-          (item.modelUnit || '') +
-          ' ' +
-          (item.noUnit || '') +
-          ' ' +
-          (item.jenisUnit || '') +
-          ' ' +
           (item.remark || '') +
+          ' ' +
+          group.reffUnitText +
           ' ' +
           subText
         ).toLowerCase();
         if (!matchText.includes(q)) return false;
       }
-      // Filter Jenis
-      if (filterJenis && item.jenisUnit.toLowerCase() !== filterJenis.toLowerCase()) {
+      // Filter Jenis (cocok jika minimal 1 unit di grup PN ini punya jenis tersebut)
+      if (
+        filterJenis &&
+        !group.entries.some(
+          (e) => (e.jenisUnit || '').toLowerCase() === filterJenis.toLowerCase()
+        )
+      ) {
         return false;
       }
-      // Filter No Unit
-      if (filterNoUnit && item.noUnit.toLowerCase() !== filterNoUnit.toLowerCase()) {
+      // Filter No Unit (cocok jika minimal 1 unit di grup PN ini punya noUnit tersebut)
+      if (
+        filterNoUnit &&
+        !group.entries.some(
+          (e) => (e.noUnit || '').toLowerCase() === filterNoUnit.toLowerCase()
+        )
+      ) {
         return false;
       }
       // Filter Kategori
@@ -553,13 +693,13 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       }
       // Filter Tipe In Line / Interchange
       if (filterRelationType !== 'ALL') {
-        const itemRelation = item.partRelationType || 'In Line';
+        const itemRelation = group.isInterchange ? 'Interchange' : 'In Line';
         if (itemRelation !== filterRelationType) return false;
       }
       return true;
     });
   }, [
-    masterParts,
+    groupedMasterParts,
     searchQuery,
     filterJenis,
     filterNoUnit,
@@ -593,14 +733,15 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     });
   }, [availableJenisList, masterParts]);
 
-  // --- STATS SUMMARY ---
+  // --- STATS SUMMARY (Dihitung per PN unik agar ringkas dan akurat) ---
   const stats = useMemo(() => {
     let fastMoving = 0;
     let slowMoving = 0;
     let deathStock = 0;
     let totalQty = 0;
 
-    masterParts.forEach((p) => {
+    groupedMasterParts.forEach((g) => {
+      const p = g.primary;
       if (p.kategori === 'Fast Moving') fastMoving++;
       else if (p.kategori === 'Slow Moving') slowMoving++;
       else if (p.kategori === 'Death Stock') deathStock++;
@@ -608,63 +749,66 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     });
 
     return {
-      totalItems: masterParts.length,
+      totalItems: groupedMasterParts.length,
       fastMoving,
       slowMoving,
       deathStock,
       totalQty,
     };
-  }, [masterParts]);
+  }, [groupedMasterParts]);
 
   // --- MODAL EDIT STATE ---
-  const [editingPart, setEditingPart] = useState<MasterPartItem | null>(null);
+  const [editingGroup, setEditingGroup] = useState<GroupedMasterPart | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<MasterPartItem>>({});
   const [editError, setEditError] = useState<string | null>(null);
 
-  const handleOpenEdit = (part: MasterPartItem) => {
+  const handleOpenEdit = (group: GroupedMasterPart) => {
     if (!canEdit) return;
     setEditError(null);
-    setEditingPart(part);
+    setEditingGroup(group);
     setEditFormData({
-      ...part,
-      minStock: Number(part.minStock ?? 0),
-      partRelationType: part.partRelationType || 'In Line',
+      ...group.primary,
+      minStock: Number(group.primary.minStock ?? 0),
+      partRelationType: group.isInterchange ? 'Interchange' : 'In Line',
     });
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit || !editingPart) return;
+    if (!canEdit || !editingGroup) return;
     setEditError(null);
 
-    const res = addOrUpdateMasterPart(
-      {
-        unitId: editFormData.unitId || editingPart.unitId,
-        jenisUnit: editFormData.jenisUnit || editingPart.jenisUnit,
-        noUnit: editFormData.noUnit || editingPart.noUnit,
-        namaAlat: editFormData.namaAlat ?? editingPart.namaAlat,
-        modelUnit: editFormData.modelUnit ?? editingPart.modelUnit,
-        noUrut: Number(editFormData.noUrut) || editingPart.noUrut,
-        kategori: (editFormData.kategori as MasterPartKategori) || editingPart.kategori,
-        jenisPart: (editFormData.jenisPart as MasterPartJenis) || editingPart.jenisPart,
-        merk: editFormData.merk || editingPart.merk,
-        fungsi: (editFormData.fungsi as MasterPartFungsi) || editingPart.fungsi,
-        namaPart: editFormData.namaPart || editingPart.namaPart,
-        pn: editFormData.pn || editingPart.pn,
-        qty: Number(editFormData.qty) || editingPart.qty,
-        minStock: Math.max(0, Number(editFormData.minStock ?? 0) || 0),
-        satuan: editFormData.satuan || editingPart.satuan,
-        partRelationType: (editFormData.partRelationType as MasterPartRelationType) || editingPart.partRelationType || 'In Line',
-        interchangeParts: editingPart.interchangeParts || [],
-        remark: editFormData.remark || '',
-      },
-      editingPart.id
-    );
+    const isSingle = editingGroup.entryIds.length === 1;
+    const res = updateMasterPartGroupSpecs(editingGroup.entryIds, {
+      noUrut: Number(editFormData.noUrut) || editingGroup.primary.noUrut,
+      kategori: (editFormData.kategori as MasterPartKategori) || editingGroup.primary.kategori,
+      jenisPart: (editFormData.jenisPart as MasterPartJenis) || editingGroup.primary.jenisPart,
+      merk: editFormData.merk || editingGroup.primary.merk,
+      fungsi: (editFormData.fungsi as MasterPartFungsi) || editingGroup.primary.fungsi,
+      namaPart: editFormData.namaPart || editingGroup.primary.namaPart,
+      pn: editFormData.pn || editingGroup.primary.pn,
+      qty: Number(editFormData.qty) || editingGroup.primary.qty,
+      minStock: Math.max(0, Number(editFormData.minStock ?? 0) || 0),
+      satuan: editFormData.satuan || editingGroup.primary.satuan || 'Pcs',
+      partRelationType:
+        (editFormData.partRelationType as MasterPartRelationType) ||
+        (editingGroup.isInterchange ? 'Interchange' : 'In Line'),
+      remark: editFormData.remark || '',
+      ...(isSingle
+        ? {
+            unitId: editFormData.unitId || editingGroup.primary.unitId,
+            jenisUnit: editFormData.jenisUnit || editingGroup.primary.jenisUnit,
+            noUnit: editFormData.noUnit || editingGroup.primary.noUnit,
+            namaAlat: editFormData.namaAlat ?? editingGroup.primary.namaAlat,
+            modelUnit: editFormData.modelUnit ?? editingGroup.primary.modelUnit,
+          }
+        : {}),
+    });
 
     if (res.success) {
-      setEditingPart(null);
+      setEditingGroup(null);
       setEditError(null);
-      setFeedback({ type: 'success', message: `Data part "${editFormData.namaPart || editingPart.namaPart}" berhasil diperbarui.` });
+      setFeedback({ type: 'success', message: res.message });
       loadParts();
     } else {
       setEditError(res.message);
@@ -673,24 +817,32 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
   // --- MODAL ADD / EDIT SUB-ITEM INTERCHANGE ---
   const [interchangeModal, setInterchangeModal] = useState<{
+    groupKey: string;
     parent: MasterPartItem;
+    siblingIds: string[];
     editingSub: MasterPartInterchangeItem | null;
   } | null>(null);
   const [subFormData, setSubFormData] = useState<DraftInterchangeRow>(createEmptyInterchangeDraft(1));
   const [subError, setSubError] = useState<string | null>(null);
   const [deletingInterchange, setDeletingInterchange] = useState<{
     parentId: string;
+    siblingIds: string[];
     subId: string;
     nama: string;
   } | null>(null);
 
   const handleOpenInterchangeModal = (
-    parent: MasterPartItem,
+    group: GroupedMasterPart,
     editingSub: MasterPartInterchangeItem | null = null
   ) => {
     if (!canInsert && !canEdit) return;
     setSubError(null);
-    setInterchangeModal({ parent, editingSub });
+    setInterchangeModal({
+      groupKey: group.groupKey,
+      parent: group.primary,
+      siblingIds: group.entryIds,
+      editingSub,
+    });
     if (editingSub) {
       setSubFormData({
         noUrut: editingSub.noUrut || 1,
@@ -706,7 +858,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         remark: editingSub.remark || '',
       });
     } else {
-      const nextNo = (parent.interchangeParts?.length || 0) + 1;
+      const nextNo = (group.mergedInterchangeParts.length || 0) + 1;
       setSubFormData(createEmptyInterchangeDraft(nextNo));
     }
   };
@@ -736,11 +888,12 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         satuan: subFormData.satuan || 'Pcs',
         remark: subFormData.remark.trim() || '',
       },
-      interchangeModal.editingSub?.id
+      interchangeModal.editingSub?.id,
+      interchangeModal.siblingIds
     );
 
     if (res.success) {
-      setExpandedInterchangeIds((prev) => ({ ...prev, [interchangeModal.parent.id]: true }));
+      setExpandedInterchangeIds((prev) => ({ ...prev, [interchangeModal.groupKey]: true }));
       setInterchangeModal(null);
       setFeedback({ type: 'success', message: res.message });
       loadParts();
@@ -751,7 +904,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
   const handleConfirmDeleteInterchange = () => {
     if (!canDelete || !deletingInterchange) return;
-    const res = deleteMasterPartInterchange(deletingInterchange.parentId, deletingInterchange.subId);
+    const res = deleteMasterPartInterchange(
+      deletingInterchange.parentId,
+      deletingInterchange.subId,
+      deletingInterchange.siblingIds
+    );
     if (res.success) {
       setFeedback({ type: 'success', message: res.message });
       loadParts();
@@ -762,23 +919,65 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   };
 
   // --- DELETE ACTION ---
-  const [deletingPart, setDeletingPart] = useState<{ id: string; nama: string } | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState<{
+    ids: string[];
+    nama: string;
+    pn: string;
+    unitCount: number;
+  } | null>(null);
 
-  const handleRequestDelete = (id: string, nama: string) => {
+  const handleRequestDelete = (group: GroupedMasterPart) => {
     if (!canDelete) return;
-    setDeletingPart({ id, nama });
+    setDeletingGroup({
+      ids: group.entryIds,
+      nama: group.primary.namaPart,
+      pn: group.primary.pn,
+      unitCount: group.unitCount,
+    });
   };
 
   const handleConfirmDelete = () => {
-    if (!canDelete || !deletingPart) return;
-    const res = deleteMasterPart(deletingPart.id);
+    if (!canDelete || !deletingGroup) return;
+    const res = deleteMasterPartGroup(deletingGroup.ids);
     if (res.success) {
-      setFeedback({ type: 'success', message: `Master part "${deletingPart.nama}" berhasil dihapus.` });
+      setFeedback({ type: 'success', message: res.message });
       loadParts();
     } else {
       setFeedback({ type: 'error', message: res.message });
     }
-    setDeletingPart(null);
+    setDeletingGroup(null);
+  };
+
+  const handleOpenUnitDetailModal = (group: GroupedMasterPart) => {
+    setUnitModalState({
+      isOpen: true,
+      groupKey: group.groupKey,
+      title: `Reff Unit — ${group.primary.pn || '-'} (${group.primary.namaPart})`,
+      subtitle: `${group.unitCount} unit terdaftar menggunakan part ini`,
+      entries: group.unitRefs,
+    });
+  };
+
+  const handleRemoveSingleUnitFromModal = (entry: UnitRefEntry) => {
+    if (!canDelete || !entry.recordId) return;
+    const res = deleteMasterPart(entry.recordId);
+    if (res.success) {
+      setFeedback({ type: 'success', message: res.message });
+      setUnitModalState((prev) => {
+        const remaining = prev.entries.filter((e) => e.recordId !== entry.recordId);
+        if (remaining.length === 0) {
+          return { ...prev, isOpen: false, entries: [] };
+        }
+        return {
+          ...prev,
+          subtitle: `${remaining.length} unit terdaftar menggunakan part ini`,
+          entries: remaining,
+        };
+      });
+      loadParts();
+    } else {
+      setFeedback({ type: 'error', message: res.message });
+    }
   };
 
   // --- EXPORT TO CSV ---
@@ -791,9 +990,9 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
     const headers = [
       'No Urut',
-      'Jenis Unit',
-      'No Unit (CN)',
-      'Model Unit',
+      'Reff Unit',
+      'Jumlah Unit',
+      'Daftar No Unit (CN)',
       'Kategori Part',
       'Jenis Part',
       'Merk Part',
@@ -808,24 +1007,28 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       'Remark',
     ];
 
-    const rows = filteredMasterParts.map((p, idx) => [
-      p.noUrut || idx + 1,
-      `"${p.jenisUnit || ''}"`,
-      `"${p.noUnit || ''}"`,
-      `"${p.modelUnit || ''}"`,
-      `"${p.kategori || ''}"`,
-      `"${p.jenisPart || ''}"`,
-      `"${p.merk || ''}"`,
-      `"${p.fungsi || ''}"`,
-      `"${p.namaPart.replace(/"/g, '""')}"`,
-      `"${p.pn.replace(/"/g, '""')}"`,
-      p.qty,
-      Number(p.minStock ?? 0),
-      `"${p.satuan || ''}"`,
-      `"${p.partRelationType || 'In Line'}"`,
-      p.interchangeParts?.length || 0,
-      `"${(p.remark || '').replace(/"/g, '""')}"`,
-    ]);
+    const rows = filteredMasterParts.map((group, idx) => {
+      const p = group.primary;
+      const cnJoined = group.unitRefs.map((u) => u.noUnit).join('; ');
+      return [
+        p.noUrut || idx + 1,
+        `"${group.unitSummaryLabel}"`,
+        group.unitCount,
+        `"${cnJoined.replace(/"/g, '""')}"`,
+        `"${p.kategori || ''}"`,
+        `"${p.jenisPart || ''}"`,
+        `"${p.merk || ''}"`,
+        `"${p.fungsi || ''}"`,
+        `"${p.namaPart.replace(/"/g, '""')}"`,
+        `"${p.pn.replace(/"/g, '""')}"`,
+        p.qty,
+        Number(p.minStock ?? 0),
+        `"${p.satuan || ''}"`,
+        `"${group.isInterchange ? 'Interchange' : 'In Line'}"`,
+        group.mergedInterchangeParts.length,
+        `"${(p.remark || '').replace(/"/g, '""')}"`,
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1084,7 +1287,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                 : 'bg-stone-800 text-stone-400'
             }`}
           >
-            {masterParts.length}
+            {groupedMasterParts.length}
           </span>
         </button>
 
@@ -1894,11 +2097,11 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       <div className="bg-stone-900 border border-stone-800 rounded-xl shadow-lg overflow-hidden">
         {/* Table Header Bar */}
         <div className="p-4 border-b border-stone-800 bg-stone-900/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-stone-200 font-semibold text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-stone-200 font-semibold text-sm">
             <Boxes className="w-4 h-4 text-amber-500" />
             <span>Katalog Master Material & Suku Cadang Terdaftar</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-stone-800 text-amber-400 font-mono font-bold">
-              {filteredMasterParts.length} Part
+            <span className="text-xs px-2 py-0.5 rounded bg-stone-800 text-amber-400 font-mono font-bold tabular-nums">
+              {filteredMasterParts.length} PN Unik
             </span>
           </div>
 
@@ -2036,7 +2239,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             <thead>
               <tr className="bg-stone-900/90 text-stone-300 border-b border-stone-800 font-mono">
                 <th className="py-3 px-3 w-12 text-center">No</th>
-                <th className="py-3 px-3 w-28">No Unit (CN)</th>
+                <th className="py-3 px-3 w-36">Reff Unit</th>
                 <th className="py-3 px-3 w-32">Kategori Part</th>
                 <th className="py-3 px-3 w-28">Jenis Part</th>
                 <th className="py-3 px-3 w-28">Merk Part</th>
@@ -2062,7 +2265,8 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   </td>
                 </tr>
               ) : (
-                filteredMasterParts.map((item, idx) => {
+                filteredMasterParts.map((group, idx) => {
+                  const item = group.primary;
                   let badgeKategoriClass = 'bg-stone-800 text-stone-300 border-stone-700';
                   if (item.kategori === 'Fast Moving') {
                     badgeKategoriClass = 'bg-emerald-950/60 text-emerald-400 border-emerald-800/80';
@@ -2077,36 +2281,45 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                       ? 'bg-purple-950/60 text-purple-300 border-purple-800/70'
                       : 'bg-stone-800 text-stone-300 border-stone-700';
 
-                  const isItemNonUnit =
-                    (item.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
-                    (item.noUnit || '').toUpperCase() === NON_UNIT_CODE;
                   const minStockVal = Number(item.minStock ?? 0);
                   const isLowStock = minStockVal > 0 && Number(item.qty || 0) <= minStockVal;
-                  const subParts = item.interchangeParts || [];
-                  const isInterchange =
-                    item.partRelationType === 'Interchange' || subParts.length > 0;
-                  const isExpanded = Boolean(expandedInterchangeIds[item.id]);
+                  const subParts = group.mergedInterchangeParts;
+                  const isInterchange = group.isInterchange;
+                  const isExpanded = Boolean(expandedInterchangeIds[group.groupKey]);
 
                   return (
-                    <React.Fragment key={item.id}>
+                    <React.Fragment key={group.groupKey}>
                       <tr className="hover:bg-stone-900/40 transition-colors">
                         {/* No Urut */}
                         <td className="py-3 px-3 text-center font-mono text-stone-400 tabular-nums">
                           {item.noUrut || idx + 1}
                         </td>
 
-                        {/* No Unit */}
+                        {/* Reff Unit (Ringkas & Klik untuk Detail) */}
                         <td className="py-3 px-3">
-                          <span
-                            className={`font-mono font-bold block ${
-                              isItemNonUnit ? 'text-sky-400' : 'text-amber-400'
+                          <button
+                            type="button"
+                            onClick={() => handleOpenUnitDetailModal(group)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap ${
+                              group.isAllNonUnit
+                                ? 'bg-sky-950/50 text-sky-300 border-sky-800/70 hover:bg-sky-900/50'
+                                : 'bg-stone-950 text-amber-300 border-stone-700 hover:border-amber-500/60 hover:bg-stone-800'
                             }`}
+                            title="Klik untuk melihat daftar unit cakupan part ini"
                           >
-                            {item.noUnit || '-'}
-                          </span>
-                          <span className="text-[10px] text-stone-400 block truncate max-w-[100px]">
-                            {item.jenisUnit || ''}
-                          </span>
+                            <Truck className="w-3 h-3 shrink-0" />
+                            <span className="tabular-nums">{group.unitSummaryLabel}</span>
+                          </button>
+                          {group.unitCount === 1 && group.unitRefs[0]?.jenisUnit && !group.isAllNonUnit && (
+                            <span className="text-[10px] text-stone-400 block truncate max-w-[120px] mt-0.5">
+                              {group.unitRefs[0].jenisUnit}
+                            </span>
+                          )}
+                          {group.unitCount > 1 && (
+                            <span className="text-[10px] text-stone-400 block truncate max-w-[130px] mt-0.5 font-mono">
+                              {group.unitRefs[0]?.noUnit} (+{group.unitCount - 1})
+                            </span>
+                          )}
                         </td>
 
                         {/* Kategori Part */}
@@ -2142,7 +2355,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                           <span className="font-semibold text-stone-100 block">
                             {item.namaPart}
                           </span>
-                          {item.modelUnit && item.modelUnit !== '-' && (
+                          {group.unitCount === 1 && item.modelUnit && item.modelUnit !== '-' && (
                             <span className="text-[10px] text-stone-400 block">
                               Model: {item.modelUnit}
                             </span>
@@ -2186,7 +2399,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                                 onClick={() =>
                                   setExpandedInterchangeIds((prev) => ({
                                     ...prev,
-                                    [item.id]: !prev[item.id],
+                                    [group.groupKey]: !prev[group.groupKey],
                                   }))
                                 }
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold bg-sky-950/60 text-sky-300 border border-sky-800/80 hover:bg-sky-900/60 transition-colors whitespace-nowrap"
@@ -2202,7 +2415,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                               {(canInsert || canEdit) && (
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenInterchangeModal(item, null)}
+                                  onClick={() => handleOpenInterchangeModal(group, null)}
                                   className="p-1 text-sky-300 hover:text-sky-200 bg-sky-950/40 hover:bg-sky-900/50 border border-sky-800/70 rounded transition-colors"
                                   title="Tambah Part Interchange"
                                 >
@@ -2228,7 +2441,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                             {canEdit && (
                               <button
                                 type="button"
-                                onClick={() => handleOpenEdit(item)}
+                                onClick={() => handleOpenEdit(group)}
                                 className="p-1.5 text-stone-400 hover:text-amber-400 hover:bg-stone-800 rounded transition-colors"
                                 title="Edit Part"
                               >
@@ -2238,7 +2451,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                             {canDelete && (
                               <button
                                 type="button"
-                                onClick={() => handleRequestDelete(item.id, item.namaPart)}
+                                onClick={() => handleRequestDelete(group)}
                                 className="p-1.5 text-stone-400 hover:text-red-400 hover:bg-stone-800 rounded transition-colors"
                                 title="Hapus Part"
                               >
@@ -2271,7 +2484,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                                 {(canInsert || canEdit) && (
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenInterchangeModal(item, null)}
+                                    onClick={() => handleOpenInterchangeModal(group, null)}
                                     className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 rounded-lg transition-colors whitespace-nowrap"
                                   >
                                     <Plus className="w-3.5 h-3.5" />
@@ -2315,7 +2528,14 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                                               {sub.noUrut || subIdx + 1}
                                             </td>
                                             <td className="py-2.5 px-3 font-mono text-[11px] text-sky-400">
-                                              {item.noUnit || '-'}
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenUnitDetailModal(group)}
+                                                className="hover:underline text-left"
+                                                title="Lihat detail reff unit"
+                                              >
+                                                {group.unitSummaryLabel}
+                                              </button>
                                             </td>
                                             <td className="py-2.5 px-3 text-stone-300">
                                               {sub.kategori}
@@ -2361,7 +2581,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                                                 {canEdit && (
                                                   <button
                                                     type="button"
-                                                    onClick={() => handleOpenInterchangeModal(item, sub)}
+                                                    onClick={() => handleOpenInterchangeModal(group, sub)}
                                                     className="p-1 text-stone-400 hover:text-sky-400 hover:bg-stone-800 rounded transition-colors"
                                                     title="Edit Part Interchange"
                                                   >
@@ -2374,6 +2594,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                                                     onClick={() =>
                                                       setDeletingInterchange({
                                                         parentId: item.id,
+                                                        siblingIds: group.entryIds,
                                                         subId: sub.id,
                                                         nama: sub.namaPart,
                                                       })
@@ -2412,260 +2633,291 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       )}
 
       {/* MODAL EDIT MASTER PART */}
-      {editingPart && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-2xl w-full p-5 shadow-2xl space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-amber-500" />
-                <h3 className="text-base font-bold text-stone-100">
-                  Edit Master Part — {editingPart.namaPart}
+      {editingGroup && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-2xl w-full max-h-[90dvh] flex flex-col shadow-2xl overflow-hidden animate-scaleUp">
+            <div className="p-5 pb-3 flex items-center justify-between border-b border-stone-800 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Edit3 className="w-5 h-5 text-amber-500 shrink-0" />
+                <h3 className="text-base font-bold text-stone-100 truncate">
+                  Edit Master Part — {editingGroup.primary.namaPart}
                 </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setEditingPart(null)}
-                className="text-stone-400 hover:text-stone-200"
+                onClick={() => setEditingGroup(null)}
+                className="text-stone-400 hover:text-stone-200 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {editError && (
-              <div className="p-3 bg-red-950/60 border border-red-800 text-red-300 rounded-lg text-xs flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                <span>{editError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* Toggle Non Unit */}
-                <div className="sm:col-span-2 flex items-center justify-between bg-stone-950/70 border border-stone-800 rounded-lg px-3 py-2">
-                  <div>
-                    <span className="font-semibold text-stone-200 block">Kategori Non Unit (Umum / Workshop)</span>
-                    <span className="text-[10px] text-stone-400">Aktifkan jika material/part ini tidak terikat nomor unit alat berat</span>
+            <form onSubmit={handleSaveEdit} className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                {editError && (
+                  <div className="p-3 bg-red-950/60 border border-red-800 text-red-300 rounded-lg text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>{editError}</span>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={
-                      (editFormData.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
-                      (editFormData.noUnit || '').toUpperCase() === NON_UNIT_CODE
-                    }
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setEditFormData({
-                          ...editFormData,
-                          unitId: NON_UNIT_CODE,
-                          jenisUnit: NON_UNIT_JENIS,
-                          noUnit: NON_UNIT_CODE,
-                          namaAlat: 'Non Unit / Material Umum',
-                          modelUnit: '-',
-                        });
-                      } else {
-                        setEditFormData({
-                          ...editFormData,
-                          jenisUnit: editingPart.jenisUnit === NON_UNIT_JENIS ? '' : editingPart.jenisUnit,
-                          noUnit: editingPart.noUnit === NON_UNIT_CODE ? '' : editingPart.noUnit,
-                        });
-                      }
-                    }}
-                    className="w-4 h-4 accent-amber-500 cursor-pointer"
-                  />
-                </div>
+                )}
 
-                {/* No Unit & Jenis */}
-                <div>
-                  <label className="block text-stone-400 mb-1">No Unit</label>
-                  <input
-                    type="text"
-                    value={editFormData.noUnit || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, noUnit: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
-                    required
-                  />
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  {editingGroup.entryIds.length > 1 ? (
+                    <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 bg-stone-950/70 border border-stone-800 rounded-lg px-3 py-2.5">
+                      <div>
+                        <span className="font-semibold text-stone-200 block">
+                          Reff Unit Cakupan PN Ini
+                        </span>
+                        <span className="text-[10px] text-stone-400">
+                          Perubahan spesifikasi akan diterapkan ke seluruh unit terkait
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenUnitDetailModal(editingGroup)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md border border-stone-700 bg-stone-900 hover:bg-stone-800 text-amber-300 font-mono text-xs font-semibold whitespace-nowrap"
+                      >
+                        <Truck className="w-3.5 h-3.5" />
+                        <span>{editingGroup.unitSummaryLabel}</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Toggle Non Unit */}
+                      <div className="sm:col-span-2 flex items-center justify-between bg-stone-950/70 border border-stone-800 rounded-lg px-3 py-2">
+                        <div>
+                          <span className="font-semibold text-stone-200 block">Kategori Non Unit (Umum / Workshop)</span>
+                          <span className="text-[10px] text-stone-400">Aktifkan jika material/part ini tidak terikat nomor unit alat berat</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={
+                            (editFormData.jenisUnit || '').toLowerCase() === NON_UNIT_JENIS.toLowerCase() ||
+                            (editFormData.noUnit || '').toUpperCase() === NON_UNIT_CODE
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditFormData({
+                                ...editFormData,
+                                unitId: NON_UNIT_CODE,
+                                jenisUnit: NON_UNIT_JENIS,
+                                noUnit: NON_UNIT_CODE,
+                                namaAlat: 'Non Unit / Material Umum',
+                                modelUnit: '-',
+                              });
+                            } else {
+                              setEditFormData({
+                                ...editFormData,
+                                jenisUnit:
+                                  editingGroup.primary.jenisUnit === NON_UNIT_JENIS
+                                    ? ''
+                                    : editingGroup.primary.jenisUnit,
+                                noUnit:
+                                  editingGroup.primary.noUnit === NON_UNIT_CODE
+                                    ? ''
+                                    : editingGroup.primary.noUnit,
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 accent-amber-500 cursor-pointer"
+                        />
+                      </div>
 
-                <div>
-                  <label className="block text-stone-400 mb-1">Jenis Unit</label>
-                  <input
-                    type="text"
-                    value={editFormData.jenisUnit || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, jenisUnit: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                    required
-                  />
-                </div>
+                      {/* No Unit & Jenis */}
+                      <div>
+                        <label className="block text-stone-400 mb-1">No Unit</label>
+                        <input
+                          type="text"
+                          value={editFormData.noUnit || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, noUnit: e.target.value })}
+                          className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
+                          required
+                        />
+                      </div>
 
-                {/* No Urut */}
-                <div>
-                  <label className="block text-stone-400 mb-1">No Urut</label>
-                  <input
-                    type="number"
-                    value={editFormData.noUrut || 1}
-                    onChange={(e) => setEditFormData({ ...editFormData, noUrut: Number(e.target.value) })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
-                  />
-                </div>
+                      <div>
+                        <label className="block text-stone-400 mb-1">Jenis Unit</label>
+                        <input
+                          type="text"
+                          value={editFormData.jenisUnit || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, jenisUnit: e.target.value })}
+                          className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                          required
+                        />
+                      </div>
+                    </>
+                  )}
 
-                {/* Kategori Part */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Kategori Part</label>
-                  <select
-                    value={editFormData.kategori}
-                    onChange={(e) => setEditFormData({ ...editFormData, kategori: e.target.value as MasterPartKategori })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  >
-                    {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Jenis Part */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Jenis Part</label>
-                  <select
-                    value={editFormData.jenisPart}
-                    onChange={(e) => setEditFormData({ ...editFormData, jenisPart: e.target.value as MasterPartJenis })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  >
-                    {MASTER_PART_JENIS_OPTIONS.map((j) => (
-                      <option key={j} value={j}>
-                        {j}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Merk Part */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Merk Part</label>
-                  <input
-                    type="text"
-                    value={editFormData.merk || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, merk: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  />
-                </div>
-
-                {/* Fungsi */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Fungsi</label>
-                  <select
-                    value={editFormData.fungsi}
-                    onChange={(e) => setEditFormData({ ...editFormData, fungsi: e.target.value as MasterPartFungsi })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  >
-                    {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* PN */}
-                <div>
-                  <label className="block text-stone-400 mb-1">Part Number (PN)</label>
-                  <input
-                    type="text"
-                    value={editFormData.pn || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, pn: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-amber-400 rounded p-2 font-mono"
-                  />
-                </div>
-
-                {/* Nama Part */}
-                <div className="sm:col-span-2">
-                  <label className="block text-stone-400 mb-1">Nama Part</label>
-                  <input
-                    type="text"
-                    value={editFormData.namaPart || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, namaPart: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-100 rounded p-2 font-medium"
-                    required
-                  />
-                </div>
-
-                {/* Qty, Min Stock & Satuan */}
-                <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-3">
+                  {/* No Urut */}
                   <div>
-                    <label className="block text-stone-400 mb-1">Qty</label>
+                    <label className="block text-stone-400 mb-1">No Urut</label>
                     <input
                       type="number"
-                      value={editFormData.qty || 1}
-                      onChange={(e) => setEditFormData({ ...editFormData, qty: Math.max(1, Number(e.target.value)) })}
+                      value={editFormData.noUrut || 1}
+                      onChange={(e) => setEditFormData({ ...editFormData, noUrut: Number(e.target.value) })}
                       className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
-                      min="1"
                     />
                   </div>
 
+                  {/* Kategori Part */}
                   <div>
-                    <label className="block text-stone-400 mb-1">Min Stock</label>
-                    <input
-                      type="number"
-                      value={editFormData.minStock ?? 0}
-                      onChange={(e) =>
-                        setEditFormData({
-                          ...editFormData,
-                          minStock: Math.max(0, Number(e.target.value) || 0),
-                        })
-                      }
-                      className="w-full bg-stone-950 border border-stone-700 text-amber-300 rounded p-2 font-mono"
-                      min="0"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-stone-400 mb-1">Satuan</label>
-                    <input
-                      type="text"
-                      value={editFormData.satuan || 'Pcs'}
-                      onChange={(e) => setEditFormData({ ...editFormData, satuan: e.target.value })}
-                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-stone-400 mb-1">Tipe Part</label>
+                    <label className="block text-stone-400 mb-1">Kategori Part</label>
                     <select
-                      value={editFormData.partRelationType || 'In Line'}
-                      onChange={(e) =>
-                        setEditFormData({
-                          ...editFormData,
-                          partRelationType: e.target.value as MasterPartRelationType,
-                        })
-                      }
-                      className="w-full bg-stone-950 border border-stone-700 text-sky-300 rounded p-2"
+                      value={editFormData.kategori}
+                      onChange={(e) => setEditFormData({ ...editFormData, kategori: e.target.value as MasterPartKategori })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
                     >
-                      {MASTER_PART_RELATION_OPTIONS.map((rel) => (
-                        <option key={rel} value={rel}>
-                          {rel}
+                      {MASTER_PART_KATEGORI_OPTIONS.map((k) => (
+                        <option key={k} value={k}>
+                          {k}
                         </option>
                       ))}
                     </select>
                   </div>
-                </div>
 
-                {/* Remark */}
-                <div className="sm:col-span-2">
-                  <label className="block text-stone-400 mb-1">Remark / Keterangan</label>
-                  <input
-                    type="text"
-                    value={editFormData.remark || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, remark: e.target.value })}
-                    className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
-                  />
+                  {/* Jenis Part */}
+                  <div>
+                    <label className="block text-stone-400 mb-1">Jenis Part</label>
+                    <select
+                      value={editFormData.jenisPart}
+                      onChange={(e) => setEditFormData({ ...editFormData, jenisPart: e.target.value as MasterPartJenis })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    >
+                      {MASTER_PART_JENIS_OPTIONS.map((j) => (
+                        <option key={j} value={j}>
+                          {j}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Merk Part */}
+                  <div>
+                    <label className="block text-stone-400 mb-1">Merk Part</label>
+                    <input
+                      type="text"
+                      value={editFormData.merk || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, merk: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    />
+                  </div>
+
+                  {/* Fungsi */}
+                  <div>
+                    <label className="block text-stone-400 mb-1">Fungsi</label>
+                    <select
+                      value={editFormData.fungsi}
+                      onChange={(e) => setEditFormData({ ...editFormData, fungsi: e.target.value as MasterPartFungsi })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    >
+                      {MASTER_PART_FUNGSI_OPTIONS.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* PN */}
+                  <div>
+                    <label className="block text-stone-400 mb-1">Part Number (PN)</label>
+                    <input
+                      type="text"
+                      value={editFormData.pn || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, pn: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-amber-400 rounded p-2 font-mono"
+                    />
+                  </div>
+
+                  {/* Nama Part */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-stone-400 mb-1">Nama Part</label>
+                    <input
+                      type="text"
+                      value={editFormData.namaPart || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, namaPart: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-100 rounded p-2 font-medium"
+                      required
+                    />
+                  </div>
+
+                  {/* Qty, Min Stock & Satuan */}
+                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-stone-400 mb-1">Qty</label>
+                      <input
+                        type="number"
+                        value={editFormData.qty || 1}
+                        onChange={(e) => setEditFormData({ ...editFormData, qty: Math.max(1, Number(e.target.value)) })}
+                        className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2 font-mono"
+                        min="1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-400 mb-1">Min Stock</label>
+                      <input
+                        type="number"
+                        value={editFormData.minStock ?? 0}
+                        onChange={(e) =>
+                          setEditFormData({
+                            ...editFormData,
+                            minStock: Math.max(0, Number(e.target.value) || 0),
+                          })
+                        }
+                        className="w-full bg-stone-950 border border-stone-700 text-amber-300 rounded p-2 font-mono"
+                        min="0"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-400 mb-1">Satuan</label>
+                      <input
+                        type="text"
+                        value={editFormData.satuan || 'Pcs'}
+                        onChange={(e) => setEditFormData({ ...editFormData, satuan: e.target.value })}
+                        className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-stone-400 mb-1">Tipe Part</label>
+                      <select
+                        value={editFormData.partRelationType || 'In Line'}
+                        onChange={(e) =>
+                          setEditFormData({
+                            ...editFormData,
+                            partRelationType: e.target.value as MasterPartRelationType,
+                          })
+                        }
+                        className="w-full bg-stone-950 border border-stone-700 text-sky-300 rounded p-2"
+                      >
+                        {MASTER_PART_RELATION_OPTIONS.map((rel) => (
+                          <option key={rel} value={rel}>
+                            {rel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Remark */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-stone-400 mb-1">Remark / Keterangan</label>
+                    <input
+                      type="text"
+                      value={editFormData.remark || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, remark: e.target.value })}
+                      className="w-full bg-stone-950 border border-stone-700 text-stone-200 rounded p-2"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-stone-800">
+              <div className="px-5 py-3 flex justify-end gap-2 border-t border-stone-800 bg-stone-900 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setEditingPart(null)}
+                  onClick={() => setEditingGroup(null)}
                   className="px-4 py-2 text-xs text-stone-400 hover:text-stone-200"
                 >
                   Batal
@@ -2743,7 +2995,7 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
                   {isNonUnitSelected
                     ? 'Non Unit (NON-UNIT)'
                     : checkedUnits.length > 0
-                    ? checkedUnits.map((u) => u.cnNew).join(', ')
+                    ? `${checkedUnits.length} Unit (${checkedUnits[0].cnNew}${checkedUnits.length > 1 ? ` +${checkedUnits.length - 1}` : ''})`
                     : 'Semua Unit'}
                 </strong>
               </span>
@@ -3006,20 +3258,23 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
       )}
 
       {/* MODAL KONFIRMASI HAPUS MASTER PART */}
-      {deletingPart && (
+      {deletingGroup && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-stone-900 border border-stone-800 rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
             <AlertTriangle className="w-10 h-10 text-red-500 mx-auto" />
             <div>
               <h4 className="text-sm font-bold text-stone-100">Hapus Master Part?</h4>
               <p className="text-xs text-stone-400 mt-1">
-                Yakin ingin menghapus master part <strong className="text-stone-200">&ldquo;{deletingPart.nama}&rdquo;</strong>?
+                Yakin ingin menghapus master part{' '}
+                <strong className="text-stone-200">&ldquo;{deletingGroup.nama}&rdquo;</strong>{' '}
+                (PN: <span className="font-mono text-amber-400">{deletingGroup.pn}</span>) dari{' '}
+                <strong className="text-stone-200">{deletingGroup.unitCount} reff unit</strong>?
               </p>
             </div>
             <div className="flex justify-center gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setDeletingPart(null)}
+                onClick={() => setDeletingGroup(null)}
                 className="px-4 py-2 text-xs text-stone-300 bg-stone-800 hover:bg-stone-700 rounded-lg"
               >
                 Batal
@@ -3035,6 +3290,18 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
           </div>
         </div>
       )}
+
+      {/* MODAL DETAIL REFF UNIT (KLIK DARI RINGKASAN UNIT) */}
+      <UnitRefDetailModal
+        isOpen={unitModalState.isOpen}
+        onClose={() => setUnitModalState((prev) => ({ ...prev, isOpen: false }))}
+        title={unitModalState.title}
+        subtitle={unitModalState.subtitle}
+        entries={unitModalState.entries}
+        showStockColumns={true}
+        canRemoveEntry={canDelete && unitModalState.entries.length > 1}
+        onRemoveEntry={handleRemoveSingleUnitFromModal}
+      />
     </div>
   );
 };

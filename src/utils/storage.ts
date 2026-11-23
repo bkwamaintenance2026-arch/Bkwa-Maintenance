@@ -5997,6 +5997,46 @@ export function deleteGreaseDistributionRecord(id: string): { success: boolean; 
 // --- MODUL 8: MASTER PART & MATERIAL KATALOG ---
 // ==========================================
 
+export function getNormalizedMasterPartKey(part: { pn?: string; namaPart?: string }): string {
+  const rawPn = (part.pn || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (rawPn && rawPn !== '-') {
+    return `PN:${rawPn}`;
+  }
+  const rawName = (part.namaPart || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return `NAME:${rawName || 'untitled'}`;
+}
+
+function getNormalizedMasterPartUnitKey(part: { unitId?: string; noUnit?: string }): string {
+  const noUnit = (part.noUnit || '').trim().toUpperCase();
+  if (noUnit) return noUnit;
+  return (part.unitId || 'ALL').trim().toUpperCase();
+}
+
+function mergeInterchangeLists(
+  lists: Array<MasterPartInterchangeItem[] | undefined>
+): MasterPartInterchangeItem[] {
+  const merged: MasterPartInterchangeItem[] = [];
+  const seenKeys = new Set<string>();
+
+  lists.forEach((list) => {
+    if (!Array.isArray(list)) return;
+    list.forEach((sub) => {
+      if (!sub) return;
+      const pnKey = (sub.pn || '').trim().toUpperCase();
+      const nameKey = (sub.namaPart || '').trim().toLowerCase();
+      const dedupKey = `${pnKey !== '-' && pnKey ? pnKey : ''}::${nameKey}`;
+      if (seenKeys.has(dedupKey)) return;
+      seenKeys.add(dedupKey);
+      merged.push({
+        ...sub,
+        noUrut: merged.length + 1,
+      });
+    });
+  });
+
+  return merged;
+}
+
 export function getAllMasterParts(): MasterPartItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.MASTER_PARTS);
@@ -6016,6 +6056,197 @@ export function saveAllMasterParts(list: MasterPartItem[]): void {
   } catch (e) {
     console.error('Error saving master parts to storage:', e);
   }
+}
+
+/**
+ * Mengonsolidasikan data Master Part lama secara otomatis saat tab dibuka:
+ * 1. Menggabungkan entri ganda yang memiliki PN & No Unit yang sama.
+ * 2. Menyatukan sub-part Interchange di seluruh unit dengan PN yang sama.
+ * 3. Memperbarui referensi masterPartId pada Paket RPL agar tidak terputus.
+ */
+export function consolidateLegacyMasterParts(): {
+  mergedCount: number;
+  updatedRplCount: number;
+} {
+  const currentList = getAllMasterParts();
+  if (currentList.length === 0) {
+    return { mergedCount: 0, updatedRplCount: 0 };
+  }
+
+  const now = new Date().toISOString();
+  const byPnAndUnit = new Map<string, MasterPartItem[]>();
+
+  currentList.forEach((item) => {
+    const pnKey = getNormalizedMasterPartKey(item);
+    const unitKey = getNormalizedMasterPartUnitKey(item);
+    const compositeKey = `${pnKey}__UNIT__${unitKey}`;
+    const arr = byPnAndUnit.get(compositeKey) || [];
+    arr.push(item);
+    byPnAndUnit.set(compositeKey, arr);
+  });
+
+  const idRemap = new Map<string, string>();
+  const duplicatesToDelete: MasterPartItem[] = [];
+  const unitDeduplicatedList: MasterPartItem[] = [];
+  let hasChanges = false;
+
+  byPnAndUnit.forEach((group) => {
+    if (group.length === 1) {
+      unitDeduplicatedList.push(group[0]);
+      return;
+    }
+
+    hasChanges = true;
+    const sorted = [...group].sort((a, b) => {
+      const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      return tB - tA;
+    });
+
+    const canonical = { ...sorted[0] };
+    const mergedSubs = mergeInterchangeLists(sorted.map((s) => s.interchangeParts));
+    const hasInterchangeType =
+      sorted.some((s) => s.partRelationType === 'Interchange') || mergedSubs.length > 0;
+    const bestMinStock = Math.max(0, ...sorted.map((s) => Number(s.minStock ?? 0) || 0));
+    const firstNonEmptyRemark = sorted.find((s) => (s.remark || '').trim())?.remark || '';
+
+    canonical.interchangeParts = mergedSubs;
+    canonical.partRelationType = hasInterchangeType ? 'Interchange' : 'In Line';
+    canonical.minStock = bestMinStock;
+    canonical.remark = canonical.remark || firstNonEmptyRemark;
+    canonical.updatedAt = now;
+
+    unitDeduplicatedList.push(canonical);
+
+    sorted.slice(1).forEach((dup) => {
+      idRemap.set(dup.id, canonical.id);
+      duplicatesToDelete.push(dup);
+    });
+  });
+
+  // Pastikan seluruh record dengan PN yang sama memiliki daftar Interchange yang sinkron
+  const subsByPnKey = new Map<string, MasterPartInterchangeItem[]>();
+  const isInterchangePn = new Set<string>();
+  const byPnBuckets = new Map<string, MasterPartItem[]>();
+
+  unitDeduplicatedList.forEach((item) => {
+    const pnKey = getNormalizedMasterPartKey(item);
+    const arr = byPnBuckets.get(pnKey) || [];
+    arr.push(item);
+    byPnBuckets.set(pnKey, arr);
+  });
+
+  byPnBuckets.forEach((bucket, pnKey) => {
+    const mergedSubs = mergeInterchangeLists(bucket.map((b) => b.interchangeParts));
+    subsByPnKey.set(pnKey, mergedSubs);
+    if (bucket.some((b) => b.partRelationType === 'Interchange') || mergedSubs.length > 0) {
+      isInterchangePn.add(pnKey);
+    }
+  });
+
+  const updatedCanonicalIds = new Set<string>();
+  const finalMasterList = unitDeduplicatedList.map((item) => {
+    const pnKey = getNormalizedMasterPartKey(item);
+    const expectedSubs = subsByPnKey.get(pnKey) || [];
+    const expectedRel: MasterPartRelationType = isInterchangePn.has(pnKey) ? 'Interchange' : 'In Line';
+    const currentSubs = item.interchangeParts || [];
+    const currentRel: MasterPartRelationType = item.partRelationType || 'In Line';
+
+    if (
+      currentRel !== expectedRel ||
+      currentSubs.length !== expectedSubs.length
+    ) {
+      hasChanges = true;
+      updatedCanonicalIds.add(item.id);
+      return {
+        ...item,
+        partRelationType: expectedRel,
+        interchangeParts: expectedSubs,
+        updatedAt: now,
+      };
+    }
+    return item;
+  });
+
+  if (!hasChanges && duplicatesToDelete.length === 0) {
+    return { mergedCount: 0, updatedRplCount: 0 };
+  }
+
+  saveAllMasterParts(finalMasterList);
+
+  // Hapus duplikat dari Firestore dan sinkronkan record yang diperbarui
+  duplicatesToDelete.forEach((dup) => {
+    deleteItemFromFirestore('master_parts', dup.id, dup);
+  });
+  finalMasterList.forEach((rec) => {
+    if (
+      updatedCanonicalIds.has(rec.id) ||
+      Array.from(idRemap.values()).includes(rec.id)
+    ) {
+      syncItemToFirestore('master_parts', rec.id, rec);
+    }
+  });
+
+  // Perbarui referensi masterPartId di Paket RPL jika menunjuk ke ID lama yang sudah digabung
+  let updatedRplCount = 0;
+  if (idRemap.size > 0) {
+    const rplList = getAllRplPackages();
+    let rplChanged = false;
+    const finalMasterMap = new Map<string, MasterPartItem>();
+    finalMasterList.forEach((m) => finalMasterMap.set(m.id, m));
+
+    const nextRplList = rplList.map((pkg) => {
+      let pkgDirty = false;
+      const seenItemPnKeys = new Set<string>();
+      const nextItems: RplPackageItem[] = [];
+
+      pkg.items.forEach((item) => {
+        const mappedId = idRemap.get(item.masterPartId) || item.masterPartId;
+        if (mappedId !== item.masterPartId) {
+          pkgDirty = true;
+        }
+        const liveMaster = finalMasterMap.get(mappedId);
+        const pnKey = getNormalizedMasterPartKey({
+          pn: liveMaster?.pn || item.pn,
+          namaPart: liveMaster?.namaPart || item.namaPart,
+        });
+        if (seenItemPnKeys.has(pnKey)) {
+          pkgDirty = true;
+          return;
+        }
+        seenItemPnKeys.add(pnKey);
+        nextItems.push({
+          ...item,
+          masterPartId: mappedId,
+        });
+      });
+
+      if (pkgDirty) {
+        rplChanged = true;
+        updatedRplCount++;
+        const updatedPkg = { ...pkg, items: nextItems, updatedAt: now };
+        syncItemToFirestore('rpl_packages', updatedPkg.id, updatedPkg);
+        return updatedPkg;
+      }
+      return pkg;
+    });
+
+    if (rplChanged) {
+      saveAllRplPackages(nextRplList);
+    }
+  }
+
+  if (duplicatesToDelete.length > 0) {
+    logActivity({
+      aksi: 'UPDATE',
+      keterangan: `Konsolidasi otomatis Master Part: ${duplicatesToDelete.length} entri duplikat PN digabungkan.`,
+    });
+  }
+
+  return {
+    mergedCount: duplicatesToDelete.length,
+    updatedRplCount,
+  };
 }
 
 export function addOrUpdateMasterPart(
@@ -6082,6 +6313,90 @@ export function addOrUpdateMasterPart(
   };
 }
 
+export function updateMasterPartGroupSpecs(
+  ids: string[],
+  updates: {
+    noUrut?: number;
+    kategori: MasterPartKategori;
+    jenisPart: MasterPartJenis;
+    merk: string;
+    fungsi: MasterPartFungsi;
+    namaPart: string;
+    pn: string;
+    qty: number;
+    minStock: number;
+    satuan: string;
+    partRelationType: MasterPartRelationType;
+    remark: string;
+    noUnit?: string;
+    jenisUnit?: string;
+    unitId?: string;
+    namaAlat?: string;
+    modelUnit?: string;
+  }
+): { success: boolean; message: string; updatedCount: number } {
+  const idSet = new Set(ids);
+  if (idSet.size === 0) {
+    return { success: false, message: 'Tidak ada item Master Part dipilih.', updatedCount: 0 };
+  }
+
+  const currentList = getAllMasterParts();
+  const now = new Date().toISOString();
+  const updatedRecords: MasterPartItem[] = [];
+  const isSingleTarget = idSet.size === 1;
+
+  const nextList = currentList.map((item) => {
+    if (!idSet.has(item.id)) return item;
+    const updated: MasterPartItem = {
+      ...item,
+      noUrut: updates.noUrut ?? item.noUrut,
+      kategori: updates.kategori,
+      jenisPart: updates.jenisPart,
+      merk: updates.merk,
+      fungsi: updates.fungsi,
+      namaPart: updates.namaPart,
+      pn: updates.pn,
+      qty: Math.max(1, Number(updates.qty) || 1),
+      minStock: Math.max(0, Number(updates.minStock ?? 0) || 0),
+      satuan: updates.satuan || 'Pcs',
+      partRelationType: updates.partRelationType,
+      remark: updates.remark,
+      ...(isSingleTarget && updates.noUnit !== undefined
+        ? {
+            noUnit: updates.noUnit,
+            jenisUnit: updates.jenisUnit ?? item.jenisUnit,
+            unitId: updates.unitId ?? item.unitId,
+            namaAlat: updates.namaAlat ?? item.namaAlat,
+            modelUnit: updates.modelUnit ?? item.modelUnit,
+          }
+        : {}),
+      updatedAt: now,
+    };
+    updatedRecords.push(updated);
+    return updated;
+  });
+
+  if (updatedRecords.length === 0) {
+    return { success: false, message: 'Data Master Part tidak ditemukan!', updatedCount: 0 };
+  }
+
+  saveAllMasterParts(nextList);
+  updatedRecords.forEach((rec) => {
+    syncItemToFirestore('master_parts', rec.id, rec);
+  });
+
+  logActivity({
+    aksi: 'UPDATE',
+    keterangan: `Update Grup Master Part: ${updates.namaPart} (PN: ${updates.pn}) pada ${updatedRecords.length} reff unit`,
+  });
+
+  return {
+    success: true,
+    message: `Data part "${updates.namaPart}" berhasil diperbarui pada ${updatedRecords.length} unit terkait.`,
+    updatedCount: updatedRecords.length,
+  };
+}
+
 export function batchAddMasterParts(
   items: Omit<MasterPartItem, 'id' | 'createdAt' | 'updatedAt'>[]
 ): { success: boolean; message: string; count: number } {
@@ -6089,12 +6404,24 @@ export function batchAddMasterParts(
     return { success: false, message: 'Tidak ada data part yang dikirimkan.', count: 0 };
   }
 
-  const currentList = getAllMasterParts();
+  const currentList = [...getAllMasterParts()];
   const now = new Date().toISOString();
-  let addedCount = 0;
+  let addedOrUpdatedCount = 0;
 
-  const newRecords: MasterPartItem[] = items.map((item, idx) => {
-    addedCount++;
+  // Map index lookup agar PN + Unit yang sudah ada di-update (upsert), bukan digandakan
+  const existingIndexByComposite = new Map<string, number>();
+  currentList.forEach((rec, i) => {
+    const key = `${getNormalizedMasterPartKey(rec)}__UNIT__${getNormalizedMasterPartUnitKey(rec)}`;
+    if (!existingIndexByComposite.has(key)) {
+      existingIndexByComposite.set(key, i);
+    }
+  });
+
+  const newlyCreated: MasterPartItem[] = [];
+  const touchedRecords: MasterPartItem[] = [];
+
+  items.forEach((item, idx) => {
+    addedOrUpdatedCount++;
     const normalizedInterchange: MasterPartInterchangeItem[] = Array.isArray(item.interchangeParts)
       ? item.interchangeParts.map((sub, subIdx) => ({
           ...sub,
@@ -6107,34 +6434,61 @@ export function batchAddMasterParts(
         }))
       : [];
 
-    return {
-      ...item,
-      minStock: Math.max(0, Number(item.minStock ?? 0) || 0),
-      partRelationType: (item.partRelationType || 'In Line') as MasterPartRelationType,
-      interchangeParts: normalizedInterchange,
-      id: `MPART-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const compositeKey = `${getNormalizedMasterPartKey(item)}__UNIT__${getNormalizedMasterPartUnitKey(item)}`;
+    const existingIdx = existingIndexByComposite.get(compositeKey);
+
+    if (existingIdx !== undefined) {
+      const existing = currentList[existingIdx];
+      const mergedSubs = mergeInterchangeLists([existing.interchangeParts, normalizedInterchange]);
+      const updated: MasterPartItem = {
+        ...existing,
+        ...item,
+        minStock: Math.max(0, Number(item.minStock ?? existing.minStock ?? 0) || 0),
+        partRelationType:
+          item.partRelationType === 'Interchange' ||
+          existing.partRelationType === 'Interchange' ||
+          mergedSubs.length > 0
+            ? 'Interchange'
+            : 'In Line',
+        interchangeParts: mergedSubs,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: now,
+      };
+      currentList[existingIdx] = updated;
+      touchedRecords.push(updated);
+    } else {
+      const newRec: MasterPartItem = {
+        ...item,
+        minStock: Math.max(0, Number(item.minStock ?? 0) || 0),
+        partRelationType: (item.partRelationType || 'In Line') as MasterPartRelationType,
+        interchangeParts: normalizedInterchange,
+        id: `MPART-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+      newlyCreated.push(newRec);
+      touchedRecords.push(newRec);
+    }
   });
 
-  const merged = [...newRecords, ...currentList];
+  const merged = [...newlyCreated, ...currentList];
   saveAllMasterParts(merged);
 
   // Sync to firestore in background
-  newRecords.forEach((rec) => {
+  touchedRecords.forEach((rec) => {
     syncItemToFirestore('master_parts', rec.id, rec);
   });
 
   logActivity({
     aksi: 'REGISTRASI',
-    keterangan: `Batch Tambah Master Part: ${addedCount} item part berhasil ditambahkan`,
+    keterangan: `Batch Simpan Master Part: ${addedOrUpdatedCount} entri unit part disimpan`,
   });
 
   return {
     success: true,
-    message: `Berhasil menambahkan ${addedCount} item Master Part sekaligus!`,
-    count: addedCount,
+    message: `Berhasil menyimpan ${addedOrUpdatedCount} entri unit Master Part!`,
+    count: addedOrUpdatedCount,
   };
 }
 
@@ -6157,16 +6511,52 @@ export function deleteMasterPart(id: string): { success: boolean; message: strin
 
   return {
     success: true,
-    message: `Master Part [${target.namaPart}] berhasil dihapus!`,
+    message: `Master Part [${target.namaPart}] pada unit ${target.noUnit} berhasil dihapus!`,
+  };
+}
+
+export function deleteMasterPartGroup(ids: string[]): {
+  success: boolean;
+  message: string;
+  deletedCount: number;
+} {
+  const idSet = new Set(ids);
+  if (idSet.size === 0) {
+    return { success: false, message: 'Tidak ada item yang dipilih untuk dihapus.', deletedCount: 0 };
+  }
+  const currentList = getAllMasterParts();
+  const targets = currentList.filter((p) => idSet.has(p.id));
+  if (targets.length === 0) {
+    return { success: false, message: 'Item Master Part tidak ditemukan!', deletedCount: 0 };
+  }
+
+  const filtered = currentList.filter((p) => !idSet.has(p.id));
+  saveAllMasterParts(filtered);
+  targets.forEach((t) => {
+    deleteItemFromFirestore('master_parts', t.id, t);
+  });
+
+  const sample = targets[0];
+  logActivity({
+    aksi: 'HAPUS',
+    keterangan: `Hapus Master Part: ${sample.namaPart} (PN: ${sample.pn}) beserta ${targets.length} reff unit`,
+  });
+
+  return {
+    success: true,
+    message: `Master Part [${sample.namaPart}] (${targets.length} reff unit) berhasil dihapus!`,
+    deletedCount: targets.length,
   };
 }
 
 export function addOrUpdateMasterPartInterchange(
   parentId: string,
   subData: Omit<MasterPartInterchangeItem, 'id' | 'createdAt' | 'updatedAt'>,
-  subIdToEdit?: string
+  subIdToEdit?: string,
+  siblingIds?: string[]
 ): { success: boolean; message: string; record?: MasterPartItem } {
   const currentList = getAllMasterParts();
+  const targetIdSet = new Set<string>([parentId, ...(siblingIds || [])]);
   const parentIndex = currentList.findIndex((p) => p.id === parentId);
   if (parentIndex === -1) {
     return { success: false, message: 'Part induk Master Part tidak ditemukan!' };
@@ -6175,6 +6565,7 @@ export function addOrUpdateMasterPartInterchange(
   const parent = currentList[parentIndex];
   const existingSubs = Array.isArray(parent.interchangeParts) ? [...parent.interchangeParts] : [];
   const now = new Date().toISOString();
+  const targetSub = subIdToEdit ? existingSubs.find((s) => s.id === subIdToEdit) : undefined;
 
   if (subIdToEdit) {
     const subIdx = existingSubs.findIndex((s) => s.id === subIdToEdit);
@@ -6201,16 +6592,84 @@ export function addOrUpdateMasterPartInterchange(
     existingSubs.push(newSub);
   }
 
-  const updatedParent: MasterPartItem = {
-    ...parent,
-    partRelationType: 'Interchange',
-    interchangeParts: existingSubs,
-    updatedAt: now,
-  };
+  const oldSubPn = (targetSub?.pn || '').trim().toUpperCase();
+  const oldSubName = (targetSub?.namaPart || '').trim().toLowerCase();
 
-  currentList[parentIndex] = updatedParent;
-  saveAllMasterParts(currentList);
-  syncItemToFirestore('master_parts', updatedParent.id, updatedParent);
+  const updatedRecords: MasterPartItem[] = [];
+  const nextList = currentList.map((rec) => {
+    if (!targetIdSet.has(rec.id)) return rec;
+    if (rec.id === parentId) {
+      const updatedParent: MasterPartItem = {
+        ...rec,
+        partRelationType: 'Interchange',
+        interchangeParts: existingSubs,
+        updatedAt: now,
+      };
+      updatedRecords.push(updatedParent);
+      return updatedParent;
+    }
+
+    // Sinkronkan juga sub-part ke record unit saudara dengan PN yang sama
+    const siblingSubs = Array.isArray(rec.interchangeParts) ? [...rec.interchangeParts] : [];
+    if (subIdToEdit) {
+      const matchIdx = siblingSubs.findIndex(
+        (s) =>
+          s.id === subIdToEdit ||
+          ((s.pn || '').trim().toUpperCase() === oldSubPn &&
+            (s.namaPart || '').trim().toLowerCase() === oldSubName)
+      );
+      if (matchIdx !== -1) {
+        siblingSubs[matchIdx] = {
+          ...siblingSubs[matchIdx],
+          ...subData,
+          qty: Number(subData.qty) || 1,
+          minStock: Math.max(0, Number(subData.minStock ?? 0) || 0),
+          updatedAt: now,
+        };
+      } else {
+        siblingSubs.push({
+          ...subData,
+          id: `MPINT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+          noUrut: siblingSubs.length + 1,
+          qty: Number(subData.qty) || 1,
+          minStock: Math.max(0, Number(subData.minStock ?? 0) || 0),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    } else {
+      const existsAlready = siblingSubs.some(
+        (s) =>
+          (s.pn || '').trim().toUpperCase() === (subData.pn || '').trim().toUpperCase() &&
+          (s.namaPart || '').trim().toLowerCase() === (subData.namaPart || '').trim().toLowerCase()
+      );
+      if (!existsAlready) {
+        siblingSubs.push({
+          ...subData,
+          id: `MPINT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+          noUrut: siblingSubs.length + 1,
+          qty: Number(subData.qty) || 1,
+          minStock: Math.max(0, Number(subData.minStock ?? 0) || 0),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    const updatedSibling: MasterPartItem = {
+      ...rec,
+      partRelationType: 'Interchange',
+      interchangeParts: siblingSubs,
+      updatedAt: now,
+    };
+    updatedRecords.push(updatedSibling);
+    return updatedSibling;
+  });
+
+  saveAllMasterParts(nextList);
+  updatedRecords.forEach((rec) => {
+    syncItemToFirestore('master_parts', rec.id, rec);
+  });
 
   logActivity({
     aksi: subIdToEdit ? 'UPDATE' : 'REGISTRASI',
@@ -6223,13 +6682,14 @@ export function addOrUpdateMasterPartInterchange(
     message: subIdToEdit
       ? `Part Interchange [${subData.namaPart}] berhasil diperbarui!`
       : `Part Interchange [${subData.namaPart}] berhasil ditambahkan ke ${parent.namaPart}!`,
-    record: updatedParent,
+    record: updatedRecords.find((r) => r.id === parentId) || parent,
   };
 }
 
 export function deleteMasterPartInterchange(
   parentId: string,
-  subId: string
+  subId: string,
+  siblingIds?: string[]
 ): { success: boolean; message: string } {
   const currentList = getAllMasterParts();
   const parentIndex = currentList.findIndex((p) => p.id === parentId);
@@ -6244,19 +6704,42 @@ export function deleteMasterPartInterchange(
     return { success: false, message: 'Item Interchange tidak ditemukan!' };
   }
 
-  const filteredSubs = existingSubs
-    .filter((s) => s.id !== subId)
-    .map((s, idx) => ({ ...s, noUrut: idx + 1 }));
+  const targetIdSet = new Set<string>([parentId, ...(siblingIds || [])]);
+  const delPn = (targetSub.pn || '').trim().toUpperCase();
+  const delName = (targetSub.namaPart || '').trim().toLowerCase();
+  const now = new Date().toISOString();
+  const updatedRecords: MasterPartItem[] = [];
 
-  const updatedParent: MasterPartItem = {
-    ...parent,
-    interchangeParts: filteredSubs,
-    updatedAt: new Date().toISOString(),
-  };
+  const nextList = currentList.map((rec) => {
+    if (!targetIdSet.has(rec.id)) return rec;
+    const subs = Array.isArray(rec.interchangeParts) ? rec.interchangeParts : [];
+    const filteredSubs = subs
+      .filter((s) => {
+        if (s.id === subId) return false;
+        if (
+          rec.id !== parentId &&
+          (s.pn || '').trim().toUpperCase() === delPn &&
+          (s.namaPart || '').trim().toLowerCase() === delName
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((s, idx) => ({ ...s, noUrut: idx + 1 }));
 
-  currentList[parentIndex] = updatedParent;
-  saveAllMasterParts(currentList);
-  syncItemToFirestore('master_parts', updatedParent.id, updatedParent);
+    const updatedRec: MasterPartItem = {
+      ...rec,
+      interchangeParts: filteredSubs,
+      updatedAt: now,
+    };
+    updatedRecords.push(updatedRec);
+    return updatedRec;
+  });
+
+  saveAllMasterParts(nextList);
+  updatedRecords.forEach((rec) => {
+    syncItemToFirestore('master_parts', rec.id, rec);
+  });
 
   logActivity({
     aksi: 'HAPUS',

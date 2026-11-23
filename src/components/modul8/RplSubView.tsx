@@ -14,6 +14,7 @@ import {
   deleteRplPackage,
   createPurchaseRequest,
   getAllManpower,
+  getNormalizedMasterPartKey,
   isDeveloper,
   canUserInsertModule,
   canUserEditModule,
@@ -28,6 +29,7 @@ import {
 import { resolveReportSignatories } from '../../utils/reportSignatories';
 import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import { PermintaanBarangModal } from '../modul6/PermintaanBarangModal';
+import { UnitRefDetailModal, UnitRefEntry } from './UnitRefDetailModal';
 import {
   Package,
   Plus,
@@ -46,6 +48,7 @@ import {
   Lock,
   ArrowRightLeft,
   FileText,
+  Truck,
 } from 'lucide-react';
 
 interface RplSubViewProps {
@@ -97,11 +100,26 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   // Quick package caller state & Tab RPL Jenis -> Model Unit filter
   const [callerQuery, setCallerQuery] = useState('');
   const [selectedPackageId, setSelectedPackageId] = useState<string>('');
+  const [selectedSpbUnitCn, setSelectedSpbUnitCn] = useState<string>('');
+  const [highlightUnitPicker, setHighlightUnitPicker] = useState(false);
   const [tabJenisFilter, setTabJenisFilter] = useState<string>('ALL');
   const [tabModelFilter, setTabModelFilter] = useState<string>('ALL');
   const [expandedInterchangePartIds, setExpandedInterchangePartIds] = useState<
     Record<string, boolean>
   >({});
+
+  // Clickable Reff Unit detail modal state
+  const [unitRefModal, setUnitRefModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    subtitle: string;
+    entries: UnitRefEntry[];
+  }>({
+    isOpen: false,
+    title: '',
+    subtitle: '',
+    entries: [],
+  });
 
   // List search/filter
   const [listSearch, setListSearch] = useState('');
@@ -117,6 +135,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [targetModelUnit, setTargetModelUnit] = useState<string>('');
   const [packageNotes, setPackageNotes] = useState<string>('');
   const [draftItems, setDraftItems] = useState<RplPackageItem[]>([]);
+  const [builderSpbUnitCn, setBuilderSpbUnitCn] = useState<string>('');
 
   // Secondary filter on filtered Master Part catalog list inside Form RPL
   const [pickerSearch, setPickerSearch] = useState('');
@@ -174,6 +193,22 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     masterParts.forEach((p) => map.set(p.id, p));
     return map;
   }, [masterParts]);
+
+  const masterPartsByPnMap = useMemo(() => {
+    const map = new Map<string, MasterPartItem>();
+    masterParts.forEach((p) => {
+      const k = getNormalizedMasterPartKey(p);
+      if (!map.has(k)) map.set(k, p);
+    });
+    return map;
+  }, [masterParts]);
+
+  const resolveLiveMasterPart = (item: Pick<RplPackageItem, 'masterPartId' | 'pn' | 'namaPart'>): MasterPartItem | undefined => {
+    return (
+      masterPartsMap.get(item.masterPartId) ||
+      masterPartsByPnMap.get(getNormalizedMasterPartKey(item))
+    );
+  };
 
   // Lookup cepat unit berdasarkan No Unit (cnNew) dari Modul 1
   const unitByCnMap = useMemo(() => {
@@ -390,14 +425,101 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     });
   }, [packages, listIntervalFilter, listSearch, tabJenisFilter, tabModelFilter, units]);
 
-  // List Katalog Master Part Terdaftar yang sudah terfilter sesuai JENIS (#4) dan MODEL UNIT (#5)
-  const filteredMasterPickerParts = useMemo(() => {
+  // Helper buka Modal Detail Reff Unit
+  const openUnitRefModal = (
+    title: string,
+    subtitle: string,
+    matchingUnits: AssetUnit[],
+    isNonUnitFallback = false
+  ) => {
+    const entries: UnitRefEntry[] =
+      isNonUnitFallback && matchingUnits.length === 0
+        ? [
+            {
+              key: 'NON-UNIT',
+              noUnit: 'NON-UNIT',
+              jenisUnit: 'Non Unit',
+              brandMerk: 'Universal',
+              modelUnit: 'Umum / Workshop',
+              isNonUnit: true,
+            },
+          ]
+        : matchingUnits.map((u) => ({
+            key: u.id,
+            noUnit: u.cnNew || '-',
+            jenisUnit: u.jenis || '-',
+            brandMerk: u.brandMerk || '-',
+            modelUnit: u.modelUnit || '-',
+            isNonUnit: false,
+          }));
+    setUnitRefModal({
+      isOpen: true,
+      title,
+      subtitle,
+      entries,
+    });
+  };
+
+  // Sinkronkan default 1 No Unit tujuan SPB saat paket RPL aktif berubah
+  useEffect(() => {
+    setHighlightUnitPicker(false);
+    if (!activePackage) {
+      setSelectedSpbUnitCn('');
+      return;
+    }
+    const info = resolvePackageTargetInfo(activePackage);
+    if (info.jenis === 'Non Unit') {
+      setSelectedSpbUnitCn('NON-UNIT');
+    } else if (info.matchingUnits.length === 1) {
+      setSelectedSpbUnitCn(info.matchingUnits[0].cnNew);
+    } else {
+      setSelectedSpbUnitCn('');
+    }
+  }, [activePackage?.id]);
+
+  // Sinkronkan pilihan 1 No Unit di builder jika cakupan unitnya tunggal / Non Unit
+  useEffect(() => {
+    if (targetJenisUnit === 'Non Unit') {
+      setBuilderSpbUnitCn('NON-UNIT');
+    } else if (builderMatchingUnits.length === 1) {
+      setBuilderSpbUnitCn(builderMatchingUnits[0].cnNew);
+    } else {
+      setBuilderSpbUnitCn((prev) =>
+        prev && builderMatchingUnits.some((u) => u.cnNew === prev) ? prev : ''
+      );
+    }
+  }, [targetJenisUnit, targetModelUnit, builderMatchingUnits]);
+
+  // List Katalog Master Part Terdaftar yang sudah terfilter & digabung per PN unik (1 PN = 1 baris centang)
+  const groupedPickerParts = useMemo(() => {
     const matchingCnSet = new Set(
       builderMatchingUnits.map((u) => (u.cnNew || '').trim().toLowerCase()).filter(Boolean)
     );
     const hasSpecificModel = Boolean(targetModelUnit.trim() && targetModelUnit !== 'ALL');
 
-    return masterParts.filter((p) => {
+    // Kelompokkan seluruh masterParts berdasarkan PN terlebih dahulu agar Reff Unit lengkap
+    const allUnitsByPnKey = new Map<string, UnitRefEntry[]>();
+    masterParts.forEach((p) => {
+      const pnKey = getNormalizedMasterPartKey(p);
+      const arr = allUnitsByPnKey.get(pnKey) || [];
+      const unitMeta = unitByCnMap.get((p.noUnit || '').trim().toLowerCase());
+      const isNonUnit =
+        (p.jenisUnit || '').trim().toLowerCase() === 'non unit' ||
+        (p.noUnit || '').trim().toUpperCase() === 'NON-UNIT';
+      if (!arr.some((e) => e.noUnit.toUpperCase() === (p.noUnit || '').trim().toUpperCase())) {
+        arr.push({
+          key: p.id,
+          noUnit: p.noUnit || '-',
+          jenisUnit: p.jenisUnit || unitMeta?.jenis || '-',
+          brandMerk: p.brandMerk || unitMeta?.brandMerk || '-',
+          modelUnit: p.modelUnit && p.modelUnit !== '-' ? p.modelUnit : unitMeta?.modelUnit || '-',
+          isNonUnit,
+        });
+      }
+      allUnitsByPnKey.set(pnKey, arr);
+    });
+
+    const filteredRecords = masterParts.filter((p) => {
       const partJenis = (p.jenisUnit || '').trim().toLowerCase();
       const partNoUnit = (p.noUnit || '').trim().toLowerCase();
       const unitMeta = unitByCnMap.get(partNoUnit);
@@ -420,7 +542,6 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
           }
         }
       } else if (hasSpecificModel) {
-        // Semua Unit, tapi user memilih spesifik Model Unit
         const matchesModel = partModel === targetModelUnit.trim().toLowerCase();
         const matchesUnitCn = matchingCnSet.has(partNoUnit);
         if (!matchesModel && !matchesUnitCn && !(includeNonUnitInPicker && isPartNonUnit)) {
@@ -441,6 +562,43 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       }
       return true;
     });
+
+    const groupedMap = new Map<
+      string,
+      {
+        pnKey: string;
+        primary: MasterPartItem;
+        unitRefs: UnitRefEntry[];
+        unitCount: number;
+        isAllNonUnit: boolean;
+        unitSummaryLabel: string;
+      }
+    >();
+
+    filteredRecords.forEach((p) => {
+      const pnKey = getNormalizedMasterPartKey(p);
+      if (groupedMap.has(pnKey)) return;
+      const unitRefs = (allUnitsByPnKey.get(pnKey) || []).sort((a, b) =>
+        a.noUnit.localeCompare(b.noUnit)
+      );
+      const isAllNonUnit = unitRefs.length > 0 && unitRefs.every((u) => u.isNonUnit);
+      const unitCount = unitRefs.length;
+      const unitSummaryLabel = isAllNonUnit
+        ? 'NON-UNIT'
+        : unitCount === 1
+        ? unitRefs[0].noUnit
+        : `${unitCount} Unit`;
+      groupedMap.set(pnKey, {
+        pnKey,
+        primary: p,
+        unitRefs,
+        unitCount,
+        isAllNonUnit,
+        unitSummaryLabel,
+      });
+    });
+
+    return Array.from(groupedMap.values());
   }, [
     masterParts,
     targetJenisUnit,
@@ -452,11 +610,16 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     pickerKategoriFilter,
   ]);
 
-  const draftItemsMap = useMemo(() => {
+  const draftItemsByPnMap = useMemo(() => {
     const map = new Map<string, RplPackageItem>();
-    draftItems.forEach((item) => map.set(item.masterPartId, item));
+    draftItems.forEach((item) => {
+      const live = resolveLiveMasterPart(item);
+      const pnKey = getNormalizedMasterPartKey(live || item);
+      map.set(pnKey, item);
+      map.set(item.masterPartId, item);
+    });
     return map;
-  }, [draftItems]);
+  }, [draftItems, masterPartsMap, masterPartsByPnMap]);
 
   const resetBuilderForm = () => {
     setEditingPkgId(null);
@@ -467,6 +630,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setTargetModelUnit('');
     setPackageNotes('');
     setDraftItems([]);
+    setBuilderSpbUnitCn('');
     setPickerSearch('');
     setPickerKategoriFilter('ALL');
     setIncludeNonUnitInPicker(false);
@@ -496,15 +660,32 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setTargetJenisUnit(info.jenis || 'Semua Unit');
     setTargetModelUnit(info.jenis === 'Non Unit' ? '' : info.modelUnit);
     setPackageNotes(pkg.notes || '');
-    setDraftItems(pkg.items.map((item) => ({ ...item })));
+    // Pastikan item draft unik per PN
+    const seenPn = new Set<string>();
+    const dedupItems: RplPackageItem[] = [];
+    pkg.items.forEach((item) => {
+      const live = resolveLiveMasterPart(item);
+      const pnKey = getNormalizedMasterPartKey(live || item);
+      if (seenPn.has(pnKey)) return;
+      seenPn.add(pnKey);
+      dedupItems.push({ ...item });
+    });
+    setDraftItems(dedupItems);
     setShowBuilder(true);
   };
 
   const handleToggleMasterPartCheckbox = (part: MasterPartItem) => {
+    const pnKey = getNormalizedMasterPartKey(part);
     setDraftItems((prev) => {
-      const exists = prev.some((i) => i.masterPartId === part.id);
+      const exists = prev.some((i) => {
+        const live = resolveLiveMasterPart(i);
+        return i.masterPartId === part.id || getNormalizedMasterPartKey(live || i) === pnKey;
+      });
       if (exists) {
-        return prev.filter((i) => i.masterPartId !== part.id);
+        return prev.filter((i) => {
+          const live = resolveLiveMasterPart(i);
+          return i.masterPartId !== part.id && getNormalizedMasterPartKey(live || i) !== pnKey;
+        });
       }
       return [
         ...prev,
@@ -526,28 +707,38 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   };
 
   const handleToggleAllFilteredCheckboxes = () => {
-    if (filteredMasterPickerParts.length === 0) return;
-    const allFilteredChecked = filteredMasterPickerParts.every((p) =>
-      draftItemsMap.has(p.id)
+    if (groupedPickerParts.length === 0) return;
+    const allFilteredChecked = groupedPickerParts.every((g) =>
+      draftItemsByPnMap.has(g.pnKey)
     );
     if (allFilteredChecked) {
-      const filteredSet = new Set(filteredMasterPickerParts.map((p) => p.id));
-      setDraftItems((prev) => prev.filter((item) => !filteredSet.has(item.masterPartId)));
+      const filteredPnSet = new Set(groupedPickerParts.map((g) => g.pnKey));
+      setDraftItems((prev) =>
+        prev.filter((item) => {
+          const live = resolveLiveMasterPart(item);
+          return !filteredPnSet.has(getNormalizedMasterPartKey(live || item));
+        })
+      );
     } else {
       setDraftItems((prev) => {
-        const existingSet = new Set(prev.map((i) => i.masterPartId));
-        const additions: RplPackageItem[] = filteredMasterPickerParts
-          .filter((p) => !existingSet.has(p.id))
-          .map((part, idx) => ({
+        const existingPnSet = new Set(
+          prev.map((i) => {
+            const live = resolveLiveMasterPart(i);
+            return getNormalizedMasterPartKey(live || i);
+          })
+        );
+        const additions: RplPackageItem[] = groupedPickerParts
+          .filter((g) => !existingPnSet.has(g.pnKey))
+          .map((g, idx) => ({
             id: `RPLI-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-            masterPartId: part.id,
-            pn: part.pn || '-',
-            namaPart: part.namaPart,
-            merk: part.merk || 'Universal',
-            kategori: part.kategori,
-            jenisPart: part.jenisPart,
-            fungsi: part.fungsi,
-            satuan: part.satuan || 'Pcs',
+            masterPartId: g.primary.id,
+            pn: g.primary.pn || '-',
+            namaPart: g.primary.namaPart,
+            merk: g.primary.merk || 'Universal',
+            kategori: g.primary.kategori,
+            jenisPart: g.primary.jenisPart,
+            fungsi: g.primary.fungsi,
+            satuan: g.primary.satuan || 'Pcs',
             qtyNeeded: 1,
             notes: '',
           }));
@@ -556,15 +747,18 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     }
   };
 
-  const handleUpdateDraftItemByMasterId = (
-    masterPartId: string,
+  const handleUpdateDraftItemByPnKey = (
+    pnKey: string,
     field: 'qtyNeeded' | 'notes',
     value: number | string
   ) => {
     setDraftItems((prev) =>
-      prev.map((item) =>
-        item.masterPartId === masterPartId ? { ...item, [field]: value } : item
-      )
+      prev.map((item) => {
+        const live = resolveLiveMasterPart(item);
+        return getNormalizedMasterPartKey(live || item) === pnKey
+          ? { ...item, [field]: value }
+          : item;
+      })
     );
   };
 
@@ -715,7 +909,11 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     });
   };
 
-  const handleOpenCreateSpbFromPackage = (pkg: RplPackage) => {
+  const handleOpenCreateSpbFromPackage = (
+    pkg: RplPackage,
+    explicitTargetUnitCn?: string,
+    fromTableRow = false
+  ) => {
     if (!canCreateSpb) {
       setFeedback({
         type: 'error',
@@ -732,15 +930,50 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     }
 
     const info = resolvePackageTargetInfo(pkg);
-    const resolvedNoUnit =
-      info.jenis === 'Non Unit'
-        ? 'NON-UNIT'
-        : info.noUnitSummary || info.modelUnit || info.jenis || 'ALL';
+    const chosenCn = (explicitTargetUnitCn ?? '').trim();
+
+    // Jika dipanggil dari tabel daftar paket pada paket multi-unit, arahkan ke panel RPL untuk memilih 1 unit
+    if (!chosenCn && fromTableRow && info.jenis !== 'Non Unit' && info.matchingUnits.length !== 1) {
+      handleCallPackage(pkg);
+      setHighlightUnitPicker(true);
+      setFeedback({
+        type: 'error',
+        message: `Paket "${pkg.packagePn}" berlaku untuk beberapa unit. Silakan pilih 1 No Unit tujuan pada panel di atas sebelum Create SPB.`,
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Jika belum ada unit dipilih di panel, paksa pilih 1 unit (kecuali paket Non Unit atau hanya 1 unit)
+    let resolvedNoUnit = chosenCn;
+    if (!resolvedNoUnit) {
+      if (info.jenis === 'Non Unit') {
+        resolvedNoUnit = 'NON-UNIT';
+      } else if (info.matchingUnits.length === 1) {
+        resolvedNoUnit = info.matchingUnits[0].cnNew;
+      } else {
+        setHighlightUnitPicker(true);
+        setFeedback({
+          type: 'error',
+          message: 'Pilih 1 No Unit tujuan terlebih dahulu sebelum klik Create SPB!',
+        });
+        return;
+      }
+    }
+
+    setHighlightUnitPicker(false);
+    const matchedUnit =
+      resolvedNoUnit.toUpperCase() === 'NON-UNIT'
+        ? undefined
+        : unitByCnMap.get(resolvedNoUnit.toLowerCase());
+
     const resolvedNamaAlat =
-      info.modelUnit
+      resolvedNoUnit.toUpperCase() === 'NON-UNIT'
+        ? 'Non Unit / Kebutuhan Umum Workshop'
+        : matchedUnit
+        ? `${matchedUnit.namaAlat}${matchedUnit.modelUnit ? ` (${matchedUnit.modelUnit})` : ''}`
+        : info.modelUnit
         ? `${info.jenis} — Model ${info.modelUnit}`
-        : info.matchingUnits[0]
-        ? `${info.matchingUnits[0].namaAlat}${info.matchingUnits[0].modelUnit ? ` (${info.matchingUnits[0].modelUnit})` : ''}`
         : `${info.jenis || 'Service Periodic'} — ${pkg.serviceInterval}`;
 
     setSpbModalState({
@@ -749,9 +982,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       noMaintenanceOrder: `${pkg.packagePn} (${pkg.serviceInterval})`,
       noUnit: resolvedNoUnit,
       namaAlat: resolvedNamaAlat,
-      defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Paket RPL ${pkg.packagePn} (${pkg.packageName})${info.modelUnit ? ` untuk Model ${info.modelUnit}` : ''}.`,
+      defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Unit ${resolvedNoUnit} — Paket RPL ${pkg.packagePn} (${pkg.packageName}).`,
       items: pkg.items.map((item) => {
-        const live = masterPartsMap.get(item.masterPartId);
+        const live = resolveLiveMasterPart(item);
         return {
           partNumber: live?.pn || item.pn || '-',
           namaBarang: live?.namaPart || item.namaPart,
@@ -819,10 +1052,16 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     ];
 
     const info = resolvePackageTargetInfo(pkg);
-    const targetLabel = `${info.jenis}${info.modelUnit ? ` · ${info.modelUnit}` : ''}${info.noUnitSummary && info.noUnitSummary !== 'NON-UNIT' ? ` (${info.noUnitSummary})` : ''}`;
+    const targetLabel = `${info.jenis}${info.modelUnit ? ` · ${info.modelUnit}` : ''}${
+      info.jenis === 'Non Unit'
+        ? ' (NON-UNIT)'
+        : info.matchingUnits.length > 0
+        ? ` (${info.matchingUnits.length} Unit)`
+        : ''
+    }`;
 
     const rows = pkg.items.map((item, idx) => {
-      const live = masterPartsMap.get(item.masterPartId);
+      const live = resolveLiveMasterPart(item);
       const tipe = live?.partRelationType || 'In Line';
       const qtyStok = live ? live.qty : 0;
       const minStock = live ? Number(live.minStock ?? 0) : 0;
@@ -868,8 +1107,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   };
 
   const allFilteredChecked =
-    filteredMasterPickerParts.length > 0 &&
-    filteredMasterPickerParts.every((p) => draftItemsMap.has(p.id));
+    groupedPickerParts.length > 0 &&
+    groupedPickerParts.every((g) => draftItemsByPnMap.has(g.pnKey));
 
   const totalDraftQty = draftItems.reduce((a, b) => a + (Number(b.qtyNeeded) || 0), 0);
 
@@ -1016,72 +1255,63 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
               </div>
             </div>
 
-            {/* Keterangan / Hasil Filter No Unit di Bawah Pilihan Jenis & Model Unit */}
-            <div className="pt-2.5 border-t border-stone-800/80 text-xs">
+            {/* Ringkasan Filter No Unit (Klik untuk melihat daftar unit lengkap) */}
+            <div className="pt-2.5 border-t border-stone-800/80 text-xs flex flex-wrap items-center justify-between gap-2">
               {tabJenisFilter === 'Non Unit' ? (
                 <div className="text-stone-300">
                   <span className="font-semibold text-sky-300">Hasil Filter Target:</span>{' '}
-                  Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Berlaku untuk kebutuhan umum / workshop tanpa unit spesifik.
+                  Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Berlaku untuk kebutuhan umum / workshop.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-stone-300">
-                      <strong className="text-amber-400">Hasil Filter No Unit (Modul 1):</strong>{' '}
-                      {tabModelFilter !== 'ALL' ? (
-                        <>
-                          Model <strong className="text-stone-100 font-mono">{tabModelFilter}</strong>
-                          {tabJenisFilter !== 'ALL' ? ` (${tabJenisFilter})` : ''} mencakup{' '}
-                          <strong className="text-emerald-400 font-mono tabular-nums">
-                            {tabMatchingUnits.length} No Unit
-                          </strong>
-                        </>
-                      ) : tabJenisFilter !== 'ALL' ? (
-                        <>
-                          Jenis <strong className="text-stone-100">{tabJenisFilter}</strong> mencakup{' '}
-                          <strong className="text-emerald-400 font-mono tabular-nums">
-                            {tabMatchingUnits.length} No Unit
-                          </strong>{' '}
-                          <span className="text-stone-400">
-                            (Pilih Model Unit untuk menyaring ke unit dengan model yang sama)
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          Menampilkan seluruh{' '}
-                          <strong className="text-stone-100 font-mono tabular-nums">
-                            {tabMatchingUnits.length} Unit
-                          </strong>{' '}
-                          terdaftar · Pilih Jenis &amp; Model Unit untuk melihat daftar No Unit yang sama.
-                        </>
-                      )}
-                    </span>
+                <>
+                  <div className="text-stone-300">
+                    <strong className="text-amber-400">Cakupan Unit (Modul 1):</strong>{' '}
+                    {tabModelFilter !== 'ALL' ? (
+                      <>
+                        Model <strong className="text-stone-100 font-mono">{tabModelFilter}</strong>
+                        {tabJenisFilter !== 'ALL' ? ` (${tabJenisFilter})` : ''}
+                      </>
+                    ) : tabJenisFilter !== 'ALL' ? (
+                      <>
+                        Jenis <strong className="text-stone-100">{tabJenisFilter}</strong>
+                      </>
+                    ) : (
+                      <span>Semua Jenis &amp; Model Unit terdaftar</span>
+                    )}
                   </div>
 
-                  {(tabJenisFilter !== 'ALL' || tabModelFilter !== 'ALL') && (
-                    tabMatchingUnits.length === 0 ? (
-                      <p className="text-stone-500 text-[11px]">
-                        Belum ada No Unit terdaftar di Modul 1 untuk filter Jenis / Model Unit ini.
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                        {tabMatchingUnits.map((u) => (
-                          <div
-                            key={u.id}
-                            className="bg-stone-900/90 border border-stone-800 rounded-md px-2.5 py-1.5 text-[11px]"
-                          >
-                            <div className="font-mono font-bold text-amber-300 truncate">
-                              {u.cnNew}
-                            </div>
-                            <div className="text-[10px] text-stone-400 truncate">
-                              {u.modelUnit || '-'} · {u.brandMerk || u.namaAlat || '-'}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )
+                  {tabMatchingUnits.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openUnitRefModal(
+                          `Daftar No Unit — ${
+                            tabModelFilter !== 'ALL'
+                              ? tabModelFilter
+                              : tabJenisFilter !== 'ALL'
+                              ? tabJenisFilter
+                              : 'Semua Unit'
+                          }`,
+                          `${tabMatchingUnits.length} unit terdaftar di Modul 1 sesuai filter aktif`,
+                          tabMatchingUnits
+                        )
+                      }
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-stone-900 border border-stone-700 hover:border-amber-500/60 text-[11px] font-mono text-emerald-300 transition-colors"
+                    >
+                      <Truck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>
+                        {tabMatchingUnits.length === 1
+                          ? tabMatchingUnits[0].cnNew
+                          : `${tabMatchingUnits.length} No Unit`}
+                      </span>
+                      <span className="text-stone-400 text-[10px]">(Lihat Detail)</span>
+                    </button>
+                  ) : (
+                    <span className="text-stone-500 text-[11px]">
+                      0 No Unit terdaftar untuk filter ini
+                    </span>
                   )}
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -1185,15 +1415,32 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         </span>
                       </>
                     )}
-                    {activeInfo.noUnitSummary && (
-                      <>
-                        <span aria-hidden="true">·</span>
+                    <span>
+                      Reff Unit:{' '}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openUnitRefModal(
+                            `Cakupan Unit — ${activePackage.packagePn}`,
+                            `${activeInfo.jenis}${activeInfo.modelUnit ? ` · Model ${activeInfo.modelUnit}` : ''}`,
+                            activeInfo.matchingUnits,
+                            activeInfo.jenis === 'Non Unit'
+                          )
+                        }
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-stone-700 bg-stone-900 hover:border-amber-500/60 text-emerald-300 font-mono text-[11px] transition-colors"
+                      >
+                        <Truck className="w-3 h-3 text-amber-400" />
                         <span>
-                          Cakupan No Unit ({activeInfo.matchingUnits.length || (activeInfo.jenis === 'Non Unit' ? 0 : 1)}):{' '}
-                          <strong className="text-emerald-300 font-mono">{activeInfo.noUnitSummary}</strong>
+                          {activeInfo.jenis === 'Non Unit'
+                            ? 'NON-UNIT'
+                            : activeInfo.matchingUnits.length === 1
+                            ? activeInfo.matchingUnits[0].cnNew
+                            : activeInfo.matchingUnits.length > 1
+                            ? `${activeInfo.matchingUnits.length} Unit`
+                            : activeInfo.noUnitSummary || 'Semua Unit'}
                         </span>
-                      </>
-                    )}
+                      </button>
+                    </span>
                     <span aria-hidden="true">·</span>
                     <span>
                       Total Item: <strong className="text-amber-400 font-mono tabular-nums">{activePackage.items.length} Part</strong>
@@ -1234,14 +1481,66 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   </button>
 
                   {canCreateSpb && (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenCreateSpbFromPackage(activePackage)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30 transition-colors whitespace-nowrap"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Create SPB</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {activeInfo.jenis === 'Non Unit' ? (
+                        <span className="px-2.5 py-1.5 text-xs font-mono text-sky-300 bg-stone-900 border border-stone-700 rounded-lg whitespace-nowrap">
+                          Unit: NON-UNIT
+                        </span>
+                      ) : (
+                        <select
+                          value={selectedSpbUnitCn}
+                          onChange={(e) => {
+                            setSelectedSpbUnitCn(e.target.value);
+                            setHighlightUnitPicker(false);
+                          }}
+                          aria-label="Pilih 1 No Unit Tujuan SPB"
+                          className={`bg-stone-900 border text-xs font-mono rounded-lg px-2.5 py-1.5 focus:outline-none transition-all ${
+                            highlightUnitPicker
+                              ? 'border-amber-400 ring-2 ring-amber-400/70 text-amber-300 bg-amber-950/30'
+                              : selectedSpbUnitCn
+                              ? 'border-emerald-700 text-emerald-300 focus:border-amber-500'
+                              : 'border-stone-700 text-stone-200 focus:border-amber-500'
+                          }`}
+                        >
+                          <option value="">-- Pilih 1 No Unit (SPB) --</option>
+                          <option value="NON-UNIT">NON-UNIT (Umum / Workshop)</option>
+                          {activeInfo.matchingUnits.length > 0 && (
+                            <optgroup label={`Unit Sesuai Paket (${activeInfo.matchingUnits.length})`}>
+                              {activeInfo.matchingUnits.map((u) => (
+                                <option key={u.id} value={u.cnNew}>
+                                  {u.cnNew} — {u.modelUnit || u.namaAlat}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {units.some(
+                            (u) => !activeInfo.matchingUnits.some((mu) => mu.id === u.id)
+                          ) && (
+                            <optgroup label="Unit Lainnya (Modul 1)">
+                              {[...units]
+                                .filter((u) => !activeInfo.matchingUnits.some((mu) => mu.id === u.id))
+                                .sort((a, b) => (a.cnNew || '').localeCompare(b.cnNew || ''))
+                                .map((u) => (
+                                  <option key={u.id} value={u.cnNew}>
+                                    {u.cnNew} — {u.modelUnit || u.namaAlat}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleOpenCreateSpbFromPackage(activePackage, selectedSpbUnitCn, false)
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30 transition-colors whitespace-nowrap"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Create SPB</span>
+                      </button>
+                    </div>
                   )}
 
                   <button
@@ -1279,7 +1578,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   </thead>
                   <tbody className="divide-y divide-stone-800/70">
                     {activePackage.items.map((item, idx) => {
-                      const live = masterPartsMap.get(item.masterPartId);
+                      const live = resolveLiveMasterPart(item);
                       const tipe = live?.partRelationType || 'In Line';
                       const subParts = live?.interchangeParts || [];
                       const isInterchange = tipe === 'Interchange' || subParts.length > 0;
@@ -1594,69 +1893,55 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                 </div>
               </div>
 
-              {/* Keterangan / Hasil Filter No Unit Berdasarkan Model Unit yang Sama */}
-              <div className="mt-4 pt-3 border-t border-stone-800/80 text-xs space-y-2">
+              {/* Ringkasan Reff Unit Berdasarkan Model Unit (Klik untuk Detail) */}
+              <div className="mt-4 pt-3 border-t border-stone-800/80 text-xs flex flex-wrap items-center justify-between gap-2">
                 {targetJenisUnit === 'Non Unit' ? (
                   <div className="text-stone-300">
-                    <strong className="text-sky-300">Hasil Filter Target:</strong>{' '}
-                    Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Paket berlaku untuk item umum / workshop.
+                    <strong className="text-sky-300">Target Paket:</strong>{' '}
+                    Kategori <span className="font-mono text-stone-100">Non Unit (NON-UNIT)</span> — Berlaku untuk kebutuhan umum / workshop.
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-stone-300">
-                        <strong className="text-amber-400">Keterangan Hasil Filter No Unit (Modul 1):</strong>{' '}
-                        {targetModelUnit ? (
-                          <>
-                            Model Unit <strong className="font-mono text-stone-100">{targetModelUnit}</strong>
-                            {targetJenisUnit !== 'Semua Unit' ? ` (${targetJenisUnit})` : ''} berlaku untuk{' '}
-                            <strong className="text-emerald-400 font-mono tabular-nums">
-                              {builderMatchingUnits.length} No Unit
-                            </strong>{' '}
-                            berikut:
-                          </>
-                        ) : targetJenisUnit !== 'Semua Unit' ? (
-                          <>
-                            Jenis <strong className="text-stone-100">{targetJenisUnit}</strong> memiliki{' '}
-                            <strong className="text-emerald-400 font-mono tabular-nums">
-                              {builderMatchingUnits.length} No Unit
-                            </strong>{' '}
-                            <span className="text-stone-400">
-                              — Pilih Model Unit di kolom 5 untuk mengelompokkan RPL berdasarkan model unit yang sama.
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            Total terdaftar{' '}
-                            <strong className="text-stone-100 font-mono tabular-nums">
-                              {builderMatchingUnits.length} No Unit
-                            </strong>{' '}
-                            — Pilih Jenis &amp; Model Unit di atas untuk melihat daftar No Unit yang dicakup paket RPL ini.
-                          </>
-                        )}
-                      </span>
+                    <div className="text-stone-300">
+                      <strong className="text-amber-400">Reff Cakupan Unit (Modul 1):</strong>{' '}
+                      {targetModelUnit ? (
+                        <>
+                          Model <strong className="font-mono text-stone-100">{targetModelUnit}</strong>
+                          {targetJenisUnit !== 'Semua Unit' ? ` (${targetJenisUnit})` : ''}
+                        </>
+                      ) : targetJenisUnit !== 'Semua Unit' ? (
+                        <>
+                          Jenis <strong className="text-stone-100">{targetJenisUnit}</strong>
+                        </>
+                      ) : (
+                        <span>Semua unit terdaftar</span>
+                      )}
                     </div>
 
-                    {builderMatchingUnits.length === 0 ? (
-                      <p className="text-[11px] text-stone-500">
-                        Belum ada No Unit terdaftar di Modul 1 untuk kombinasi Jenis dan Model Unit ini.
-                      </p>
+                    {builderMatchingUnits.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openUnitRefModal(
+                            `Reff Unit Paket — ${targetModelUnit || targetJenisUnit}`,
+                            `${builderMatchingUnits.length} unit terdaftar sesuai filter paket RPL`,
+                            builderMatchingUnits
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-stone-900 border border-stone-700 hover:border-amber-500/60 text-[11px] font-mono text-emerald-300 transition-colors"
+                      >
+                        <Truck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>
+                          {builderMatchingUnits.length === 1
+                            ? builderMatchingUnits[0].cnNew
+                            : `${builderMatchingUnits.length} No Unit`}
+                        </span>
+                        <span className="text-stone-400 text-[10px]">(Lihat Detail)</span>
+                      </button>
                     ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                        {builderMatchingUnits.map((u) => (
-                          <div
-                            key={u.id}
-                            className="bg-stone-900 border border-stone-800 rounded-md px-2.5 py-1.5 text-[11px]"
-                          >
-                            <div className="font-mono font-bold text-amber-300 truncate">
-                              {u.cnNew}
-                            </div>
-                            <div className="text-[10px] text-stone-400 truncate">
-                              {u.modelUnit || '-'} · {u.brandMerk || u.namaAlat || '-'}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <span className="text-[11px] text-stone-500">
+                        0 No Unit terdaftar untuk kombinasi ini
+                      </span>
                     )}
                   </>
                 )}
@@ -1672,14 +1957,14 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                       Daftar Katalog Master Part Terdaftar
                     </span>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-800 text-stone-300">
-                      {filteredMasterPickerParts.length} Part Tampil
+                      {groupedPickerParts.length} PN Unik
                     </span>
                     <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
                       {draftItems.length} Part Dicentang · Total Qty: {totalDraftQty}
                     </span>
                   </div>
                   <p className="text-[11px] text-stone-400 mt-1">
-                    Menampilkan part sesuai filter <strong className="text-stone-200">{targetJenisUnit}</strong>
+                    Menampilkan 1 baris per PN unik sesuai filter <strong className="text-stone-200">{targetJenisUnit}</strong>
                     {targetModelUnit ? ` · Model ${targetModelUnit}` : ''}. Centang kotak di sisi kiri untuk memasukkan part ke paket RPL.
                   </p>
                 </div>
@@ -1730,13 +2015,13 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                           type="checkbox"
                           checked={allFilteredChecked}
                           onChange={handleToggleAllFilteredCheckboxes}
-                          disabled={filteredMasterPickerParts.length === 0}
-                          title="Centang / Batal Centang Semua Part Tampil"
+                          disabled={groupedPickerParts.length === 0}
+                          title="Centang / Batal Centang Semua PN Tampil"
                           className="w-4 h-4 accent-amber-500 cursor-pointer"
                         />
                       </th>
                       <th className="py-2.5 px-2 w-10 text-center">No</th>
-                      <th className="py-2.5 px-3 w-36">Model / No Unit</th>
+                      <th className="py-2.5 px-3 w-36">Reff Unit</th>
                       <th className="py-2.5 px-3 w-36">Part Number (PN)</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Nama Part</th>
                       <th className="py-2.5 px-3 w-28">Merk</th>
@@ -1748,7 +2033,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-800/60">
-                    {filteredMasterPickerParts.length === 0 ? (
+                    {groupedPickerParts.length === 0 ? (
                       <tr>
                         <td colSpan={11} className="py-10 text-center text-stone-500 text-xs">
                           Tidak ada part terdaftar di Katalog Master Part untuk filter{' '}
@@ -1757,16 +2042,19 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         </td>
                       </tr>
                     ) : (
-                      filteredMasterPickerParts.map((part, idx) => {
-                        const selectedItem = draftItemsMap.get(part.id);
+                      groupedPickerParts.map((group, idx) => {
+                        const part = group.primary;
+                        const selectedItem = draftItemsByPnMap.get(group.pnKey);
                         const isChecked = Boolean(selectedItem);
                         const tipe = part.partRelationType || 'In Line';
-                        const resolvedPartModel =
-                          part.modelUnit || unitByCnMap.get((part.noUnit || '').trim().toLowerCase())?.modelUnit || '';
+                        const primaryModel =
+                          part.modelUnit && part.modelUnit !== '-'
+                            ? part.modelUnit
+                            : group.unitRefs[0]?.modelUnit || '';
 
                         return (
                           <tr
-                            key={part.id}
+                            key={group.pnKey}
                             className={`transition-colors ${
                               isChecked ? 'bg-amber-500/10' : 'hover:bg-stone-900/50'
                             }`}
@@ -1784,12 +2072,35 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                               {idx + 1}
                             </td>
                             <td className="py-2.5 px-3">
-                              <span className="font-mono font-bold text-amber-400 block">
-                                {resolvedPartModel || part.noUnit || '-'}
-                              </span>
-                              <span className="text-[10px] text-stone-400 block truncate max-w-[130px] font-mono">
-                                {part.noUnit || '-'} · {part.jenisUnit}
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setUnitRefModal({
+                                    isOpen: true,
+                                    title: `Reff Unit — ${part.pn || part.namaPart}`,
+                                    subtitle: `${part.namaPart}${part.merk ? ` (${part.merk})` : ''} · ${group.unitCount} Referensi`,
+                                    entries: group.unitRefs,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-stone-700 bg-stone-900 hover:border-amber-500/60 hover:bg-stone-800/80 text-[11px] font-mono transition-colors"
+                                title="Klik untuk melihat detail No Unit, Brand & Model Unit"
+                              >
+                                <Truck className="w-3 h-3 text-amber-400 shrink-0" />
+                                <span
+                                  className={
+                                    group.isAllNonUnit
+                                      ? 'text-sky-300 font-semibold'
+                                      : 'text-amber-300 font-bold'
+                                  }
+                                >
+                                  {group.unitSummaryLabel}
+                                </span>
+                              </button>
+                              {primaryModel && !group.isAllNonUnit && (
+                                <span className="block text-[10px] text-stone-400 mt-0.5 truncate max-w-[128px]">
+                                  {primaryModel}
+                                </span>
+                              )}
                             </td>
                             <td className="py-2.5 px-3 font-mono font-semibold text-amber-300">
                               {part.pn || '-'}
@@ -1828,8 +2139,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                                   min={1}
                                   value={selectedItem.qtyNeeded}
                                   onChange={(e) =>
-                                    handleUpdateDraftItemByMasterId(
-                                      part.id,
+                                    handleUpdateDraftItemByPnKey(
+                                      group.pnKey,
                                       'qtyNeeded',
                                       Math.max(1, Number(e.target.value) || 1)
                                     )
@@ -1846,7 +2157,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                                   type="text"
                                   value={selectedItem.notes || ''}
                                   onChange={(e) =>
-                                    handleUpdateDraftItemByMasterId(part.id, 'notes', e.target.value)
+                                    handleUpdateDraftItemByPnKey(group.pnKey, 'notes', e.target.value)
                                   }
                                   placeholder="Catatan item..."
                                   className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
@@ -1905,9 +2216,35 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   <span>Print Preview</span>
                 </button>
 
+                {draftItems.length > 0 &&
+                  canCreateSpb &&
+                  targetJenisUnit !== 'Non Unit' &&
+                  builderMatchingUnits.length !== 1 && (
+                    <select
+                      value={builderSpbUnitCn}
+                      onChange={(e) => setBuilderSpbUnitCn(e.target.value)}
+                      aria-label="Pilih 1 No Unit untuk Create SPB"
+                      className="bg-stone-900 border border-stone-700 text-stone-200 font-mono text-xs rounded-lg px-2.5 py-2 focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">-- Pilih 1 No Unit (SPB) --</option>
+                      <option value="NON-UNIT">NON-UNIT (Umum)</option>
+                      {builderMatchingUnits.map((u) => (
+                        <option key={u.id} value={u.cnNew}>
+                          {u.cnNew} — {u.modelUnit || u.namaAlat}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                 <button
                   type="button"
-                  onClick={() => handleOpenCreateSpbFromPackage(buildDraftPreviewPackage())}
+                  onClick={() =>
+                    handleOpenCreateSpbFromPackage(
+                      buildDraftPreviewPackage(),
+                      builderSpbUnitCn,
+                      false
+                    )
+                  }
                   disabled={draftItems.length === 0 || !canCreateSpb}
                   className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors ${
                     draftItems.length > 0 && canCreateSpb
@@ -2040,17 +2377,35 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         {pkg.serviceInterval}
                       </td>
                       <td className="py-3 px-3 text-stone-300">
-                        <span className="font-medium text-stone-200">
+                        <span className="font-medium text-stone-200 block">
                           {info.jenis}
                           {info.modelUnit ? (
                             <span className="text-amber-300 font-mono"> · {info.modelUnit}</span>
                           ) : null}
                         </span>
-                        {info.noUnitSummary && (
-                          <span className="block font-mono text-[10px] text-stone-400 mt-0.5 break-words">
-                            Unit: {info.noUnitSummary}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openUnitRefModal(
+                              `Reff Unit — ${pkg.packagePn}`,
+                              `${pkg.packageName} · ${info.jenis}${info.modelUnit ? ` (${info.modelUnit})` : ''}`,
+                              info.matchingUnits,
+                              info.jenis === 'Non Unit'
+                            )
+                          }
+                          className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded border border-stone-700 bg-stone-900 hover:border-amber-500/60 text-[10px] font-mono text-emerald-300 transition-colors"
+                        >
+                          <Truck className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>
+                            {info.jenis === 'Non Unit'
+                              ? 'NON-UNIT'
+                              : info.matchingUnits.length === 1
+                              ? info.matchingUnits[0].cnNew
+                              : info.matchingUnits.length > 1
+                              ? `${info.matchingUnits.length} Unit`
+                              : info.noUnitSummary || 'Semua Unit'}
                           </span>
-                        )}
+                        </button>
                       </td>
                       <td className="py-3 px-3 text-center font-mono tabular-nums text-stone-200 font-semibold">
                         {pkg.items.length}
@@ -2070,9 +2425,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                           {canCreateSpb && (
                             <button
                               type="button"
-                              onClick={() => handleOpenCreateSpbFromPackage(pkg)}
+                              onClick={() => handleOpenCreateSpbFromPackage(pkg, undefined, true)}
                               className="px-2 py-1 text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 rounded transition-colors whitespace-nowrap"
-                              title="Buat Surat Permintaan Barang (SPB) dari Paket RPL ini"
+                              title="Pilih 1 No Unit dan Buat SPB dari Paket RPL ini"
                             >
                               SPB
                             </button>
@@ -2193,6 +2548,16 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         pdfBlobUrl={pdfPreview.blobUrl}
         filename={pdfPreview.filename}
         onDownload={pdfPreview.downloadFn}
+      />
+
+      {/* Modal Detail Reff Unit */}
+      <UnitRefDetailModal
+        isOpen={unitRefModal.isOpen}
+        onClose={() => setUnitRefModal((prev) => ({ ...prev, isOpen: false }))}
+        title={unitRefModal.title}
+        subtitle={unitRefModal.subtitle}
+        entries={unitRefModal.entries}
+        showStockColumns={false}
       />
     </div>
   );

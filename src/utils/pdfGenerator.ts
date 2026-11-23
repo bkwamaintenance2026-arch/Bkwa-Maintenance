@@ -4392,12 +4392,23 @@ export const generateRplPackagePDF = ({
   const cardWidth = 62;
   const cardHeight = 11;
 
+  const rawPkgUnits = (pkg.noUnit || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const compactPkgUnitSuffix =
+    rawPkgUnits.length > 1
+      ? ` (${rawPkgUnits.length} Unit)`
+      : rawPkgUnits.length === 1
+      ? ` (${rawPkgUnits[0]})`
+      : '';
+
   const cards = [
     { label: 'PN PAKET RPL', val: pkg.packagePn || '-', color: [180, 83, 9] as [number, number, number] },
     { label: 'INTERVAL SERVICE', val: pkg.serviceInterval || '-', color: [30, 41, 59] as [number, number, number] },
     {
       label: 'TARGET JENIS / MODEL UNIT',
-      val: `${pkg.jenisUnit || '-'}${pkg.modelUnit && pkg.modelUnit !== 'NON-UNIT' ? ` · ${pkg.modelUnit}` : ''}${pkg.noUnit ? ` (${pkg.noUnit})` : ''}`,
+      val: `${pkg.jenisUnit || '-'}${pkg.modelUnit && pkg.modelUnit !== 'NON-UNIT' ? ` · ${pkg.modelUnit}` : ''}${compactPkgUnitSuffix}`,
       color: [37, 99, 235] as [number, number, number],
     },
     { label: 'TOTAL ITEM & QTY PAKET', val: `${pkg.items.length} PN / ${totalQtyNeeded} Pcs`, color: [16, 185, 129] as [number, number, number] },
@@ -4422,10 +4433,20 @@ export const generateRplPackagePDF = ({
   });
 
   const masterMap = new Map<string, MasterPartItem>();
-  masterParts.forEach((mp) => masterMap.set(mp.id, mp));
+  const masterPnMap = new Map<string, MasterPartItem>();
+  masterParts.forEach((mp) => {
+    masterMap.set(mp.id, mp);
+    const pnNorm = (mp.pn || '').trim().toLowerCase();
+    if (pnNorm && pnNorm !== '-' && !masterPnMap.has(pnNorm)) {
+      masterPnMap.set(pnNorm, mp);
+    }
+  });
 
   const tableData = pkg.items.map((item, idx) => {
-    const livePart = masterMap.get(item.masterPartId);
+    const itemPnNorm = (item.pn || '').trim().toLowerCase();
+    const livePart =
+      masterMap.get(item.masterPartId) ||
+      (itemPnNorm && itemPnNorm !== '-' ? masterPnMap.get(itemPnNorm) : undefined);
     const tipe = livePart?.partRelationType || 'In Line';
     const interchangeCount = livePart?.interchangeParts?.length || 0;
     const tipeLabel = tipe === 'Interchange' ? `Interchange (${interchangeCount})` : 'In Line';
