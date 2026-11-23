@@ -1430,19 +1430,19 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
       {/* MODAL DETAIL / STRUK OUT FIELD FUEL (VIEW ONLY)              */}
       {/* ============================================================ */}
       {viewingRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-stone-900 border border-stone-800 rounded-3xl shadow-2xl p-6 sm:p-7 max-h-[92vh] overflow-y-auto my-auto animate-fadeIn font-mono">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-stone-950/80 backdrop-blur-sm overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-lg bg-stone-900 border border-stone-800 rounded-2xl sm:rounded-3xl shadow-2xl max-h-[90dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden my-auto animate-fadeIn font-mono">
             {/* Header Modal */}
-            <div className="flex items-center justify-between pb-4 border-b border-stone-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
                   <Receipt className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-stone-100">
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-stone-100 truncate">
                     RINCIAN BON SPBU LUAR
                   </h3>
-                  <p className="text-xs text-stone-400">
+                  <p className="text-xs text-stone-400 truncate">
                     {viewingRecord.noTransaksi} • {formatIndoDate(viewingRecord.tanggal)} ({viewingRecord.jam || '08:00'})
                   </p>
                 </div>
@@ -1450,13 +1450,14 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
               <button
                 type="button"
                 onClick={() => setViewingRecord(null)}
-                className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition"
+                className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4 pt-4 text-xs">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-6 space-y-4 text-xs">
               {/* Unit & Lokasi */}
               <div className="p-3.5 rounded-2xl bg-stone-950 border border-stone-800 space-y-2">
                 <div className="flex justify-between items-center">
@@ -1586,16 +1587,16 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
                   {viewingRecord.catatan}
                 </div>
               )}
+            </div>
 
-              <div className="pt-3 border-t border-stone-800 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setViewingRecord(null)}
-                  className="px-5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold transition"
-                >
-                  Tutup
-                </button>
-              </div>
+            <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-stone-800 bg-stone-950/95 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingRecord(null)}
+                className="px-5 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold text-xs transition whitespace-nowrap"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>
@@ -1605,19 +1606,19 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
       {/* MODAL INPUT / EDIT OUT FIELD FUEL USED                       */}
       {/* ============================================================ */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/80 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-2xl bg-stone-900 border border-stone-800 rounded-3xl shadow-2xl p-6 sm:p-7 max-h-[92vh] overflow-y-auto my-auto animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-stone-950/80 backdrop-blur-sm overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-2xl bg-stone-900 border border-stone-800 rounded-2xl sm:rounded-3xl shadow-2xl max-h-[90dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden my-auto animate-fadeIn">
             {/* Header Modal */}
-            <div className="flex items-center justify-between pb-4 border-b border-stone-800">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30 shrink-0">
                   <Fuel className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-stone-100 font-mono">
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-stone-100 font-mono truncate">
                     {editingId ? 'EDIT DATA OUT FIELD FUEL' : 'FORM INPUT OUT FIELD FUEL USED'}
                   </h3>
-                  <p className="text-xs text-stone-400 font-mono">
+                  <p className="text-[11px] sm:text-xs text-stone-400 font-mono truncate">
                     SPBU Luar Lapangan • PT BATU KALI WELANG AMPUH
                   </p>
                 </div>
@@ -1625,13 +1626,15 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition"
+                className="p-2 rounded-xl text-stone-400 hover:text-stone-100 hover:bg-stone-800 transition shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 pt-4 text-xs font-mono">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 text-xs font-mono">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-6 space-y-4">
               {/* 1. Tanggal dan Jam (Gform style & 24 jam) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-stone-950/60 border border-stone-800">
                 <div>
@@ -2221,18 +2224,20 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
                 </div>
               </div>
 
+              </div>
+
               {/* Actions Footer */}
-              <div className="pt-4 border-t border-stone-800 flex items-center justify-end gap-3">
+              <div className="shrink-0 px-4 sm:px-6 py-3 border-t border-stone-800 bg-stone-950/95 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold transition"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-xs transition whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black font-mono tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black font-mono text-xs tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95 whitespace-nowrap"
                 >
                   {editingId ? 'Simpan Perubahan' : 'Simpan Data Out Field'}
                 </button>
@@ -2246,60 +2251,63 @@ export const OutFieldFuelSubView: React.FC<OutFieldFuelSubViewProps> = ({
       {/* MODAL SETTING HARGA SOLAR BAKU (DEVELOPER ACCESS ONLY)      */}
       {/* ============================================================ */}
       {showPriceSettingModal && isDev && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md bg-stone-900 border border-purple-500/40 rounded-3xl shadow-2xl p-6 animate-fadeIn">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Settings2 className="w-5 h-5 text-purple-400" />
-                <h3 className="text-sm font-bold text-stone-100 font-mono">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-stone-950/80 backdrop-blur-sm overflow-y-auto overscroll-contain">
+          <div className="relative w-full max-w-md bg-stone-900 border border-purple-500/40 rounded-2xl sm:rounded-3xl shadow-2xl max-h-[90dvh] flex flex-col overflow-hidden my-auto animate-fadeIn">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Settings2 className="w-5 h-5 text-purple-400 shrink-0" />
+                <h3 className="text-sm font-bold text-stone-100 font-mono truncate">
                   SETTING HARGA SOLAR ACUAN
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPriceSettingModal(false)}
-                className="text-stone-400 hover:text-stone-100"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-100 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveStandardSolarPrice} className="space-y-4 pt-4 text-xs font-mono">
-              <p className="text-stone-400 leading-relaxed">
-                Akun Developer memiliki hak merubah harga solar acuan per liter yang akan otomatis dijadikan default pada saat input transaksi SPBU luar.
-              </p>
+            <form onSubmit={handleSaveStandardSolarPrice} className="flex flex-col flex-1 min-h-0 text-xs font-mono">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4">
+                <p className="text-stone-400 leading-relaxed">
+                  Akun Developer memiliki hak merubah harga solar acuan per liter yang akan otomatis dijadikan default pada saat input transaksi SPBU luar.
+                </p>
 
-              <div>
-                <label className="block text-stone-300 font-bold mb-1.5">
-                  Harga Solar per Liter (Rp) *
-                </label>
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-purple-300 font-bold">
-                    Rp
-                  </span>
-                  <input
-                    type="number"
-                    min="100"
-                    step="50"
-                    required
-                    value={tempSolarPrice}
-                    onChange={(e) => setTempSolarPrice(Number(e.target.value))}
-                    className="flex-1 px-3 py-2 bg-stone-950 border border-purple-500/50 rounded-xl text-stone-100 text-sm font-bold font-mono focus:outline-none focus:border-purple-400"
-                  />
+                <div>
+                  <label className="block text-stone-300 font-bold mb-1.5">
+                    Harga Solar per Liter (Rp) *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-purple-300 font-bold">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      min="100"
+                      step="50"
+                      required
+                      value={tempSolarPrice}
+                      onChange={(e) => setTempSolarPrice(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 bg-stone-950 border border-purple-500/50 rounded-xl text-stone-100 text-sm font-bold font-mono focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-stone-800 flex items-center justify-end gap-2.5">
+              <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => setShowPriceSettingModal(false)}
-                  className="px-3.5 py-2 rounded-xl bg-stone-800 text-stone-300 font-bold"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-stone-800 text-stone-300 font-bold whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/30"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition shadow-lg shadow-purple-600/30 whitespace-nowrap"
                 >
                   Simpan Harga Solar
                 </button>

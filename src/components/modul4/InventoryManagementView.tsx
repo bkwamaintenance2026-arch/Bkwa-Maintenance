@@ -1072,25 +1072,27 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
       {/* MODAL: KALIBRASI SISA PERIODE & KONFIGURASI MANUAL KAPASITAS TANGKI */}
       {/* ========================================================================= */}
       {showBalanceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4 text-amber-400" />
-                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto overscroll-contain animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl sm:rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <SlidersHorizontal className="w-4 h-4 text-amber-400 shrink-0" />
+                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase truncate">
                   Kalibrasi Saldo Periode Lalu & Kapasitas Tangki
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowBalanceModal(false)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+                className="p-2 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBalanceSubmit} className="p-5 space-y-4 text-xs overflow-y-auto">
+            <form onSubmit={handleSaveBalanceSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4 text-xs">
               {balanceSavedMsg && (
                 <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-700 text-emerald-300 text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -1214,17 +1216,19 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-800">
+              </div>
+
+              <div className="shrink-0 flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowBalanceModal(false)}
-                  className="px-4 py-2 rounded-xl text-stone-400 hover:text-stone-200 bg-stone-800"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl text-stone-300 hover:text-stone-100 bg-stone-800 text-xs font-semibold whitespace-nowrap"
                 >
                   Tutup
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold font-mono transition shadow-lg shadow-amber-500/20"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold font-mono text-xs transition shadow-lg shadow-amber-500/20 whitespace-nowrap"
                 >
                   Simpan Kalibrasi & Kapasitas
                 </button>
@@ -1236,12 +1240,12 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
 
       {/* QUICK MODAL: Ganti Kapasitas Manual Tangki Utama & Fuel Truck */}
       {showQuickCapacityModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <h3 className="text-xs font-bold font-mono text-stone-100 uppercase flex items-center gap-1.5">
-                <Pencil className="w-3.5 h-3.5 text-amber-400" />
-                <span>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto overscroll-contain">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <h3 className="text-xs font-bold font-mono text-stone-100 uppercase flex items-center gap-1.5 min-w-0">
+                <Pencil className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate">
                   {quickCapacityTarget === 'tangki_utama'
                     ? 'Ubah Kapasitas Tangki Solar Utama'
                     : 'Ubah Kapasitas Fuel Truck (FT-01)'}
@@ -1250,44 +1254,47 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
               <button
                 type="button"
                 onClick={() => setShowQuickCapacityModal(false)}
-                className="text-stone-400 hover:text-white"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveQuickCapacity} className="space-y-3">
-              <p className="text-[11px] text-stone-300">
-                {quickCapacityTarget === 'tangki_utama'
-                  ? 'Ubah kapasitas tangki solar utama jika terjadi pergantian unit tangki di quarry:'
-                  : 'Ubah kapasitas muatan armada Fuel Truck FT-01:'}
-              </p>
-              <div>
-                <label className="block text-[11px] font-mono text-stone-400 mb-1">
-                  Kapasitas Baru (Liter):
-                </label>
-                <input
-                  type="number"
-                  min="100"
-                  step="100"
-                  required
-                  value={quickCapacityVal}
-                  onChange={(e) => setQuickCapacityVal(Number(e.target.value))}
-                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono font-bold"
-                />
+            <form onSubmit={handleSaveQuickCapacity} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-3">
+                <p className="text-[11px] text-stone-300">
+                  {quickCapacityTarget === 'tangki_utama'
+                    ? 'Ubah kapasitas tangki solar utama jika terjadi pergantian unit tangki di quarry:'
+                    : 'Ubah kapasitas muatan armada Fuel Truck FT-01:'}
+                </p>
+                <div>
+                  <label className="block text-[11px] font-mono text-stone-400 mb-1">
+                    Kapasitas Baru (Liter):
+                  </label>
+                  <input
+                    type="number"
+                    min="100"
+                    step="100"
+                    required
+                    value={quickCapacityVal}
+                    onChange={(e) => setQuickCapacityVal(Number(e.target.value))}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono font-bold"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
+              <div className="shrink-0 flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowQuickCapacityModal(false)}
-                  className="px-3 py-1.5 rounded-lg bg-stone-800 text-stone-300 text-xs"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-stone-800 text-stone-300 text-xs font-semibold whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-amber-500 text-stone-950 font-bold text-xs font-mono"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-amber-500 text-stone-950 font-bold text-xs font-mono whitespace-nowrap"
                 >
                   Simpan Kapasitas
                 </button>

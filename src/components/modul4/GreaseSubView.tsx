@@ -620,23 +620,25 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
 
       {/* Modal Add / Edit */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-4 my-auto">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <h3 className="text-sm font-bold font-mono text-stone-100 flex items-center gap-2">
-                <Package className="w-4 h-4 text-amber-400" />
-                <span>{activeTab === 'dist' ? 'FORM BON PEMAKAIAN GREASE' : 'FORM INPUT STOK GREASE MASUK'}</span>
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[90dvh] sm:max-h-[92dvh] flex flex-col overflow-hidden shadow-2xl my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <h3 className="text-sm font-bold font-mono text-stone-100 flex items-center gap-2 min-w-0">
+                <Package className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="truncate">{activeTab === 'dist' ? 'FORM BON PEMAKAIAN GREASE' : 'FORM INPUT STOK GREASE MASUK'}</span>
               </h3>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="p-1 text-stone-400 hover:text-white"
+                className="p-2 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs font-mono">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 text-xs font-mono">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4">
               {activeTab === 'dist' ? (
                 <>
                   <div className="grid grid-cols-2 gap-3">
@@ -958,17 +960,19 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                 </>
               )}
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-stone-800">
+              </div>
+
+              <div className="shrink-0 flex items-center justify-end gap-2.5 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold shadow-lg shadow-amber-500/20"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold shadow-lg shadow-amber-500/20 whitespace-nowrap"
                 >
                   Simpan Data
                 </button>

@@ -1262,10 +1262,10 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
       {/* 7. MODAL PREVIEW PRINT RESMI (PRINT PREVIEW WITH LETTERHEAD & SIGNATURES) */}
       {/* ========================================================================= */}
       {showPrintModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-6 bg-black/85 backdrop-blur-sm overflow-y-auto overscroll-contain animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl max-h-[90dvh] sm:max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden my-auto">
             {/* Header Dialog */}
-            <div className="p-4 border-b border-stone-800 flex items-center justify-between bg-stone-950">
+            <div className="shrink-0 p-3.5 sm:p-4 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 bg-stone-950">
               <div className="flex items-center gap-2.5">
                 <Printer className="w-5 h-5 text-emerald-400" />
                 <span className="font-bold text-stone-100 font-mono text-sm uppercase">
@@ -1307,7 +1307,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </div>
 
             {/* Document Printable Sheet Content */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-stone-950 print:bg-white print:text-black">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-3 sm:p-8 bg-stone-950 print:bg-white print:text-black">
               <div className="max-w-4xl mx-auto bg-stone-900 print:bg-white text-stone-100 print:text-black p-6 sm:p-8 rounded-2xl border border-stone-800 print:border-none shadow-xl space-y-6">
                 
                 {/* Kop Surat PT BKWA */}

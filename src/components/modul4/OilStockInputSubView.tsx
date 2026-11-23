@@ -475,25 +475,27 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
       {/* MODAL FORM INPUT STOCK OLI */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
-              <div className="flex items-center gap-2">
-                <Droplet className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-sm overflow-y-auto overscroll-contain animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Droplet className="w-4 h-4 text-emerald-400 shrink-0" />
+                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase truncate">
                   {editingId ? 'Edit Input Stock Oli' : 'Form Penerimaan Stock Oli Gudang'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+                className="p-2 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4 text-xs">
               {errorMsg && (
                 <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -653,17 +655,19 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                 />
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-stone-800">
+              </div>
+
+              <div className="shrink-0 flex justify-end gap-2.5 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg shadow-emerald-500/20"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 font-black text-xs shadow-lg shadow-emerald-500/20 whitespace-nowrap"
                 >
                   {editingId ? 'Simpan Perubahan' : 'Catat Stok Oli Masuk'}
                 </button>
@@ -675,50 +679,53 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
 
       {/* MODAL ADD JENIS OLI LAIN */}
       {showAddOilModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Plus className="w-4 h-4 text-amber-400" />
-                <h4 className="text-xs font-black font-mono uppercase text-stone-100">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-sm overflow-y-auto overscroll-contain animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden max-h-[90dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Plus className="w-4 h-4 text-amber-400 shrink-0" />
+                <h4 className="text-xs font-black font-mono uppercase text-stone-100 truncate">
                   Tambah Jenis Oli / Pelumas Baru
                 </h4>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddOilModal(false)}
-                className="text-stone-400 hover:text-stone-200"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddNewOil} className="space-y-3">
-              <div>
-                <label className="block text-stone-300 font-semibold mb-1 text-xs">
-                  Nama Jenis Oli Baru
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: MEDITRAN SX 15W-40"
-                  value={newOilNameInput}
-                  onChange={(e) => setNewOilNameInput(e.target.value)}
-                  className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 text-xs font-mono uppercase focus:outline-none focus:border-amber-500/60"
-                />
+            <form onSubmit={handleAddNewOil} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-3">
+                <div>
+                  <label className="block text-stone-300 font-semibold mb-1 text-xs">
+                    Nama Jenis Oli Baru
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: MEDITRAN SX 15W-40"
+                    value={newOilNameInput}
+                    onChange={(e) => setNewOilNameInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-stone-950 border border-stone-800 rounded-xl text-stone-200 text-xs font-mono uppercase focus:outline-none focus:border-amber-500/60"
+                  />
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="shrink-0 flex justify-end gap-2 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowAddOilModal(false)}
-                  className="px-3 py-1.5 rounded-lg bg-stone-800 text-stone-300 text-xs font-semibold"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-stone-800 text-stone-300 text-xs font-semibold whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shadow-md shadow-amber-500/20"
+                  className="px-4 py-2 min-h-[38px] rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shadow-md shadow-amber-500/20 whitespace-nowrap"
                 >
                   Simpan Jenis Oli
                 </button>

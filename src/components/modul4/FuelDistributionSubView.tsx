@@ -966,25 +966,27 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
 
       {/* MODAL INPUT / EDIT DISTRIBUSI FUEL */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
-              <div className="flex items-center gap-2">
-                <Flame className="w-4 h-4 text-orange-400" />
-                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-sm overflow-y-auto overscroll-contain animate-fadeIn">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Flame className="w-4 h-4 text-orange-400 shrink-0" />
+                <h3 className="text-sm font-black text-stone-100 font-mono tracking-wide uppercase truncate">
                   {editingId ? 'Edit Bon Pengisian Fuel' : 'Form Pengisian Fuel Unit Alat (No Bon)'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800"
+                className="p-2 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto">
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4 text-xs">
               {errorMsg && (
                 <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1363,17 +1365,19 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                 />
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-4 border-t border-stone-800">
+              </div>
+
+              <div className="shrink-0 flex justify-end gap-2.5 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-semibold text-xs whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-stone-950 font-black text-xs shadow-lg shadow-orange-500/20"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-orange-500 hover:bg-orange-400 text-stone-950 font-black text-xs shadow-lg shadow-orange-500/20 whitespace-nowrap"
                 >
                   {editingId ? 'Simpan Perubahan' : 'Terbitkan Bon Pengisian'}
                 </button>

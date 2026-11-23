@@ -665,73 +665,76 @@ export const FogOilDistributionSubView: React.FC<FogOilDistributionSubViewProps>
 
       {/* Modal Add Jenis Oli Baru */}
       {showAddOilModal && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Plus className="w-5 h-5 text-amber-400" />
-                <h3 className="font-mono font-black text-stone-100 text-base">
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Plus className="w-5 h-5 text-amber-400 shrink-0" />
+                <h3 className="font-mono font-black text-stone-100 text-sm sm:text-base truncate">
                   TAMBAH JENIS OLI / PELUMAS BARU
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddOilModal(false)}
-                className="text-stone-400 hover:text-stone-200"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleAddNewOilSubmit} className="space-y-4 text-xs">
-              <p className="text-stone-400">
-                Tambahkan spesifikasi atau merek pelumas baru yang digunakan di unit armada Quarry Purwosari.
-              </p>
+            <form onSubmit={handleAddNewOilSubmit} className="flex flex-col flex-1 min-h-0 text-xs">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-4">
+                <p className="text-stone-400">
+                  Tambahkan spesifikasi atau merek pelumas baru yang digunakan di unit armada Quarry Purwosari.
+                </p>
 
-              {modalFeedback && (
-                <div className="p-3 rounded-lg bg-rose-500/20 border border-rose-500/30 text-rose-300">
-                  {modalFeedback}
+                {modalFeedback && (
+                  <div className="p-3 rounded-lg bg-rose-500/20 border border-rose-500/30 text-rose-300">
+                    {modalFeedback}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label htmlFor="new-oil-name-input" className="block text-stone-300 font-bold uppercase">
+                    Nama / Spesifikasi Jenis Oli Baru:
+                  </label>
+                  <input
+                    id="new-oil-name-input"
+                    type="text"
+                    value={newOilInput}
+                    onChange={(e) => setNewOilInput(e.target.value)}
+                    placeholder="Contoh: MEDITRAN SX 15W-40 / SHELL TELLUS S2 M 68"
+                    className="w-full bg-stone-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 font-mono uppercase focus:outline-none focus:border-amber-500"
+                    autoFocus
+                    required
+                  />
                 </div>
-              )}
 
-              <div className="space-y-1.5">
-                <label htmlFor="new-oil-name-input" className="block text-stone-300 font-bold uppercase">
-                  Nama / Spesifikasi Jenis Oli Baru:
-                </label>
-                <input
-                  id="new-oil-name-input"
-                  type="text"
-                  value={newOilInput}
-                  onChange={(e) => setNewOilInput(e.target.value)}
-                  placeholder="Contoh: MEDITRAN SX 15W-40 / SHELL TELLUS S2 M 68"
-                  className="w-full bg-stone-950 border border-amber-500/40 rounded-xl px-3.5 py-2.5 text-sm text-stone-100 font-mono uppercase focus:outline-none focus:border-amber-500"
-                  autoFocus
-                  required
-                />
+                <div>
+                  <p className="text-[11px] text-stone-500">Daftar Jenis Oli Yang Sudah Tersedia:</p>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 max-h-28 overflow-y-auto p-2 bg-stone-950/60 rounded-lg border border-stone-800/60">
+                    {combinedOilList.map((item) => (
+                      <span key={item} className="px-2 py-0.5 rounded bg-stone-800 text-stone-300 text-[10px] font-mono">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <p className="text-[11px] text-stone-500">Daftar Jenis Oli Yang Sudah Tersedia:</p>
-                <div className="flex flex-wrap gap-1.5 mt-1.5 max-h-28 overflow-y-auto p-2 bg-stone-950/60 rounded-lg border border-stone-800/60">
-                  {combinedOilList.map((item) => (
-                    <span key={item} className="px-2 py-0.5 rounded bg-stone-800 text-stone-300 text-[10px] font-mono">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-stone-800 flex justify-end gap-2">
+              <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAddOilModal(false)}
-                  className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold"
+                  className="px-4 py-2.5 min-h-[40px] rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold whitespace-nowrap"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black uppercase"
+                  className="px-5 py-2.5 min-h-[40px] rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black uppercase whitespace-nowrap"
                 >
                   Simpan Jenis Oli
                 </button>
@@ -743,25 +746,26 @@ export const FogOilDistributionSubView: React.FC<FogOilDistributionSubViewProps>
 
       {/* Modal View Detail Distribution Oil */}
       {viewDetailModalRecord && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Droplet className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-mono font-black text-stone-100 text-base">
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Droplet className="w-5 h-5 text-emerald-400 shrink-0" />
+                <h3 className="font-mono font-black text-stone-100 text-sm sm:text-base truncate">
                   DETAIL DISTRIBUSI OLI
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setViewDetailModalRecord(null)}
-                className="text-stone-400 hover:text-stone-200"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2.5 text-xs text-stone-300">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-2.5 text-xs text-stone-300">
               <div className="flex justify-between py-1 border-b border-stone-800/60">
                 <span className="text-stone-400">Petugas (Administrasi):</span>
                 <span className="font-bold text-stone-100">{viewDetailModalRecord.petugas} ({viewDetailModalRecord.petugasJabatan || 'Administrasi'})</span>
@@ -806,11 +810,11 @@ export const FogOilDistributionSubView: React.FC<FogOilDistributionSubViewProps>
               )}
             </div>
 
-            <div className="pt-3 border-t border-stone-800 flex justify-end">
+            <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95 flex justify-end">
               <button
                 type="button"
                 onClick={() => setViewDetailModalRecord(null)}
-                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 transition"
+                className="px-4 py-2 min-h-[38px] rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 transition whitespace-nowrap"
               >
                 Tutup
               </button>

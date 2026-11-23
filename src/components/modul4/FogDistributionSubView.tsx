@@ -801,25 +801,26 @@ export const FogDistributionSubView: React.FC<FogDistributionSubViewProps> = ({
 
       {/* Modal View Detail Distribution Fuel */}
       {viewDetailModalRecord && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-800">
-              <div className="flex items-center gap-2">
-                <Fuel className="w-5 h-5 text-amber-400" />
-                <h3 className="font-mono font-black text-stone-100 text-base">
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto overscroll-contain">
+          <div className="bg-stone-900 border border-stone-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden max-h-[90dvh] sm:max-h-[92dvh] flex flex-col my-auto">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-5 border-b border-stone-800 bg-stone-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Fuel className="w-5 h-5 text-amber-400 shrink-0" />
+                <h3 className="font-mono font-black text-stone-100 text-sm sm:text-base truncate">
                   DETAIL DISTRIBUTION FUEL
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setViewDetailModalRecord(null)}
-                className="text-stone-400 hover:text-stone-200"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 shrink-0"
+                aria-label="Tutup modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-2.5 text-xs text-stone-300">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-5 space-y-2.5 text-xs text-stone-300">
               <div className="flex justify-between py-1 border-b border-stone-800/60">
                 <span className="text-stone-400">No Unit:</span>
                 <span className="font-mono font-bold text-amber-400">
@@ -879,11 +880,11 @@ export const FogDistributionSubView: React.FC<FogDistributionSubViewProps> = ({
               )}
             </div>
 
-            <div className="pt-3 border-t border-stone-800 flex justify-end">
+            <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-stone-800 bg-stone-950/95 flex justify-end">
               <button
                 type="button"
                 onClick={() => setViewDetailModalRecord(null)}
-                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 transition"
+                className="px-4 py-2 min-h-[38px] rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-200 transition whitespace-nowrap"
               >
                 Tutup
               </button>

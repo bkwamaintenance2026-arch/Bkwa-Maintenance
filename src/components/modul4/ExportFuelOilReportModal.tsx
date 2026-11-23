@@ -463,10 +463,10 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fadeIn">
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto">
+    <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto overscroll-contain animate-fadeIn">
+      <div className="bg-stone-900 border border-stone-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl max-h-[90dvh] sm:max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden my-auto">
         {/* Header Modal */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-stone-800/80 bg-gradient-to-r from-stone-900 via-stone-900 to-stone-950">
+        <div className="shrink-0 flex items-center justify-between p-4 sm:p-6 border-b border-stone-800/80 bg-gradient-to-r from-stone-900 via-stone-900 to-stone-950">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 shadow-inner">
               <FileDown className="w-6 h-6" />
@@ -493,7 +493,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
         </div>
 
         {/* Modal Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y p-4 sm:p-6 space-y-6">
           {/* ========================================================================= */}
           {/* 1. FILTER TANGGAL (DATE PICKER & PRESETS) */}
           {/* ========================================================================= */}
@@ -1570,7 +1570,7 @@ export const ExportFuelOilReportModal: React.FC<ExportFuelOilReportModalProps> =
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 sm:p-5 border-t border-stone-800 bg-stone-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="shrink-0 p-3.5 sm:p-5 border-t border-stone-800 bg-stone-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="text-[11px] font-mono text-stone-400 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>
