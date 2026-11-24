@@ -21,15 +21,26 @@ import {
   Package,
   Layers,
   Lock,
-  Download
+  Download,
+  Eye
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { FogValidationBar, useFogSignatories } from './FogValidationBar';
+import {
+  FogDateSortToolbar,
+  matchesDateRange,
+  formatPeriodeLabel,
+  getTimestampMs,
+} from './FogDateRangeBar';
+import { generateFogTableReportPDF } from '../../utils/pdfGenerator';
 import {
   isDeveloper,
   canUserInsertModule,
   canUserEditModule,
   canUserDeleteModule,
   canUserExportModule,
+  canUserPrintPreviewModule,
 } from '../../utils/storage';
 
 interface OilStockInputSubViewProps {
@@ -61,8 +72,12 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canDelete = isDev || canUserDeleteModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'JENIS_OLI' | 'DISTRIBUTOR' | 'DATE' | 'QTY_DESC'>('DATE_DESC');
   const [showModal, setShowModal] = useState(false);
   const [showAddOilModal, setShowAddOilModal] = useState(false);
   const [newOilNameInput, setNewOilNameInput] = useState('');
@@ -70,6 +85,13 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
   const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Validasi 3 Pihak & Direct Print Preview (seperti Modul 3)
+  const { signatories, resolved: resolvedSig, updateSignatories, saveSignatories } = useFogSignatories(manpowerList, currentUser);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [previewDownloadFn, setPreviewDownloadFn] = useState<(() => void) | null>(null);
 
   // Form states:
   // a. Distributor (Dropdown reff by "Data SUplier")
@@ -226,15 +248,165 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
     setDeleteConfirmId(null);
   };
 
-  const filteredList = oilStockInputs.filter((item) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      item.namaOli.toLowerCase().includes(q) ||
-      item.distributor.toLowerCase().includes(q) ||
-      item.picGudangMaterial.toLowerCase().includes(q) ||
-      (item.remark || '').toLowerCase().includes(q)
+  const filteredList = useMemo(() => {
+    const base = oilStockInputs.filter((item) => {
+      if (!matchesDateRange(item.tanggal, startDate, endDate)) return false;
+      const q = searchTerm.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        item.namaOli.toLowerCase().includes(q) ||
+        item.distributor.toLowerCase().includes(q) ||
+        item.picGudangMaterial.toLowerCase().includes(q) ||
+        (item.remark || '').toLowerCase().includes(q)
+      );
+    });
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (sortBy === 'JENIS_OLI') {
+        const cmp = (a.namaOli || '').localeCompare(b.namaOli || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      if (sortBy === 'DISTRIBUTOR') {
+        const cmp = (a.distributor || '').localeCompare(b.distributor || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [oilStockInputs, startDate, endDate, searchTerm, sortBy]);
+
+  const groupedList = useMemo(() => {
+    if (sortBy !== 'JENIS_OLI' && sortBy !== 'DISTRIBUTOR' && sortBy !== 'DATE') return null;
+    const map = new Map<string, { key: string; label: string; items: OilStockInputRecord[]; subtotalQty: number }>();
+    filteredList.forEach((item) => {
+      const key =
+        sortBy === 'JENIS_OLI'
+          ? (item.namaOli || 'LAINNYA').trim().toUpperCase()
+          : sortBy === 'DISTRIBUTOR'
+          ? (item.distributor || 'LAINNYA').trim().toUpperCase()
+          : item.tanggal || '-';
+      const label =
+        sortBy === 'JENIS_OLI'
+          ? `Jenis Oli: ${item.namaOli || 'LAINNYA'}`
+          : sortBy === 'DISTRIBUTOR'
+          ? `Distributor: ${item.distributor || 'LAINNYA'}`
+          : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalQty: 0 };
+      cur.items.push(item);
+      cur.subtotalQty += Number(item.qty) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
     );
-  });
+  }, [filteredList, sortBy]);
+
+  const totalFilteredQty = useMemo(
+    () => filteredList.reduce((acc, r) => acc + (Number(r.qty) || 0), 0),
+    [filteredList]
+  );
+
+  const sortOptionsList = [
+    { value: 'DATE_DESC', label: 'Tanggal Terbaru' },
+    { value: 'DATE_ASC', label: 'Tanggal Terlama' },
+    { value: 'JENIS_OLI', label: 'Per Jenis Oli (+Subtotal)' },
+    { value: 'DISTRIBUTOR', label: 'Per Distributor (+Subtotal)' },
+    { value: 'DATE', label: 'Per Hari (+Subtotal)' },
+    { value: 'QTY_DESC', label: 'Qty Terbesar' },
+  ];
+
+  const handleDirectPrintPreview = () => {
+    if (!canPrintPreview && !canExport) return;
+    const sortLabel = sortOptionsList.find((o) => o.value === sortBy)?.label || 'Tanggal Terbaru';
+    const filterInfo = searchTerm.trim() ? `Cari: "${searchTerm.trim()}"` : '';
+
+    const mapRow = (item: OilStockInputRecord, num: number): (string | number)[] => [
+      num,
+      `${item.tanggal} (${item.jam || '-'})`,
+      item.distributor || '-',
+      item.namaOli || '-',
+      `${(Number(item.qty) || 0).toLocaleString('id-ID')} ${item.satuan || 'Ltr'}`,
+      `${item.picGudangMaterial || '-'}\n${item.picGudangJabatan || ''}`,
+      item.remark || '-',
+    ];
+
+    let pdfRows: (string | number)[][] = [];
+    let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+    if (groupedList) {
+      let rowNum = 1;
+      pdfGroups = groupedList.map((grp) => ({
+        headerText: `${grp.label} (${grp.items.length} Penerimaan)`,
+        rows: grp.items.map((item) => mapRow(item, rowNum++)),
+        subtotalText: `SUBTOTAL ${grp.label} (${grp.items.length} Transaksi): ${grp.subtotalQty.toLocaleString('id-ID')} Liter`,
+      }));
+    } else {
+      pdfRows = filteredList.map((item, idx) => mapRow(item, idx + 1));
+    }
+
+    const result = generateFogTableReportPDF({
+      reportTitle: 'LAPORAN PENERIMAAN STOK OLI GUDANG',
+      reportSubtitle: 'Input Stock Pelumas & Oli dari Distributor ke Gudang Material',
+      accentColor: [5, 150, 105],
+      periodeLabel: formatPeriodeLabel(startDate, endDate),
+      sortLabel,
+      filterInfo,
+      headers: [
+        'No',
+        'Tanggal & Jam',
+        'Distributor',
+        'Nama / Jenis Oli',
+        'Qty Masuk',
+        'PIC Gudang Material',
+        'Remark',
+      ],
+      rows: pdfRows,
+      groups: pdfGroups,
+      grandTotalRow: [
+        {
+          content: `GRAND TOTAL PENERIMAAN STOK OLI (${filteredList.length} Transaksi)`,
+          colSpan: 4,
+          styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: `${totalFilteredQty.toLocaleString('id-ID')} Ltr`,
+          styles: { fillColor: [30, 41, 59], textColor: [110, 231, 183], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: '',
+          colSpan: 2,
+          styles: { fillColor: [30, 41, 59] },
+        },
+      ],
+      columnStyles: {
+        0: { cellWidth: 10, halign: 'center' },
+        1: { cellWidth: 32, halign: 'center' },
+        2: { cellWidth: 52 },
+        3: { cellWidth: 52, fontStyle: 'bold' },
+        4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+        5: { cellWidth: 42 },
+        6: { cellWidth: 'auto' },
+      },
+      kpis: [
+        { label: 'Total Penerimaan', value: `${filteredList.length} Transaksi`, accent: 'slate' },
+        { label: 'Total Oli Masuk', value: `${totalFilteredQty.toLocaleString('id-ID')} Liter`, accent: 'emerald' },
+        { label: 'Varian Jenis Oli', value: `${availableOilTypes.length} Jenis`, accent: 'amber' },
+      ],
+      signatories,
+      currentUser,
+      filenamePrefix: 'Laporan_Input_Stock_Oli_Gudang',
+    });
+
+    setPreviewPdfUrl(result.blobUrl);
+    setPreviewFilename(result.filename);
+    setPreviewDownloadFn(() => result.download);
+    setShowPdfPreview(true);
+  };
 
   const totalOliMasuk = oilStockInputs.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
 
@@ -307,11 +479,24 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
             <button
               type="button"
               onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-bold text-xs transition active:scale-95 whitespace-nowrap"
               title="Export CSV Penerimaan Stok Oli (PT BATU KALI WELANG AMPUH)"
             >
               <Download className="w-4 h-4 text-emerald-400" />
               <span>Export CSV</span>
+            </button>
+          )}
+
+          {(canPrintPreview || canExport) && (
+            <button
+              id="btn-export-pdf-oil-stock"
+              type="button"
+              onClick={handleDirectPrintPreview}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 font-bold text-xs font-mono transition active:scale-95 whitespace-nowrap"
+              title="Buka Print Preview Langsung Sesuai Tabel Input Stock Oli"
+            >
+              <Eye className="w-4 h-4 text-emerald-400" />
+              <span>Print Preview</span>
             </button>
           )}
 
@@ -379,6 +564,47 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
         </div>
       </div>
 
+      {/* Validasi 3 Pihak Inline (Modul 3 Pattern) */}
+      <FogValidationBar
+        manpowerList={manpowerList}
+        signatories={signatories}
+        administrasiList={resolvedSig.administrasiList}
+        kabagList={resolvedSig.kabagList}
+        onChange={updateSignatories}
+        onSave={saveSignatories}
+        accentColor="emerald"
+      />
+
+      {/* Filter Tanggal di Awal & Urutkan / Sort By */}
+      <FogDateSortToolbar
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={setStartDate}
+        onEndDateChange={setEndDate}
+        sortBy={sortBy}
+        onSortByChange={(val) => setSortBy(val as any)}
+        sortOptions={sortOptionsList}
+        hasActiveFilter={Boolean(startDate || endDate || searchTerm || sortBy !== 'DATE_DESC')}
+        onResetAll={() => {
+          setStartDate('');
+          setEndDate('');
+          setSearchTerm('');
+          setSortBy('DATE_DESC');
+        }}
+        resultSummary={
+          <>
+            <span>
+              Periode: <strong className="text-amber-400">{formatPeriodeLabel(startDate, endDate)}</strong> • Urutan:{' '}
+              <strong className="text-stone-200">{sortOptionsList.find((o) => o.value === sortBy)?.label}</strong>
+            </span>
+            <span>
+              Total Hasil: <strong className="text-stone-100">{filteredList.length}</strong> transaksi •{' '}
+              <strong className="text-emerald-400">{totalFilteredQty.toLocaleString('id-ID')}</strong> Liter
+            </span>
+          </>
+        }
+      />
+
       {/* Table Data Input Stock Oli */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
@@ -401,7 +627,86 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60 font-sans">
-              {filteredList.map((item) => (
+              {groupedList ? (
+                groupedList.map((grp) => (
+                  <React.Fragment key={grp.key}>
+                    <tr className="bg-emerald-950/40 border-y border-emerald-500/30">
+                      <td colSpan={7} className="py-2 px-3 font-mono font-bold text-emerald-300 text-xs">
+                        ▸ {grp.label} ({grp.items.length} Penerimaan)
+                      </td>
+                    </tr>
+                    {grp.items.map((item) => (
+                      <tr key={item.id} className="hover:bg-stone-800/30 transition">
+                        <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-stone-500" />
+                            <span>{item.tanggal}</span>
+                            <span className="text-stone-500">{item.jam}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-stone-200">{item.distributor}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="inline-block px-2 py-0.5 rounded font-mono font-bold text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {item.namaOli}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-emerald-400 text-right text-sm">
+                          {(item.qty ?? 0).toLocaleString('id-ID')} <span className="text-[11px] font-normal text-stone-400">{item.satuan || 'Ltr'}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="text-stone-200 font-semibold">{item.picGudangMaterial}</div>
+                          <div className="text-[10px] text-stone-500 font-mono">{item.picGudangJabatan || '-'}</div>
+                        </td>
+                        <td className="py-3 px-3 text-stone-400 text-[11px] max-w-xs truncate">
+                          {item.remark || '-'}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={() => handleOpenEdit(item)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canEdit
+                                  ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canEdit ? 'Edit Record' : 'Akun Anda dalam mode Hanya View'}
+                            >
+                              {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canDelete}
+                              onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canDelete
+                                  ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canDelete ? 'Hapus Record' : 'Tidak ada izin Hapus'}
+                            >
+                              {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-emerald-500/10 border-b-2 border-emerald-500/30 font-mono font-bold text-emerald-300">
+                      <td colSpan={3} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider">
+                        SUBTOTAL {grp.label} ({grp.items.length} Transaksi):
+                      </td>
+                      <td className="py-2 px-3 text-right font-black text-emerald-400 text-sm">
+                        {grp.subtotalQty.toLocaleString('id-ID')} Ltr
+                      </td>
+                      <td colSpan={3}></td>
+                    </tr>
+                  </React.Fragment>
+                ))
+              ) : (
+                filteredList.map((item) => (
                 <tr key={item.id} className="hover:bg-stone-800/30 transition">
                   <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
@@ -459,13 +764,24 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
                     </div>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
 
-              {filteredList.length === 0 && (
+              {filteredList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-8 text-center text-stone-500">
-                    Belum ada data penerimaan stok oli yang dicatat.
+                    Belum ada data penerimaan stok oli yang sesuai filter.
                   </td>
+                </tr>
+              ) : (
+                <tr className="bg-stone-950 font-mono font-bold text-stone-100 border-t-2 border-stone-700">
+                  <td colSpan={3} className="py-3 px-3 text-right uppercase text-xs tracking-wider text-emerald-400">
+                    GRAND TOTAL STOK OLI MASUK ({filteredList.length} Transaksi):
+                  </td>
+                  <td className="py-3 px-3 text-right font-black text-emerald-400 text-base">
+                    {totalFilteredQty.toLocaleString('id-ID')} Ltr
+                  </td>
+                  <td colSpan={3}></td>
                 </tr>
               )}
             </tbody>
@@ -765,6 +1081,22 @@ export const OilStockInputSubView: React.FC<OilStockInputSubViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Direct Print Preview Modal (Tanpa Masuk Sub-Form) */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="Pratinjau Laporan Input Stock Oli Gudang"
+        subtitle={`Periode: ${formatPeriodeLabel(startDate, endDate)} • Urutan: ${sortOptionsList.find((o) => o.value === sortBy)?.label}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={canExport && previewDownloadFn ? previewDownloadFn : undefined}
+        signatoriesSummary={{
+          pembuat: signatories.pembuatName,
+          diperiksa: signatories.diperiksaName,
+          diketahui: signatories.disetujuiName,
+        }}
+      />
     </div>
   );
 };

@@ -551,11 +551,11 @@ export const InventoryManagementView: React.FC<InventoryManagementViewProps> = (
                     }
                     handleOpenExportWithSettings(cat);
                   }}
-                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-stone-950 text-xs font-mono font-bold shadow-md shadow-amber-500/20 transition active:scale-95"
-                  title="Buka Print Preview / Laporan Resmi Bahan Bakar & Pelumas"
+                  className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 border border-stone-700 text-stone-200 text-xs font-mono font-bold shadow-sm transition active:scale-95 whitespace-nowrap shrink-0"
+                  title="Buka Rekap Laporan Gabungan Multi-Kategori Fuel & Oil"
                 >
-                  <FileDown className="w-3.5 h-3.5" />
-                  <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview Laporan'}</span>
+                  <FileDown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Rekap Gabungan PDF</span>
                 </button>
               )}
 

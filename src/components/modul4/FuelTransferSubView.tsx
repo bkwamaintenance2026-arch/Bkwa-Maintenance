@@ -24,9 +24,19 @@ import {
   Lock,
   Sparkles,
   DollarSign,
-  FileDown
+  FileDown,
+  Eye
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { FogValidationBar, useFogSignatories } from './FogValidationBar';
+import {
+  FogDateSortToolbar,
+  matchesDateRange,
+  formatPeriodeLabel,
+  getTimestampMs,
+} from './FogDateRangeBar';
+import { generateFogTableReportPDF } from '../../utils/pdfGenerator';
 import {
   isDeveloper,
   canUserInsertModule,
@@ -70,11 +80,21 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
   const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'DRIVER' | 'DATE' | 'QTY_DESC'>('DATE_DESC');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Validasi 3 Pihak & Direct Print Preview (seperti Modul 3)
+  const { signatories, resolved: resolvedSig, updateSignatories, saveSignatories } = useFogSignatories(manpowerList, currentUser);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [previewDownloadFn, setPreviewDownloadFn] = useState<(() => void) | null>(null);
 
   // Form states:
   // a. Tanggal & jam
@@ -232,14 +252,150 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
     setDeleteConfirmId(null);
   };
 
-  const filteredList = fuelTransfers.filter((item) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      item.namaDriverFt.toLowerCase().includes(q) ||
-      item.picFog.toLowerCase().includes(q) ||
-      (item.remark || '').toLowerCase().includes(q)
+  const filteredList = useMemo(() => {
+    const base = fuelTransfers.filter((item) => {
+      if (!matchesDateRange(item.tanggal, startDate, endDate)) return false;
+      const q = searchTerm.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        item.namaDriverFt.toLowerCase().includes(q) ||
+        item.picFog.toLowerCase().includes(q) ||
+        (item.remark || '').toLowerCase().includes(q)
+      );
+    });
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (sortBy === 'DRIVER') {
+        const cmp = (a.namaDriverFt || '').localeCompare(b.namaDriverFt || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [fuelTransfers, startDate, endDate, searchTerm, sortBy]);
+
+  const groupedList = useMemo(() => {
+    if (sortBy !== 'DRIVER' && sortBy !== 'DATE') return null;
+    const map = new Map<string, { key: string; label: string; items: FuelTransferRecord[]; subtotalQty: number }>();
+    filteredList.forEach((item) => {
+      const key = sortBy === 'DRIVER' ? (item.namaDriverFt || 'LAINNYA').trim().toUpperCase() : (item.tanggal || '-');
+      const label = sortBy === 'DRIVER' ? `Driver FT: ${item.namaDriverFt || 'LAINNYA'}` : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalQty: 0 };
+      cur.items.push(item);
+      cur.subtotalQty += Number(item.qty) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
     );
-  });
+  }, [filteredList, sortBy]);
+
+  const totalFilteredQty = useMemo(
+    () => filteredList.reduce((acc, r) => acc + (Number(r.qty) || 0), 0),
+    [filteredList]
+  );
+
+  const sortOptionsList = [
+    { value: 'DATE_DESC', label: 'Tanggal Terbaru' },
+    { value: 'DATE_ASC', label: 'Tanggal Terlama' },
+    { value: 'DRIVER', label: 'Per Driver FT (+Subtotal)' },
+    { value: 'DATE', label: 'Per Hari (+Subtotal)' },
+    { value: 'QTY_DESC', label: 'Qty Transfer Terbesar' },
+  ];
+
+  const handleDirectPrintPreview = () => {
+    if (!canPrintPreview && !canExport) return;
+    const sortLabel = sortOptionsList.find((o) => o.value === sortBy)?.label || 'Tanggal Terbaru';
+    const filterInfo = searchTerm.trim() ? `Cari: "${searchTerm.trim()}"` : '';
+
+    const mapRow = (item: FuelTransferRecord, num: number): (string | number)[] => [
+      num,
+      `${item.tanggal} (${item.jam || '-'})`,
+      `${item.namaDriverFt}\n${item.driverFtJabatan || '-'}`,
+      `${item.picFog}\n${item.picFogJabatan || '-'}`,
+      (Number(item.flowmeterStart) || 0).toLocaleString('id-ID'),
+      (Number(item.flowmeterStop) || 0).toLocaleString('id-ID'),
+      `${(Number(item.qty) || 0).toLocaleString('id-ID')} Ltr`,
+      item.remark || '-',
+    ];
+
+    let pdfRows: (string | number)[][] = [];
+    let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+    if (groupedList) {
+      let rowNum = 1;
+      pdfGroups = groupedList.map((grp) => ({
+        headerText: `${grp.label} (${grp.items.length} Ritase Transfer)`,
+        rows: grp.items.map((item) => mapRow(item, rowNum++)),
+        subtotalText: `SUBTOTAL ${grp.label} (${grp.items.length} Ritase): ${grp.subtotalQty.toLocaleString('id-ID')} Liter`,
+      }));
+    } else {
+      pdfRows = filteredList.map((item, idx) => mapRow(item, idx + 1));
+    }
+
+    const result = generateFogTableReportPDF({
+      reportTitle: 'LAPORAN TRANSFER FUEL (TANGKI UTAMA -> FT-01)',
+      reportSubtitle: 'Penyaluran BBM Solar dari Tangki Timbun Utama ke Armada Fuel Truck',
+      accentColor: [37, 99, 235],
+      periodeLabel: formatPeriodeLabel(startDate, endDate),
+      sortLabel,
+      filterInfo,
+      headers: [
+        'No',
+        'Tanggal & Jam',
+        'Nama Driver FT',
+        'PIC FOG',
+        'Flowmeter Start',
+        'Flowmeter Stop',
+        'Qty Transfer',
+        'Catatan / Keterangan',
+      ],
+      rows: pdfRows,
+      groups: pdfGroups,
+      grandTotalRow: [
+        {
+          content: `GRAND TOTAL TRANSFER FUEL (${filteredList.length} Ritase)`,
+          colSpan: 6,
+          styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: `${totalFilteredQty.toLocaleString('id-ID')} Ltr`,
+          styles: { fillColor: [30, 41, 59], textColor: [147, 197, 253], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: '',
+          styles: { fillColor: [30, 41, 59] },
+        },
+      ],
+      columnStyles: {
+        0: { cellWidth: 9, halign: 'center' },
+        1: { cellWidth: 32, halign: 'center' },
+        2: { cellWidth: 42 },
+        3: { cellWidth: 42 },
+        4: { cellWidth: 28, halign: 'right' },
+        5: { cellWidth: 28, halign: 'right' },
+        6: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+        7: { cellWidth: 'auto' },
+      },
+      kpis: [
+        { label: 'Total Ritase Transfer', value: `${filteredList.length} Ritase`, accent: 'slate' },
+        { label: 'Total Volume Transfer', value: `${totalFilteredQty.toLocaleString('id-ID')} Liter`, accent: 'blue' },
+      ],
+      signatories,
+      currentUser,
+      filenamePrefix: 'Laporan_Transfer_Fuel_FT01',
+    });
+
+    setPreviewPdfUrl(result.blobUrl);
+    setPreviewFilename(result.filename);
+    setPreviewDownloadFn(() => result.download);
+    setShowPdfPreview(true);
+  };
 
   const totalTransferLiter = fuelTransfers.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
 
@@ -275,16 +431,16 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
             />
           </div>
 
-          {(canPrintPreview || canExport) && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && (
             <button
               id="btn-export-pdf-fuel-transfer"
               type="button"
-              onClick={onOpenExportPDF}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Buka Print Preview / Laporan PDF Transaksi Transfer Fuel Truck (PT BATU KALI WELANG AMPUH)"
+              onClick={handleDirectPrintPreview}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/50 text-blue-300 font-bold text-xs font-mono transition active:scale-95 whitespace-nowrap"
+              title="Buka Print Preview Langsung Sesuai Tabel Transfer Fuel"
             >
-              <FileDown className="w-4 h-4 text-blue-400" />
-              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
+              <Eye className="w-4 h-4 text-blue-400" />
+              <span>Print Preview</span>
             </button>
           )}
 
@@ -386,6 +542,47 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
         </div>
       </div>
 
+      {/* Validasi 3 Pihak Inline (Modul 3 Pattern) */}
+      <FogValidationBar
+        manpowerList={manpowerList}
+        signatories={signatories}
+        administrasiList={resolvedSig.administrasiList}
+        kabagList={resolvedSig.kabagList}
+        onChange={updateSignatories}
+        onSave={saveSignatories}
+        accentColor="blue"
+      />
+
+      {/* Filter Tanggal di Awal & Urutkan / Sort By */}
+      <FogDateSortToolbar
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={setStartDate}
+        onEndDateChange={setEndDate}
+        sortBy={sortBy}
+        onSortByChange={(val) => setSortBy(val as any)}
+        sortOptions={sortOptionsList}
+        hasActiveFilter={Boolean(startDate || endDate || searchTerm || sortBy !== 'DATE_DESC')}
+        onResetAll={() => {
+          setStartDate('');
+          setEndDate('');
+          setSearchTerm('');
+          setSortBy('DATE_DESC');
+        }}
+        resultSummary={
+          <>
+            <span>
+              Periode: <strong className="text-amber-400">{formatPeriodeLabel(startDate, endDate)}</strong> • Urutan:{' '}
+              <strong className="text-stone-200">{sortOptionsList.find((o) => o.value === sortBy)?.label}</strong>
+            </span>
+            <span>
+              Total Hasil: <strong className="text-stone-100">{filteredList.length}</strong> ritase •{' '}
+              <strong className="text-blue-400">{totalFilteredQty.toLocaleString('id-ID')}</strong> Liter
+            </span>
+          </>
+        }
+      />
+
       {/* Table Data Transfer Fuel */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
@@ -409,7 +606,88 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60 font-sans">
-              {filteredList.map((item) => (
+              {groupedList ? (
+                groupedList.map((grp) => (
+                  <React.Fragment key={grp.key}>
+                    <tr className="bg-blue-950/40 border-y border-blue-500/30">
+                      <td colSpan={8} className="py-2 px-3 font-mono font-bold text-blue-300 text-xs">
+                        ▸ {grp.label} ({grp.items.length} Ritase Transfer)
+                      </td>
+                    </tr>
+                    {grp.items.map((item) => (
+                      <tr key={item.id} className="hover:bg-stone-800/30 transition">
+                        <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-stone-500" />
+                            <span>{item.tanggal}</span>
+                            <span className="text-stone-500">{item.jam}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-blue-400">{item.namaDriverFt}</div>
+                          <div className="text-[10px] text-stone-500 font-mono">{item.driverFtJabatan || '-'}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="text-stone-200 font-semibold">{item.picFog}</div>
+                          <div className="text-[10px] text-stone-500 font-mono">{item.picFogJabatan || '-'}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-stone-300">
+                          {(item.flowmeterStart ?? 0).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-stone-300">
+                          {(item.flowmeterStop ?? 0).toLocaleString('id-ID')}
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-blue-400 text-right text-sm">
+                          {(item.qty ?? 0).toLocaleString('id-ID')} Ltr
+                        </td>
+                        <td className="py-3 px-3 text-stone-400 text-[11px] max-w-xs truncate">
+                          {item.remark || '-'}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={() => handleOpenEdit(item)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canEdit
+                                  ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canEdit ? 'Edit Record' : 'Akun Anda dalam mode Hanya View'}
+                            >
+                              {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canDelete}
+                              onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canDelete
+                                  ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canDelete ? 'Hapus Record' : 'Tidak ada izin Hapus'}
+                            >
+                              {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-blue-500/10 border-b-2 border-blue-500/30 font-mono font-bold text-blue-300">
+                      <td colSpan={5} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider">
+                        SUBTOTAL {grp.label} ({grp.items.length} Ritase):
+                      </td>
+                      <td className="py-2 px-3 text-right font-black text-blue-400 text-sm">
+                        {grp.subtotalQty.toLocaleString('id-ID')} Ltr
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </React.Fragment>
+                ))
+              ) : (
+                filteredList.map((item) => (
                 <tr key={item.id} className="hover:bg-stone-800/30 transition">
                   <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
                     <div className="flex items-center gap-1.5">
@@ -469,13 +747,24 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
                     </div>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
 
-              {filteredList.length === 0 && (
+              {filteredList.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-stone-500">
-                    Belum ada riwayat transfer Solar Tangki Utama ke Fuel Truck.
+                    Belum ada riwayat transfer Solar Tangki Utama ke Fuel Truck yang sesuai filter.
                   </td>
+                </tr>
+              ) : (
+                <tr className="bg-stone-950 font-mono font-bold text-stone-100 border-t-2 border-stone-700">
+                  <td colSpan={5} className="py-3 px-3 text-right uppercase text-xs tracking-wider text-blue-400">
+                    GRAND TOTAL TRANSFER ({filteredList.length} Ritase):
+                  </td>
+                  <td className="py-3 px-3 text-right font-black text-blue-400 text-base">
+                    {totalFilteredQty.toLocaleString('id-ID')} Ltr
+                  </td>
+                  <td colSpan={2}></td>
                 </tr>
               )}
             </tbody>
@@ -710,6 +999,22 @@ export const FuelTransferSubView: React.FC<FuelTransferSubViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Direct Print Preview Modal (Tanpa Masuk Sub-Form) */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="Pratinjau Laporan Transfer Fuel (Tangki Utama -> FT-01)"
+        subtitle={`Periode: ${formatPeriodeLabel(startDate, endDate)} • Urutan: ${sortOptionsList.find((o) => o.value === sortBy)?.label}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={canExport && previewDownloadFn ? previewDownloadFn : undefined}
+        signatoriesSummary={{
+          pembuat: signatories.pembuatName,
+          diperiksa: signatories.diperiksaName,
+          diketahui: signatories.disetujuiName,
+        }}
+      />
     </div>
   );
 };

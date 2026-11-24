@@ -4773,6 +4773,292 @@ export const generatePurchaseRequestPDF = ({
   return { doc, blob, blobUrl, filename, download };
 };
 
+export interface FogTableKpiItem {
+  label: string;
+  value: string;
+  accent?: 'amber' | 'blue' | 'emerald' | 'rose' | 'slate';
+}
+
+export interface FogTableReportGroup {
+  headerText: string;
+  rows: (string | number)[][];
+  subtotalText?: string;
+}
+
+export interface GenerateFogTableReportParams {
+  reportTitle: string;
+  reportSubtitle?: string;
+  accentColor?: [number, number, number];
+  periodeLabel: string;
+  sortLabel: string;
+  filterInfo?: string;
+  headers: string[];
+  rows?: (string | number)[][];
+  groups?: FogTableReportGroup[];
+  grandTotalRow?: (string | number | { content: string; colSpan?: number; styles?: Record<string, unknown> })[];
+  columnStyles?: Record<number, Record<string, unknown>>;
+  kpis?: FogTableKpiItem[];
+  signatories: {
+    pembuatName?: string;
+    pembuatJabatan?: string;
+    diperiksaName?: string;
+    diperiksaJabatan?: string;
+    disetujuiName?: string;
+    disetujuiJabatan?: string;
+  };
+  currentUser?: UserAccount;
+  filenamePrefix: string;
+}
+
+/**
+ * Generator PDF Resmi & Persis Tabel untuk Sub-Modul FOG & SPBU Luar (Modul 4).
+ * Mencetak langsung data sesuai filter tanggal di awal, kolom tabel aktif, urutan Sort By,
+ * baris subtotal grup (jika dikelompokkan), total keseluruhan, dan Pengesahan 3 Pihak.
+ */
+export const generateFogTableReportPDF = ({
+  reportTitle,
+  reportSubtitle = 'Divisi Logistik & Operasional Quarry Purwosari',
+  accentColor = [180, 83, 9],
+  periodeLabel,
+  sortLabel,
+  filterInfo,
+  headers,
+  rows = [],
+  groups,
+  grandTotalRow,
+  columnStyles,
+  kpis = [],
+  signatories,
+  currentUser,
+  filenamePrefix,
+}: GenerateFogTableReportParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const nowStr = new Date().toLocaleString('id-ID', { hour12: false });
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Admin FOG';
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  // 1. KOP SURAT RESMI PT BATU KALI WELANG AMPUH
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text('PT BATU KALI WELANG AMPUH • QUARRY PURWOSARI, PASURUAN', 14, 12);
+
+  doc.setFontSize(8);
+  doc.setTextColor(...accentColor);
+  doc.text('LAPORAN RESMI MODUL 4 (FOG & SPBU LUAR)', 283, 12, { align: 'right' });
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(...darkTextColor);
+  doc.text(reportTitle.toUpperCase(), 148.5, 19, { align: 'center' });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...grayTextColor);
+  doc.text(reportSubtitle, 148.5, 24, { align: 'center' });
+
+  doc.setFontSize(8);
+  doc.text(
+    `Periode: ${periodeLabel}  |  Urutan Tabel: ${sortLabel}${filterInfo ? `  |  ${filterInfo}` : ''}  |  Dicetak: ${nowStr} (${exporterName})`,
+    148.5,
+    29,
+    { align: 'center' }
+  );
+
+  doc.setDrawColor(...accentColor);
+  doc.setLineWidth(0.5);
+  doc.line(14, 32, 283, 32);
+
+  let curY = 36;
+
+  // 2. KPI RINGKASAN (JIKA ADA)
+  if (kpis.length > 0) {
+    const gap = 3;
+    const totalW = 269;
+    const cardW = (totalW - gap * (kpis.length - 1)) / kpis.length;
+    kpis.forEach((kpi, idx) => {
+      const x = 14 + idx * (cardW + gap);
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.25);
+      doc.roundedRect(x, curY, cardW, 13, 1.5, 1.5, 'FD');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...grayTextColor);
+      doc.text(kpi.label.toUpperCase(), x + 3, curY + 4.5);
+
+      doc.setFontSize(9.5);
+      if (kpi.accent === 'emerald') doc.setTextColor(5, 150, 105);
+      else if (kpi.accent === 'blue') doc.setTextColor(37, 99, 235);
+      else if (kpi.accent === 'rose') doc.setTextColor(225, 29, 72);
+      else if (kpi.accent === 'amber') doc.setTextColor(180, 83, 9);
+      else doc.setTextColor(...darkTextColor);
+
+      doc.text(kpi.value, x + 3, curY + 10.2);
+    });
+    curY += 17;
+  }
+
+  // 3. BODY TABEL (STANDAR ATAU DIKELOMPOKKAN + SUBTOTAL)
+  const tableBody: any[] = [];
+  const colCount = headers.length;
+
+  if (groups && groups.length > 0) {
+    groups.forEach((grp) => {
+      tableBody.push([
+        {
+          content: grp.headerText,
+          colSpan: colCount,
+          styles: {
+            fillColor: [241, 245, 249],
+            textColor: [15, 23, 42],
+            fontStyle: 'bold',
+            fontSize: 7.2,
+            halign: 'left',
+          },
+        },
+      ]);
+      grp.rows.forEach((r) => tableBody.push(r));
+      if (grp.subtotalText) {
+        tableBody.push([
+          {
+            content: grp.subtotalText,
+            colSpan: colCount,
+            styles: {
+              fillColor: [254, 243, 199],
+              textColor: [146, 64, 14],
+              fontStyle: 'bold',
+              fontSize: 7.2,
+              halign: 'right',
+            },
+          },
+        ]);
+      }
+    });
+  } else if (rows.length > 0) {
+    rows.forEach((r) => tableBody.push(r));
+  }
+
+  if (tableBody.length === 0) {
+    tableBody.push([
+      {
+        content: 'Tidak ada data transaksi yang sesuai filter dan periode yang dipilih.',
+        colSpan: colCount,
+        styles: {
+          halign: 'center',
+          fontStyle: 'italic',
+          textColor: [148, 163, 184],
+        },
+      },
+    ]);
+  } else if (grandTotalRow && grandTotalRow.length > 0) {
+    tableBody.push(grandTotalRow);
+  }
+
+  autoTable(doc, {
+    startY: curY,
+    head: [headers],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: accentColor,
+      textColor: [255, 255, 255],
+      fontSize: 7,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 1.8,
+    },
+    styles: {
+      fontSize: 6.8,
+      cellPadding: 1.5,
+      textColor: darkTextColor,
+      lineColor: [226, 232, 240],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    columnStyles: (columnStyles as any) || {},
+    margin: { left: 14, right: 14 },
+  });
+
+  // @ts-ignore
+  curY = (doc.lastAutoTable?.finalY || curY + 20) + 8;
+
+  // 4. LEMBAR PENGESAHAN 3 PIHAK (SAMA DENGAN VALIDASI MODUL 3 / FOG)
+  if (curY > 158) {
+    doc.addPage();
+    curY = 20;
+  }
+
+  const pembuatClean = (signatories.pembuatName || '').trim() || '....................................';
+  const pembuatJab = (signatories.pembuatJabatan || 'Administrasi FOG').trim();
+  const diperiksaClean = (signatories.diperiksaName || '').trim() || '....................................';
+  const diperiksaJab = (signatories.diperiksaJabatan || 'Administrasi Inventory').trim();
+  const disetujuiClean = (signatories.disetujuiName || 'Dodik Mariyadi').trim();
+  const disetujuiJab = (signatories.disetujuiJabatan || 'Kabag Workshop').trim();
+
+  const sigPositions = [
+    { title: 'Di Buat Oleh,', name: pembuatClean, jab: pembuatJab, sub: 'Administrasi Workshop / FOG', x: 55 },
+    { title: 'Diperiksa Oleh,', name: diperiksaClean, jab: diperiksaJab, sub: 'Administrasi Workshop / Inventory', x: 148.5 },
+    { title: 'Disetujui Oleh,', name: disetujuiClean, jab: disetujuiJab, sub: 'Kabag Workshop PT BKWA', x: 242 },
+  ];
+
+  sigPositions.forEach((sig) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sig.title, sig.x, curY + 3, { align: 'center' });
+
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sig.jab, sig.x, curY + 7, { align: 'center' });
+
+    doc.setDrawColor(100, 116, 139);
+    doc.setLineWidth(0.3);
+    doc.line(sig.x - 30, curY + 21, sig.x + 30, curY + 21);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(`( ${sig.name} )`, sig.x, curY + 25, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sig.sub, sig.x, curY + 29, { align: 'center' });
+  });
+
+  // 5. FOOTER HALAMAN OTOMATIS
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH • ${reportTitle} (${periodeLabel}) • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      203,
+      { align: 'center' }
+    );
+  }
+
+  const cleanDate = new Date().toISOString().split('T')[0];
+  const filename = `${filenamePrefix}_PT_BKWA_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
+
 
 
 

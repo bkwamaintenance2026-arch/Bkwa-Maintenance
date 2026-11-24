@@ -8,6 +8,15 @@ import {
   InventoryPeriodBalance
 } from '../../types';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { FogValidationBar, useFogSignatories } from './FogValidationBar';
+import {
+  FogDateSortToolbar,
+  matchesDateRange,
+  formatPeriodeLabel,
+  getTimestampMs,
+} from './FogDateRangeBar';
+import { generateFogTableReportPDF } from '../../utils/pdfGenerator';
 import { 
   Fuel, 
   Plus, 
@@ -31,7 +40,8 @@ import {
   Download,
   Sparkles,
   ArrowRightLeft,
-  FileDown
+  FileDown,
+  Eye
 } from 'lucide-react';
 import {
   isDeveloper,
@@ -78,11 +88,21 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
   const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'DISTRIBUTOR' | 'DATE' | 'QTY_DESC'>('DATE_DESC');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Validasi 3 Pihak & Direct Print Preview (seperti Modul 3)
+  const { signatories, resolved: resolvedSig, updateSignatories, saveSignatories } = useFogSignatories(manpowerList, currentUser);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [previewDownloadFn, setPreviewDownloadFn] = useState<(() => void) | null>(null);
 
   // Logika Saldo Solar Tangki Utama (Solar Industri):
   // Saldo solar periode sebelumnya + Input fuel dari distributor - Qty Transfer Fuel
@@ -316,16 +336,178 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
     })
     .slice(0, 5);
 
-  const filteredList = fuelStockInputs.filter((item) => {
-    const q = searchTerm.toLowerCase();
-    return (
-      item.distributor.toLowerCase().includes(q) ||
-      item.snReffNo.toLowerCase().includes(q) ||
-      item.platNomor.toLowerCase().includes(q) ||
-      item.driverName.toLowerCase().includes(q) ||
-      item.picFogName.toLowerCase().includes(q)
+  const filteredList = useMemo(() => {
+    const base = fuelStockInputs.filter((item) => {
+      if (!matchesDateRange(item.tanggal, startDate, endDate)) return false;
+      const q = searchTerm.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        item.distributor.toLowerCase().includes(q) ||
+        item.snReffNo.toLowerCase().includes(q) ||
+        item.platNomor.toLowerCase().includes(q) ||
+        item.driverName.toLowerCase().includes(q) ||
+        item.picFogName.toLowerCase().includes(q)
+      );
+    });
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.actualQtyFlowmeter) || 0) - (Number(a.actualQtyFlowmeter) || 0);
+      }
+      if (sortBy === 'DISTRIBUTOR') {
+        const cmp = (a.distributor || '').localeCompare(b.distributor || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [fuelStockInputs, startDate, endDate, searchTerm, sortBy]);
+
+  const groupedList = useMemo(() => {
+    if (sortBy !== 'DISTRIBUTOR' && sortBy !== 'DATE') return null;
+    const map = new Map<
+      string,
+      { key: string; label: string; items: FuelStockInputRecord[]; subtotalSup: number; subtotalActual: number }
+    >();
+    filteredList.forEach((item) => {
+      const key = sortBy === 'DISTRIBUTOR' ? (item.distributor || 'LAINNYA').trim().toUpperCase() : (item.tanggal || '-');
+      const label = sortBy === 'DISTRIBUTOR' ? `Distributor: ${item.distributor || 'LAINNYA'}` : `Tanggal: ${item.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalSup: 0, subtotalActual: 0 };
+      cur.items.push(item);
+      cur.subtotalSup += Number(item.qtySupplier) || 0;
+      cur.subtotalActual += Number(item.actualQtyFlowmeter) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
     );
-  });
+  }, [filteredList, sortBy]);
+
+  const totalFilteredSupplier = useMemo(
+    () => filteredList.reduce((acc, r) => acc + (Number(r.qtySupplier) || 0), 0),
+    [filteredList]
+  );
+  const totalFilteredActual = useMemo(
+    () => filteredList.reduce((acc, r) => acc + (Number(r.actualQtyFlowmeter) || 0), 0),
+    [filteredList]
+  );
+
+  const sortOptionsList = [
+    { value: 'DATE_DESC', label: 'Tanggal Terbaru' },
+    { value: 'DATE_ASC', label: 'Tanggal Terlama' },
+    { value: 'DISTRIBUTOR', label: 'Per Distributor (+Subtotal)' },
+    { value: 'DATE', label: 'Per Hari (+Subtotal)' },
+    { value: 'QTY_DESC', label: 'Actual Flowmeter Terbesar' },
+  ];
+
+  const handleDirectPrintPreview = () => {
+    if (!canPrintPreview && !canExport) return;
+    const sortLabel = sortOptionsList.find((o) => o.value === sortBy)?.label || 'Tanggal Terbaru';
+    const filterInfo = searchTerm.trim() ? `Cari: "${searchTerm.trim()}"` : '';
+
+    const mapRow = (item: FuelStockInputRecord, num: number): (string | number)[] => {
+      const timbangStr =
+        item.timbangGross !== undefined && item.timbangGross !== ''
+          ? `G:${Number(item.timbangGross).toLocaleString('id-ID')} T:${Number(item.timbangTare || 0).toLocaleString('id-ID')} N:${Number(item.timbangNett || Number(item.timbangGross) - Number(item.timbangTare || 0)).toLocaleString('id-ID')}`
+          : item.hasilTimbang || item.hasilUkurStickSesudah || '-';
+      return [
+        num,
+        `${item.tanggal}\n${item.jam || '-'}`,
+        `${item.distributor}\nSN: ${item.snReffNo}`,
+        `${item.platNomor || '-'}\n${item.driverName || '-'}`,
+        item.hasilUkurTangkiUtama || item.hasilUkurStickSebelum || '-',
+        timbangStr,
+        `${(Number(item.flowmeterStart) || 0).toLocaleString('id-ID')} - ${(Number(item.flowmeterEnd) || 0).toLocaleString('id-ID')}`,
+        `${(Number(item.qtySupplier) || 0).toLocaleString('id-ID')} L`,
+        `${(Number(item.actualQtyFlowmeter) || 0).toLocaleString('id-ID')} L`,
+        `${item.picFogName || '-'}\n${item.picFogJabatan || ''}`,
+      ];
+    };
+
+    let pdfRows: (string | number)[][] = [];
+    let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+    if (groupedList) {
+      let rowNum = 1;
+      pdfGroups = groupedList.map((grp) => ({
+        headerText: `${grp.label} (${grp.items.length} Batch)`,
+        rows: grp.items.map((item) => mapRow(item, rowNum++)),
+        subtotalText: `SUBTOTAL ${grp.label} (${grp.items.length} Batch): Qty Suplier ${grp.subtotalSup.toLocaleString('id-ID')} Ltr  |  Actual Flowmeter ${grp.subtotalActual.toLocaleString('id-ID')} Ltr`,
+      }));
+    } else {
+      pdfRows = filteredList.map((item, idx) => mapRow(item, idx + 1));
+    }
+
+    const result = generateFogTableReportPDF({
+      reportTitle: 'LAPORAN PENERIMAAN STOK SOLAR (TANGKI UTAMA)',
+      reportSubtitle: 'Input Stock Solar Industri dari Distributor ke Tangki Timbun Utama Quarry',
+      accentColor: [180, 83, 9],
+      periodeLabel: formatPeriodeLabel(startDate, endDate),
+      sortLabel,
+      filterInfo,
+      headers: [
+        'No',
+        'Tanggal / Jam',
+        'Distributor & Reff',
+        'Plat & Supir',
+        'Ukur Tangki Utama',
+        'Hasil Timbang',
+        'Flowmeter (Start-End)',
+        'Qty Suplier',
+        'Actual Flowmeter',
+        'PIC FOG',
+      ],
+      rows: pdfRows,
+      groups: pdfGroups,
+      grandTotalRow: [
+        {
+          content: `GRAND TOTAL PENERIMAAN SOLAR (${filteredList.length} Batch)`,
+          colSpan: 7,
+          styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: `${totalFilteredSupplier.toLocaleString('id-ID')} Ltr`,
+          styles: { fillColor: [30, 41, 59], textColor: [226, 232, 240], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: `${totalFilteredActual.toLocaleString('id-ID')} Ltr`,
+          styles: { fillColor: [30, 41, 59], textColor: [110, 231, 183], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: '',
+          styles: { fillColor: [30, 41, 59] },
+        },
+      ],
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 22, halign: 'center' },
+        2: { cellWidth: 34 },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 26 },
+        5: { cellWidth: 36 },
+        6: { cellWidth: 30, halign: 'center' },
+        7: { cellWidth: 22, halign: 'right' },
+        8: { cellWidth: 24, halign: 'right', fontStyle: 'bold' },
+        9: { cellWidth: 'auto' },
+      },
+      kpis: [
+        { label: 'Total Batch Masuk', value: `${filteredList.length} Penerimaan`, accent: 'slate' },
+        { label: 'Qty Suplier (Terfilter)', value: `${totalFilteredSupplier.toLocaleString('id-ID')} Ltr`, accent: 'amber' },
+        { label: 'Actual Flowmeter (Terfilter)', value: `${totalFilteredActual.toLocaleString('id-ID')} Ltr`, accent: 'emerald' },
+        { label: 'Saldo Akhir Tangki Utama', value: `${saldoAkhirTangkiUtama.toLocaleString('id-ID')} Ltr`, accent: 'blue' },
+      ],
+      signatories,
+      currentUser,
+      filenamePrefix: 'Laporan_Input_Stock_Fuel_Tangki_Utama',
+    });
+
+    setPreviewPdfUrl(result.blobUrl);
+    setPreviewFilename(result.filename);
+    setPreviewDownloadFn(() => result.download);
+    setShowPdfPreview(true);
+  };
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
@@ -412,16 +594,16 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
             </button>
           )}
 
-          {(canPrintPreview || canExport) && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && (
             <button
               id="btn-export-pdf-fuel-stock"
               type="button"
-              onClick={onOpenExportPDF}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Buka Print Preview / Laporan PDF Transaksi Tangki Utama (PT BATU KALI WELANG AMPUH)"
+              onClick={handleDirectPrintPreview}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-xs font-mono transition active:scale-95 whitespace-nowrap"
+              title="Buka Print Preview Langsung Sesuai Tabel Input Stock Fuel"
             >
-              <FileDown className="w-4 h-4 text-amber-400" />
-              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
+              <Eye className="w-4 h-4 text-amber-400" />
+              <span>Print Preview</span>
             </button>
           )}
 
@@ -610,6 +792,48 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
         </div>
       </div>
 
+      {/* Validasi 3 Pihak Inline (Modul 3 Pattern) */}
+      <FogValidationBar
+        manpowerList={manpowerList}
+        signatories={signatories}
+        administrasiList={resolvedSig.administrasiList}
+        kabagList={resolvedSig.kabagList}
+        onChange={updateSignatories}
+        onSave={saveSignatories}
+        accentColor="amber"
+      />
+
+      {/* Filter Tanggal di Awal & Urutkan / Sort By */}
+      <FogDateSortToolbar
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={setStartDate}
+        onEndDateChange={setEndDate}
+        sortBy={sortBy}
+        onSortByChange={(val) => setSortBy(val as any)}
+        sortOptions={sortOptionsList}
+        hasActiveFilter={Boolean(startDate || endDate || searchTerm || sortBy !== 'DATE_DESC')}
+        onResetAll={() => {
+          setStartDate('');
+          setEndDate('');
+          setSearchTerm('');
+          setSortBy('DATE_DESC');
+        }}
+        resultSummary={
+          <>
+            <span>
+              Periode: <strong className="text-amber-400">{formatPeriodeLabel(startDate, endDate)}</strong> • Urutan:{' '}
+              <strong className="text-stone-200">{sortOptionsList.find((o) => o.value === sortBy)?.label}</strong>
+            </span>
+            <span>
+              Total Hasil: <strong className="text-stone-100">{filteredList.length}</strong> batch • Suplier:{' '}
+              <strong className="text-stone-200">{totalFilteredSupplier.toLocaleString('id-ID')}</strong> Ltr • Actual:{' '}
+              <strong className="text-emerald-400">{totalFilteredActual.toLocaleString('id-ID')}</strong> Ltr
+            </span>
+          </>
+        }
+      />
+
       {/* ========================================================================= */}
       {/* DAFTAR LENGKAP INPUT STOCK (FUEL) */}
       {/* ========================================================================= */}
@@ -637,7 +861,116 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-800/60 font-sans">
-              {filteredList.map((item) => (
+              {groupedList ? (
+                groupedList.map((grp) => (
+                  <React.Fragment key={grp.key}>
+                    <tr className="bg-amber-950/40 border-y border-amber-500/30">
+                      <td colSpan={10} className="py-2 px-3 font-mono font-bold text-amber-300 text-xs">
+                        ▸ {grp.label} ({grp.items.length} Batch Penerimaan)
+                      </td>
+                    </tr>
+                    {grp.items.map((item) => (
+                      <tr key={item.id} className="hover:bg-stone-800/30 transition">
+                        <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
+                          <div>{item.tanggal}</div>
+                          <div className="text-[10px] text-stone-500">{item.jam}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-amber-400">{item.distributor}</div>
+                          <div className="text-[10px] font-mono text-stone-400">SN: {item.snReffNo}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px]">
+                          <div className="text-stone-200">Plat: {item.platNomor || '-'}</div>
+                          <div className="text-stone-400">Supir: {item.driverName || '-'}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                          <div className="flex items-center gap-1.5">
+                            <Ruler className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span className="font-semibold text-stone-200">
+                              {item.hasilUkurTangkiUtama || item.hasilUkurStickSebelum || '-'}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                          {item.timbangGross !== undefined && item.timbangGross !== '' ? (
+                            <div className="space-y-0.5">
+                              <div className="text-[10px] text-stone-400">
+                                G: {Number(item.timbangGross).toLocaleString('id-ID')} kg | T: {Number(item.timbangTare || 0).toLocaleString('id-ID')} kg
+                              </div>
+                              <div className="text-emerald-400 font-bold">
+                                Nett: {Number(item.timbangNett || (Number(item.timbangGross) - Number(item.timbangTare || 0))).toLocaleString('id-ID')} kg
+                              </div>
+                            </div>
+                          ) : item.hasilTimbang ? (
+                            <span className="text-stone-300 font-semibold">{item.hasilTimbang}</span>
+                          ) : item.hasilUkurStickSesudah ? (
+                            <span className="text-stone-400">{item.hasilUkurStickSesudah}</span>
+                          ) : (
+                            <span className="text-stone-500">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-stone-300">
+                          <div>Start: {(item.flowmeterStart ?? 0).toLocaleString('id-ID')}</div>
+                          <div>End: {(item.flowmeterEnd ?? 0).toLocaleString('id-ID')}</div>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-stone-200 text-right">
+                          {(item.qtySupplier ?? 0).toLocaleString('id-ID')} Ltr
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-emerald-400 text-right">
+                          {(item.actualQtyFlowmeter ?? 0).toLocaleString('id-ID')} Ltr
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="text-stone-200 font-semibold">{item.picFogName}</div>
+                          <div className="text-[10px] text-stone-500">{item.picFogJabatan || '-'}</div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={() => handleOpenEdit(item)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canEdit
+                                  ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border-stone-700'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canEdit ? 'Edit Record' : 'Akun Anda dalam mode Hanya View'}
+                            >
+                              {canEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canDelete}
+                              onClick={() => canDelete && setDeleteConfirmId(item.id)}
+                              className={`p-1.5 rounded-lg transition border ${
+                                canDelete
+                                  ? 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-800/40 text-rose-300'
+                                  : 'bg-stone-900/60 text-stone-600 border-stone-800 cursor-not-allowed'
+                              }`}
+                              title={canDelete ? 'Hapus Record' : 'Tidak ada izin Hapus'}
+                            >
+                              {canDelete ? <Trash2 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-stone-600" />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-amber-500/10 border-b-2 border-amber-500/30 font-mono font-bold text-amber-300">
+                      <td colSpan={6} className="py-2 px-3 text-right uppercase text-[11px] tracking-wider">
+                        SUBTOTAL {grp.label} ({grp.items.length} Batch):
+                      </td>
+                      <td className="py-2 px-3 text-right text-stone-200">
+                        {grp.subtotalSup.toLocaleString('id-ID')} Ltr
+                      </td>
+                      <td className="py-2 px-3 text-right font-black text-emerald-400">
+                        {grp.subtotalActual.toLocaleString('id-ID')} Ltr
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </React.Fragment>
+                ))
+              ) : (
+                filteredList.map((item) => (
                 <tr key={item.id} className="hover:bg-stone-800/30 transition">
                   <td className="py-3 px-3 font-mono text-stone-200 whitespace-nowrap">
                     <div>{item.tanggal}</div>
@@ -724,13 +1057,27 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
                     </div>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
 
-              {filteredList.length === 0 && (
+              {filteredList.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-8 text-center text-stone-500">
                     Tidak ada catatan Input Stock Fuel yang sesuai filter pencarian.
                   </td>
+                </tr>
+              ) : (
+                <tr className="bg-stone-950 font-mono font-bold text-stone-100 border-t-2 border-stone-700">
+                  <td colSpan={6} className="py-3 px-3 text-right uppercase text-xs tracking-wider text-amber-400">
+                    GRAND TOTAL PENERIMAAN ({filteredList.length} Batch):
+                  </td>
+                  <td className="py-3 px-3 text-right font-bold text-stone-200">
+                    {totalFilteredSupplier.toLocaleString('id-ID')} Ltr
+                  </td>
+                  <td className="py-3 px-3 text-right font-black text-emerald-400 text-sm">
+                    {totalFilteredActual.toLocaleString('id-ID')} Ltr
+                  </td>
+                  <td colSpan={2}></td>
                 </tr>
               )}
             </tbody>
@@ -1101,6 +1448,22 @@ export const FuelStockInputSubView: React.FC<FuelStockInputSubViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Direct Print Preview Modal (Tanpa Masuk Sub-Form) */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="Pratinjau Laporan Input Stock Fuel (Tangki Utama)"
+        subtitle={`Periode: ${formatPeriodeLabel(startDate, endDate)} • Urutan: ${sortOptionsList.find((o) => o.value === sortBy)?.label}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={canExport && previewDownloadFn ? previewDownloadFn : undefined}
+        signatoriesSummary={{
+          pembuat: signatories.pembuatName,
+          diperiksa: signatories.diperiksaName,
+          diketahui: signatories.disetujuiName,
+        }}
+      />
     </div>
   );
 };

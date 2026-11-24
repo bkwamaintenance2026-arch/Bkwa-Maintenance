@@ -29,9 +29,19 @@ import {
   RotateCcw,
   Download,
   FileDown,
-  Lock
+  Lock,
+  Eye
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { FogValidationBar, useFogSignatories } from './FogValidationBar';
+import {
+  FogDateSortToolbar,
+  matchesDateRange,
+  formatPeriodeLabel,
+  getTimestampMs,
+} from './FogDateRangeBar';
+import { generateFogTableReportPDF } from '../../utils/pdfGenerator';
 import {
   isDeveloper,
   canUserInsertModule,
@@ -76,14 +86,22 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'DEFAULT' | 'UNIT' | 'DATE'>('DEFAULT');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'UNIT' | 'DATE' | 'QTY_DESC'>('DATE_DESC');
   const [filterUnit, setFilterUnit] = useState<string>('ALL');
-  const [filterDate, setFilterDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmitForm = editingId ? canEdit : canInsert;
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Validasi 3 Pihak & Direct Print Preview (seperti Modul 3)
+  const { signatories, resolved: resolvedSig, updateSignatories, saveSignatories } = useFogSignatories(manpowerList, currentUser);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [previewDownloadFn, setPreviewDownloadFn] = useState<(() => void) | null>(null);
 
   // State Form Sesuai Permintaan Spesifikasi:
   // 1. No Bon dibuat Manual
@@ -408,9 +426,10 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
   }, [fuelDistributions]);
 
   const filteredList = useMemo(() => {
-    return fuelDistributions.filter((item) => {
-      const q = searchTerm.toLowerCase();
+    const base = fuelDistributions.filter((item) => {
+      const q = searchTerm.toLowerCase().trim();
       const matchSearch =
+        !q ||
         item.noBon.toLowerCase().includes(q) ||
         item.cnAlat.toLowerCase().includes(q) ||
         item.namaAlat.toLowerCase().includes(q) ||
@@ -419,15 +438,29 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
         (item.lokasi || '').toLowerCase().includes(q);
 
       const matchUnit = filterUnit === 'ALL' || (item.cnAlat || '').trim().toUpperCase() === filterUnit.trim().toUpperCase();
-      const matchDate = !filterDate || item.tanggal === filterDate;
+      const matchRange = matchesDateRange(item.tanggal, startDate, endDate);
 
-      return matchSearch && matchUnit && matchDate;
+      return matchSearch && matchUnit && matchRange;
     });
-  }, [fuelDistributions, searchTerm, filterUnit, filterDate]);
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (sortBy === 'UNIT') {
+        const cmp = (a.cnAlat || '').localeCompare(b.cnAlat || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [fuelDistributions, searchTerm, filterUnit, startDate, endDate, sortBy]);
 
   // Pengelompokan baris untuk Sub Total per Unit atau per Hari
   const groupedList = useMemo(() => {
-    if (sortBy === 'DEFAULT') return null;
+    if (sortBy !== 'UNIT' && sortBy !== 'DATE') return null;
     const map = new Map<string, { key: string; label: string; items: FuelDistributionRecord[]; subtotalLtr: number }>();
     filteredList.forEach((item) => {
       const key = sortBy === 'UNIT' ? (item.cnAlat || 'LAINNYA').trim().toUpperCase() : (item.tanggal || '-');
@@ -439,13 +472,126 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
       cur.subtotalLtr += Number(item.qty) || 0;
       map.set(key, cur);
     });
-    return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
+    );
   }, [filteredList, sortBy]);
 
   const totalFuelDistributed = fuelDistributions.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
   const totalFilteredQty = useMemo(() => {
     return filteredList.reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
   }, [filteredList]);
+
+  const sortOptionsList = [
+    { value: 'DATE_DESC', label: 'Tanggal Terbaru' },
+    { value: 'DATE_ASC', label: 'Tanggal Terlama' },
+    { value: 'UNIT', label: 'Per Unit (+Subtotal)' },
+    { value: 'DATE', label: 'Per Hari (+Subtotal)' },
+    { value: 'QTY_DESC', label: 'Qty Terbanyak (Ltr)' },
+  ];
+
+  // Direct Print Preview Sesuai Tabel Aktif
+  const handleDirectPrintPreview = () => {
+    if (!canPrintPreview && !canExport) return;
+    const sortLabel = sortOptionsList.find((o) => o.value === sortBy)?.label || 'Tanggal Terbaru';
+    const filterParts: string[] = [];
+    if (filterUnit !== 'ALL') filterParts.push(`Unit: ${filterUnit}`);
+    if (searchTerm.trim()) filterParts.push(`Cari: "${searchTerm.trim()}"`);
+
+    const mapRow = (item: FuelDistributionRecord, num: number): (string | number)[] => [
+      num,
+      item.noBon || '-',
+      `${item.tanggal}\n${item.jam || '-'}`,
+      `${item.cnAlat}${item.jenisAlat ? ` (${item.jenisAlat})` : ''}\n${item.namaAlat || ''}`,
+      `${item.operatorName || '-'}\n${item.operatorJabatan || ''}`,
+      (Number(item.hmPengisian ?? item.hm) || 0).toLocaleString('id-ID'),
+      `${(Number(item.flowmeterStart) || 0).toLocaleString('id-ID')} - ${(Number(item.flowmeterStop) || 0).toLocaleString('id-ID')}`,
+      `${(Number(item.qty) || 0).toLocaleString('id-ID')} L`,
+      item.driverFtName || '-',
+      item.picFogName || '-',
+      item.lokasi || '-',
+    ];
+
+    let pdfRows: (string | number)[][] = [];
+    let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+    if (groupedList) {
+      let rowNum = 1;
+      pdfGroups = groupedList.map((grp) => ({
+        headerText: `${sortBy === 'UNIT' ? `UNIT: ${grp.label}` : grp.label} (${grp.items.length} Bon Transaksi)`,
+        rows: grp.items.map((item) => mapRow(item, rowNum++)),
+        subtotalText: `SUBTOTAL ${sortBy === 'UNIT' ? `UNIT [${grp.key}]` : `TANGGAL [${grp.key}]`} (${grp.items.length} Bon): ${grp.subtotalLtr.toLocaleString('id-ID')} Liter`,
+      }));
+    } else {
+      pdfRows = filteredList.map((item, idx) => mapRow(item, idx + 1));
+    }
+
+    const result = generateFogTableReportPDF({
+      reportTitle: 'LAPORAN DISTRIBUSI BBM SOLAR KE UNIT ALAT',
+      reportSubtitle: 'Dispensing Armada Fuel Truck (FT-01) ke Alat Berat Quarry',
+      accentColor: [234, 88, 12],
+      periodeLabel: formatPeriodeLabel(startDate, endDate),
+      sortLabel,
+      filterInfo: filterParts.join(' • '),
+      headers: [
+        'No',
+        'No Bon',
+        'Tanggal & Jam',
+        'Unit (CN & Nama)',
+        'Operator',
+        'HM',
+        'Flowmeter (Start-Stop)',
+        'Qty (Ltr)',
+        'Driver FT',
+        'PIC FOG',
+        'Lokasi Pit',
+      ],
+      rows: pdfRows,
+      groups: pdfGroups,
+      grandTotalRow: [
+        {
+          content: `GRAND TOTAL DISTRIBUSI SOLAR (${filteredList.length} Bon Transaksi)`,
+          colSpan: 7,
+          styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: `${totalFilteredQty.toLocaleString('id-ID')} Ltr`,
+          styles: { fillColor: [30, 41, 59], textColor: [251, 146, 60], fontStyle: 'bold', halign: 'right' },
+        },
+        {
+          content: '',
+          colSpan: 3,
+          styles: { fillColor: [30, 41, 59] },
+        },
+      ],
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 22, fontStyle: 'bold' },
+        2: { cellWidth: 22, halign: 'center' },
+        3: { cellWidth: 34 },
+        4: { cellWidth: 28 },
+        5: { cellWidth: 16, halign: 'right' },
+        6: { cellWidth: 30, halign: 'center' },
+        7: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+        8: { cellWidth: 26 },
+        9: { cellWidth: 26 },
+        10: { cellWidth: 'auto' },
+      },
+      kpis: [
+        { label: 'Total Bon Transaksi', value: `${filteredList.length} Lembar Bon`, accent: 'slate' },
+        { label: 'Total Solar Tersalur', value: `${totalFilteredQty.toLocaleString('id-ID')} Liter`, accent: 'amber' },
+        { label: 'Rata-Rata / Bon', value: `${filteredList.length > 0 ? Math.round(totalFilteredQty / filteredList.length).toLocaleString('id-ID') : 0} Ltr`, accent: 'emerald' },
+      ],
+      signatories,
+      currentUser,
+      filenamePrefix: 'Laporan_Distribusi_Fuel_Unit',
+    });
+
+    setPreviewPdfUrl(result.blobUrl);
+    setPreviewFilename(result.filename);
+    setPreviewDownloadFn(() => result.download);
+    setShowPdfPreview(true);
+  };
 
   // Export CSV dengan Kop PT BATU KALI WELANG AMPUH
   const handleExportCSV = () => {
@@ -530,23 +676,16 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
             </button>
           )}
 
-          {(canPrintPreview || canExport) && onOpenExportPDF && (
+          {(canPrintPreview || canExport) && (
             <button
               id="btn-export-pdf-fuel-distribution"
               type="button"
-              onClick={() => {
-                onOpenExportPDF({
-                  groupBy: sortBy === 'UNIT' ? 'UNIT' : sortBy === 'DATE' ? 'DATE' : 'NONE',
-                  unitFilter: filterUnit !== 'ALL' ? filterUnit : undefined,
-                  startDate: filterDate || undefined,
-                  endDate: filterDate || undefined,
-                });
-              }}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-xs font-mono transition active:scale-95"
-              title="Buka Print Preview / Laporan PDF Distribusi Fuel Truck ke Unit (PT BATU KALI WELANG AMPUH)"
+              onClick={handleDirectPrintPreview}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/50 text-orange-300 font-bold text-xs font-mono transition active:scale-95 whitespace-nowrap"
+              title="Buka Print Preview Langsung Sesuai Tabel Distribusi Fuel"
             >
-              <FileDown className="w-4 h-4 text-orange-400" />
-              <span>{canExport ? 'Print Preview / Export PDF' : 'Print Preview'}</span>
+              <Eye className="w-4 h-4 text-orange-400" />
+              <span>Print Preview</span>
             </button>
           )}
 
@@ -614,107 +753,63 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
         </div>
       </div>
 
-      {/* FILTER & SORT BY / SUB TOTAL TOOLBAR */}
-      <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-4 shadow-xl space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Sort By & Sub Total Selector */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-mono font-bold text-stone-400 uppercase tracking-wider">
-              Sort By &amp; Sub Total:
-            </span>
-            <div className="inline-flex rounded-xl bg-stone-950 p-1 border border-stone-800">
-              <button
-                type="button"
-                onClick={() => setSortBy('DEFAULT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition ${
-                  sortBy === 'DEFAULT'
-                    ? 'bg-amber-500 text-stone-950 shadow-sm'
-                    : 'text-stone-400 hover:text-stone-200'
-                }`}
-              >
-                Standar
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy('UNIT')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                  sortBy === 'UNIT'
-                    ? 'bg-amber-500 text-stone-950 shadow-sm'
-                    : 'text-stone-400 hover:text-stone-200'
-                }`}
-              >
-                <span>🚜 Per Unit (+Subtotal)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSortBy('DATE')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                  sortBy === 'DATE'
-                    ? 'bg-amber-500 text-stone-950 shadow-sm'
-                    : 'text-stone-400 hover:text-stone-200'
-                }`}
-              >
-                <span>📅 Per Hari (+Subtotal)</span>
-              </button>
-            </div>
+      {/* Validasi 3 Pihak Inline (Modul 3 Pattern) */}
+      <FogValidationBar
+        manpowerList={manpowerList}
+        signatories={signatories}
+        administrasiList={resolvedSig.administrasiList}
+        kabagList={resolvedSig.kabagList}
+        onChange={updateSignatories}
+        onSave={saveSignatories}
+        accentColor="orange"
+      />
+
+      {/* FILTER TANGGAL DI AWAL & URUTKAN / SORT BY */}
+      <FogDateSortToolbar
+        startDate={startDate}
+        endDate={endDate}
+        onStartDateChange={setStartDate}
+        onEndDateChange={setEndDate}
+        sortBy={sortBy}
+        onSortByChange={(val) => setSortBy(val as any)}
+        sortOptions={sortOptionsList}
+        hasActiveFilter={Boolean(startDate || endDate || filterUnit !== 'ALL' || searchTerm || sortBy !== 'DATE_DESC')}
+        onResetAll={() => {
+          setStartDate('');
+          setEndDate('');
+          setFilterUnit('ALL');
+          setSearchTerm('');
+          setSortBy('DATE_DESC');
+        }}
+        extraFilters={
+          <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
+            <span className="text-[10px] text-stone-400 font-mono uppercase">Unit:</span>
+            <select
+              value={filterUnit}
+              onChange={(e) => setFilterUnit(e.target.value)}
+              className="bg-stone-950 text-xs text-stone-200 font-mono focus:outline-none"
+            >
+              <option value="ALL">Semua Unit ({availableUnitList.length})</option>
+              {availableUnitList.map((u) => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
           </div>
-
-          {/* Filter Unit & Filter Tanggal */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Filter Unit */}
-            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
-              <span className="text-[10px] text-stone-400 font-mono uppercase">Unit:</span>
-              <select
-                value={filterUnit}
-                onChange={(e) => setFilterUnit(e.target.value)}
-                className="bg-transparent text-xs text-stone-200 font-mono focus:outline-none"
-              >
-                <option value="ALL">Semua Unit ({availableUnitList.length})</option>
-                {availableUnitList.map((u) => (
-                  <option key={u} value={u}>{u}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filter Tanggal */}
-            <div className="flex items-center gap-1.5 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800">
-              <Calendar className="w-3.5 h-3.5 text-stone-400" />
-              <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-                className="bg-transparent text-xs text-stone-200 font-mono focus:outline-none"
-              />
-              {filterDate && (
-                <button
-                  type="button"
-                  onClick={() => setFilterDate('')}
-                  className="text-stone-500 hover:text-stone-200"
-                  title="Hapus filter tanggal"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {(sortBy !== 'DEFAULT' || filterUnit !== 'ALL' || filterDate) && (
-          <div className="text-[11px] font-mono text-amber-400 pt-1 border-t border-stone-800/60 flex items-center justify-between flex-wrap gap-2">
+        }
+        resultSummary={
+          <>
             <span>
-              ✓ Mode Aktif:{' '}
-              <strong>
-                {sortBy === 'UNIT' ? 'Dikelompokkan Per Unit dengan Baris Subtotal' : sortBy === 'DATE' ? 'Dikelompokkan Per Hari dengan Baris Subtotal' : 'Standar'}
-              </strong>
+              Periode: <strong className="text-amber-400">{formatPeriodeLabel(startDate, endDate)}</strong> • Urutan:{' '}
+              <strong className="text-stone-200">{sortOptionsList.find((o) => o.value === sortBy)?.label}</strong>
               {filterUnit !== 'ALL' && ` • Filter Unit: ${filterUnit}`}
-              {filterDate && ` • Filter Tanggal: ${filterDate}`}
             </span>
-            <span className="text-stone-400">
-              Total Hasil: <strong>{filteredList.length}</strong> bon • <strong>{totalFilteredQty.toLocaleString('id-ID')}</strong> Liter
+            <span>
+              Total Hasil: <strong className="text-stone-100">{filteredList.length}</strong> bon •{' '}
+              <strong className="text-orange-400">{totalFilteredQty.toLocaleString('id-ID')}</strong> Liter
             </span>
-          </div>
-        )}
-      </div>
+          </>
+        }
+      />
 
       {/* Table Data Distribusi Fuel */}
       <div className="bg-stone-900/90 border border-stone-800 rounded-2xl p-5 shadow-xl space-y-4">
@@ -949,14 +1044,6 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
                     {totalFilteredQty.toLocaleString('id-ID')} Ltr
                   </td>
                   <td colSpan={4}></td>
-                </tr>
-              )}
-
-              {filteredList.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-8 text-center text-stone-500">
-                    Belum ada data transaksi bon pengisian fuel untuk unit alat.
-                  </td>
                 </tr>
               )}
             </tbody>
@@ -1417,6 +1504,22 @@ export const FuelDistributionSubView: React.FC<FuelDistributionSubViewProps> = (
           </div>
         </div>
       )}
+
+      {/* Direct Print Preview Modal (Tanpa Masuk Sub-Form) */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title="Pratinjau Laporan Distribusi Fuel ke Unit Alat"
+        subtitle={`Periode: ${formatPeriodeLabel(startDate, endDate)} • Urutan: ${sortOptionsList.find((o) => o.value === sortBy)?.label}`}
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={canExport && previewDownloadFn ? previewDownloadFn : undefined}
+        signatoriesSummary={{
+          pembuat: signatories.pembuatName,
+          diperiksa: signatories.diperiksaName,
+          diketahui: signatories.disetujuiName,
+        }}
+      />
     </div>
   );
 };

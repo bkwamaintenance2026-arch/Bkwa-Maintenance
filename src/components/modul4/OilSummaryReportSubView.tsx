@@ -36,8 +36,10 @@ import {
   ChevronRight, 
   Check, 
   Edit3,
-  Save
+  Save,
+  ArrowUpDown
 } from 'lucide-react';
+import { getTimestampMs } from './FogDateRangeBar';
 
 interface OilSummaryReportSubViewProps {
   oilDistributions: OilDistributionRecord[];
@@ -83,6 +85,8 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   const [selectedUnit, setSelectedUnit] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'TABLE' | 'GROUPED'>('TABLE');
+  const [summarySortBy, setSummarySortBy] = useState<'KELUAR_DESC' | 'SALDO_ASC' | 'SALDO_DESC' | 'NAME_ASC'>('KELUAR_DESC');
+  const [distSortBy, setDistSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'UNIT' | 'JENIS_OLI' | 'QTY_DESC'>('DATE_DESC');
 
   // 2. Signatories (Validasi 3 Pihak)
   const resolvedSignatories = useMemo(() => {
@@ -272,9 +276,14 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
       };
     });
 
-    // Urutkan: yang memiliki aktivitas penggunaan atau stok terbanyak di atas
-    return list.sort((a, b) => b.keluar - a.keluar || b.saldoAkhir - a.saldoAkhir);
-  }, [allDistinctOilTypes, oilStockInputs, oilDistributions, periodBalance, startDate, endDate]);
+    // Urutkan sesuai pilihan Sort By
+    return list.sort((a, b) => {
+      if (summarySortBy === 'SALDO_ASC') return a.saldoAkhir - b.saldoAkhir;
+      if (summarySortBy === 'SALDO_DESC') return b.saldoAkhir - a.saldoAkhir;
+      if (summarySortBy === 'NAME_ASC') return a.tipe.localeCompare(b.tipe, 'id');
+      return b.keluar - a.keluar || b.saldoAkhir - a.saldoAkhir;
+    });
+  }, [allDistinctOilTypes, oilStockInputs, oilDistributions, periodBalance, startDate, endDate, summarySortBy]);
 
   // 6. Ringkasan Total Semua Oli
   const totalSaldoAwal = useMemo(() => oilStockSummary.reduce((acc, c) => acc + c.saldoAwal, 0), [oilStockSummary]);
@@ -282,9 +291,9 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
   const totalKeluar = useMemo(() => oilStockSummary.reduce((acc, c) => acc + c.keluar, 0), [oilStockSummary]);
   const totalSaldoAkhir = useMemo(() => oilStockSummary.reduce((acc, c) => acc + c.saldoAkhir, 0), [oilStockSummary]);
 
-  // 7. Filter Rincian Distribusi Oli
+  // 7. Filter & Sort Rincian Distribusi Oli
   const filteredDistributions = useMemo(() => {
-    return oilDistributions.filter((d) => {
+    const base = oilDistributions.filter((d) => {
       if (!matchDate(d.tanggal)) return false;
 
       if (selectedOilType !== 'ALL') {
@@ -324,7 +333,25 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
 
       return true;
     });
-  }, [oilDistributions, startDate, endDate, selectedOilType, selectedUnit, searchQuery]);
+
+    return [...base].sort((a, b) => {
+      if (distSortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (distSortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (distSortBy === 'UNIT') {
+        const cmp = (a.noUnit || '').localeCompare(b.noUnit || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      if (distSortBy === 'JENIS_OLI') {
+        const cmp = (a.jenisOli || '').localeCompare(b.jenisOli || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [oilDistributions, startDate, endDate, selectedOilType, selectedUnit, searchQuery, distSortBy]);
 
   // Grouped by Oil Type for Grouped View
   const groupedDistributions = useMemo(() => {
@@ -706,6 +733,8 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
               setSelectedOilType('ALL');
               setSelectedUnit('ALL');
               setSearchQuery('');
+              setSummarySortBy('KELUAR_DESC');
+              setDistSortBy('DATE_DESC');
             }}
             className="flex items-center gap-1 text-[10px] font-mono text-stone-500 hover:text-stone-300 transition"
           >
@@ -973,9 +1002,25 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </p>
           </div>
 
-          <div className="text-[11px] font-mono text-stone-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>{oilStockSummary.length} Varian Oli Terdata</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[11px] font-mono font-bold text-stone-400">Urutkan:</span>
+              <select
+                value={summarySortBy}
+                onChange={(e) => setSummarySortBy(e.target.value as any)}
+                className="px-2.5 py-1.5 bg-stone-900 border border-stone-700 rounded-lg text-[11px] font-mono text-stone-200 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="KELUAR_DESC">Pemakaian Terbanyak</option>
+                <option value="SALDO_ASC">Stok Paling Kritis (Terkecil)</option>
+                <option value="SALDO_DESC">Saldo Akhir Terbesar</option>
+                <option value="NAME_ASC">Abjad Nama Oli (A-Z)</option>
+              </select>
+            </div>
+            <div className="text-[11px] font-mono text-stone-400 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>{oilStockSummary.length} Varian Oli Terdata</span>
+            </div>
           </div>
         </div>
 
@@ -1115,11 +1160,27 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 mr-1">
+              <ArrowUpDown className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[11px] font-mono font-bold text-stone-400">Urutkan:</span>
+              <select
+                value={distSortBy}
+                onChange={(e) => setDistSortBy(e.target.value as any)}
+                className="px-2.5 py-1.5 bg-stone-900 border border-stone-700 rounded-lg text-[11px] font-mono text-stone-200 focus:outline-none focus:border-emerald-500"
+              >
+                <option value="DATE_DESC">Tanggal Terbaru</option>
+                <option value="DATE_ASC">Tanggal Terlama</option>
+                <option value="UNIT">Abjad No Unit</option>
+                <option value="JENIS_OLI">Abjad Jenis Oli</option>
+                <option value="QTY_DESC">Qty Terbanyak (Ltr)</option>
+              </select>
+            </div>
+
             <button
               type="button"
               onClick={() => setViewMode('TABLE')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition whitespace-nowrap shrink-0 ${
                 viewMode === 'TABLE'
                   ? 'bg-emerald-500 text-stone-950'
                   : 'bg-stone-800 text-stone-400 hover:text-stone-200'
@@ -1130,7 +1191,7 @@ export const OilSummaryReportSubView: React.FC<OilSummaryReportSubViewProps> = (
             <button
               type="button"
               onClick={() => setViewMode('GROUPED')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition whitespace-nowrap shrink-0 ${
                 viewMode === 'GROUPED'
                   ? 'bg-emerald-500 text-stone-950'
                   : 'bg-stone-800 text-stone-400 hover:text-stone-200'

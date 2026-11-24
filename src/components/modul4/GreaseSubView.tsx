@@ -13,7 +13,8 @@ import {
   canUserInsertModule, 
   canUserEditModule, 
   canUserDeleteModule, 
-  canUserExportModule 
+  canUserExportModule,
+  canUserPrintPreviewModule
 } from '../../utils/storage';
 import { 
   Plus, 
@@ -37,6 +38,15 @@ import {
   Eye
 } from 'lucide-react';
 import { TimeInput24Hour } from '../common/TimeInput24Hour';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
+import { FogValidationBar, useFogSignatories } from './FogValidationBar';
+import {
+  FogDateSortToolbar,
+  matchesDateRange,
+  formatPeriodeLabel,
+  getTimestampMs,
+} from './FogDateRangeBar';
+import { generateFogTableReportPDF } from '../../utils/pdfGenerator';
 
 interface GreaseSubViewProps {
   units: HeavyEquipment[];
@@ -86,11 +96,22 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
   const canEdit = isDev || canUserEditModule(currentUser, 4);
   const canDelete = isDev || canUserDeleteModule(currentUser, 4);
   const canExport = isDev || canUserExportModule(currentUser, 4);
+  const canPrintPreview = isDev || canUserPrintPreviewModule(currentUser, 4);
 
   // Tab internal: 'dist' (Pemakaian Unit) or 'stock' (Penerimaan Gudang)
   const [activeTab, setActiveTab] = useState<'dist' | 'stock'>('dist');
   const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [sortBy, setSortBy] = useState<'DATE_DESC' | 'DATE_ASC' | 'GROUP_ENTITY' | 'DATE' | 'QTY_DESC'>('DATE_DESC');
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Validasi 3 Pihak & Direct Print Preview (seperti Modul 3)
+  const { signatories, resolved: resolvedSig, updateSignatories, saveSignatories } = useFogSignatories(manpowerList, currentUser);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [previewDownloadFn, setPreviewDownloadFn] = useState<(() => void) | null>(null);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -306,26 +327,272 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
     }
   };
 
-  // Filtered lists
+  // Filtered & sorted lists
   const filteredDistributions = useMemo(() => {
-    const q = searchTerm.toLowerCase();
-    return greaseDistributions.filter(d => 
-      d.noUnit.toLowerCase().includes(q) ||
-      d.namaAlat.toLowerCase().includes(q) ||
-      d.namaGrease.toLowerCase().includes(q) ||
-      (d.picMekanik || '').toLowerCase().includes(q) ||
-      (d.lokasiPelumasan || '').toLowerCase().includes(q)
-    );
-  }, [greaseDistributions, searchTerm]);
+    const q = searchTerm.toLowerCase().trim();
+    const base = greaseDistributions.filter((d) => {
+      const matchSearch =
+        !q ||
+        d.noUnit.toLowerCase().includes(q) ||
+        d.namaAlat.toLowerCase().includes(q) ||
+        d.namaGrease.toLowerCase().includes(q) ||
+        (d.picMekanik || '').toLowerCase().includes(q) ||
+        (d.lokasiPelumasan || '').toLowerCase().includes(q) ||
+        (d.noBon || '').toLowerCase().includes(q);
+      const matchRange = matchesDateRange(d.tanggal, startDate, endDate);
+      return matchSearch && matchRange;
+    });
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (sortBy === 'GROUP_ENTITY') {
+        const cmp = (a.noUnit || '').localeCompare(b.noUnit || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [greaseDistributions, searchTerm, startDate, endDate, sortBy]);
 
   const filteredStocks = useMemo(() => {
-    const q = searchTerm.toLowerCase();
-    return greaseStocks.filter(s => 
-      s.distributor.toLowerCase().includes(q) ||
-      s.namaGrease.toLowerCase().includes(q) ||
-      (s.picGudang || '').toLowerCase().includes(q)
+    const q = searchTerm.toLowerCase().trim();
+    const base = greaseStocks.filter((s) => {
+      const matchSearch =
+        !q ||
+        s.distributor.toLowerCase().includes(q) ||
+        s.namaGrease.toLowerCase().includes(q) ||
+        (s.picGudang || '').toLowerCase().includes(q) ||
+        (s.remark || '').toLowerCase().includes(q);
+      const matchRange = matchesDateRange(s.tanggal, startDate, endDate);
+      return matchSearch && matchRange;
+    });
+
+    return [...base].sort((a, b) => {
+      if (sortBy === 'DATE_ASC') {
+        return getTimestampMs(a.tanggal, a.jam) - getTimestampMs(b.tanggal, b.jam);
+      }
+      if (sortBy === 'QTY_DESC') {
+        return (Number(b.qty) || 0) - (Number(a.qty) || 0);
+      }
+      if (sortBy === 'GROUP_ENTITY') {
+        const cmp = (a.distributor || '').localeCompare(b.distributor || '', 'id');
+        if (cmp !== 0) return cmp;
+      }
+      return getTimestampMs(b.tanggal, b.jam) - getTimestampMs(a.tanggal, a.jam);
+    });
+  }, [greaseStocks, searchTerm, startDate, endDate, sortBy]);
+
+  const groupedDistributions = useMemo(() => {
+    if (sortBy !== 'GROUP_ENTITY' && sortBy !== 'DATE') return null;
+    const map = new Map<string, { key: string; label: string; items: GreaseDistributionRecord[]; subtotalQty: number }>();
+    filteredDistributions.forEach((d) => {
+      const key = sortBy === 'GROUP_ENTITY' ? (d.noUnit || 'LAINNYA').trim().toUpperCase() : (d.tanggal || '-');
+      const label = sortBy === 'GROUP_ENTITY'
+        ? `${d.noUnit || 'LAINNYA'}${d.namaAlat ? ` • ${d.namaAlat}` : ''}`
+        : `Tanggal: ${d.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalQty: 0 };
+      cur.items.push(d);
+      cur.subtotalQty += Number(d.qty) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
     );
-  }, [greaseStocks, searchTerm]);
+  }, [filteredDistributions, sortBy]);
+
+  const groupedStocks = useMemo(() => {
+    if (sortBy !== 'GROUP_ENTITY' && sortBy !== 'DATE') return null;
+    const map = new Map<string, { key: string; label: string; items: GreaseStockRecord[]; subtotalQty: number }>();
+    filteredStocks.forEach((s) => {
+      const key = sortBy === 'GROUP_ENTITY' ? (s.distributor || 'LAINNYA').trim() : (s.tanggal || '-');
+      const label = sortBy === 'GROUP_ENTITY' ? `Distributor: ${s.distributor || 'LAINNYA'}` : `Tanggal: ${s.tanggal}`;
+      const cur = map.get(key) || { key, label, items: [], subtotalQty: 0 };
+      cur.items.push(s);
+      cur.subtotalQty += Number(s.qty) || 0;
+      map.set(key, cur);
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      sortBy === 'DATE' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)
+    );
+  }, [filteredStocks, sortBy]);
+
+  const totalDistQty = useMemo(
+    () => filteredDistributions.reduce((sum, d) => sum + (Number(d.qty) || 0), 0),
+    [filteredDistributions]
+  );
+
+  const totalStockQty = useMemo(
+    () => filteredStocks.reduce((sum, s) => sum + (Number(s.qty) || 0), 0),
+    [filteredStocks]
+  );
+
+  const sortOptionsList = useMemo(
+    () => [
+      { value: 'DATE_DESC', label: 'Tanggal Terbaru' },
+      { value: 'DATE_ASC', label: 'Tanggal Terlama' },
+      { value: 'GROUP_ENTITY', label: activeTab === 'dist' ? 'Per Unit (+Subtotal)' : 'Per Distributor (+Subtotal)' },
+      { value: 'DATE', label: 'Per Hari (+Subtotal)' },
+      { value: 'QTY_DESC', label: 'Qty Terbanyak' },
+    ],
+    [activeTab]
+  );
+
+  // Direct Print Preview Sesuai Tabel & Tab Aktif
+  const handleDirectPrintPreview = () => {
+    if (!canPrintPreview && !canExport) return;
+    const sortLabel = sortOptionsList.find((o) => o.value === sortBy)?.label || 'Tanggal Terbaru';
+    const filterInfo = searchTerm.trim() ? `Cari: "${searchTerm.trim()}"` : '';
+
+    if (activeTab === 'dist') {
+      const mapRow = (d: GreaseDistributionRecord, num: number): (string | number)[] => [
+        num,
+        d.noBon || '-',
+        `${d.tanggal} ${d.jam || ''}`.trim(),
+        `${d.noUnit}\n${d.namaAlat || ''}`,
+        (Number(d.hmUnit) || 0).toLocaleString('id-ID'),
+        d.namaGrease || '-',
+        `${(Number(d.qty) || 0).toLocaleString('id-ID')} ${d.satuan || 'Kg'}`,
+        d.lokasiPelumasan || '-',
+        d.picMekanik || '-',
+      ];
+
+      let pdfRows: (string | number)[][] = [];
+      let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+      if (groupedDistributions) {
+        let rowNum = 1;
+        pdfGroups = groupedDistributions.map((grp) => ({
+          headerText: `${sortBy === 'GROUP_ENTITY' ? `UNIT: ${grp.label}` : grp.label} (${grp.items.length} Bon)`,
+          rows: grp.items.map((item) => mapRow(item, rowNum++)),
+          subtotalText: `SUBTOTAL ${grp.key} (${grp.items.length} Bon): ${grp.subtotalQty.toLocaleString('id-ID')} Kg`,
+        }));
+      } else {
+        pdfRows = filteredDistributions.map((item, idx) => mapRow(item, idx + 1));
+      }
+
+      const result = generateFogTableReportPDF({
+        reportTitle: 'LAPORAN PEMAKAIAN GREASE UNIT ALAT BERAT',
+        reportSubtitle: 'Bon Pengeluaran & Pelumasan Grease (Pin & Bushing, Chassis, Wheel Hub)',
+        accentColor: [217, 119, 6],
+        periodeLabel: formatPeriodeLabel(startDate, endDate),
+        sortLabel,
+        filterInfo,
+        headers: ['No', 'No Bon', 'Waktu', 'CN Unit & Alat', 'HM', 'Jenis Grease', 'Qty', 'Lokasi Pelumasan', 'Mekanik'],
+        rows: pdfRows,
+        groups: pdfGroups,
+        grandTotalRow: [
+          {
+            content: `GRAND TOTAL PEMAKAIAN GREASE (${filteredDistributions.length} Bon)`,
+            colSpan: 6,
+            styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+          },
+          {
+            content: `${totalDistQty.toLocaleString('id-ID')} Kg`,
+            styles: { fillColor: [30, 41, 59], textColor: [251, 191, 36], fontStyle: 'bold', halign: 'right' },
+          },
+          { content: '', colSpan: 2, styles: { fillColor: [30, 41, 59] } },
+        ],
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 26, fontStyle: 'bold' },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 34 },
+          4: { cellWidth: 16, halign: 'right' },
+          5: { cellWidth: 40 },
+          6: { cellWidth: 20, halign: 'right', fontStyle: 'bold' },
+          7: { cellWidth: 'auto' },
+          8: { cellWidth: 28 },
+        },
+        kpis: [
+          { label: 'Total Bon Pemakaian', value: `${filteredDistributions.length} Bon`, accent: 'slate' },
+          { label: 'Total Grease Terpakai', value: `${totalDistQty.toLocaleString('id-ID')} Kg`, accent: 'amber' },
+          { label: 'Unit Dilumasi', value: `${new Set(filteredDistributions.map((r) => r.noUnit)).size} Unit`, accent: 'emerald' },
+        ],
+        signatories,
+        currentUser,
+        filenamePrefix: 'Laporan_Pemakaian_Grease_Unit',
+      });
+
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setPreviewDownloadFn(() => result.download);
+      setShowPdfPreview(true);
+    } else {
+      const mapRow = (s: GreaseStockRecord, num: number): (string | number)[] => [
+        num,
+        s.distributor || '-',
+        `${s.tanggal} ${s.jam || ''}`.trim(),
+        s.namaGrease || '-',
+        `${(Number(s.qty) || 0).toLocaleString('id-ID')} ${s.satuan || 'Pail'}`,
+        s.picGudang || '-',
+        s.remark || '-',
+      ];
+
+      let pdfRows: (string | number)[][] = [];
+      let pdfGroups: { headerText: string; rows: (string | number)[][]; subtotalText?: string }[] | undefined;
+
+      if (groupedStocks) {
+        let rowNum = 1;
+        pdfGroups = groupedStocks.map((grp) => ({
+          headerText: `${grp.label} (${grp.items.length} Penerimaan)`,
+          rows: grp.items.map((item) => mapRow(item, rowNum++)),
+          subtotalText: `SUBTOTAL ${grp.key} (${grp.items.length} Penerimaan): ${grp.subtotalQty.toLocaleString('id-ID')} Kemasan`,
+        }));
+      } else {
+        pdfRows = filteredStocks.map((item, idx) => mapRow(item, idx + 1));
+      }
+
+      const result = generateFogTableReportPDF({
+        reportTitle: 'LAPORAN PENERIMAAN STOK GREASE GUDANG',
+        reportSubtitle: 'Rekapitulasi Masuk Pelumas Padat (Drum / Pail / Kg) Gudang Material',
+        accentColor: [217, 119, 6],
+        periodeLabel: formatPeriodeLabel(startDate, endDate),
+        sortLabel,
+        filterInfo,
+        headers: ['No', 'Distributor / Vendor', 'Tanggal & Jam', 'Nama Grease', 'Jumlah Masuk', 'PIC Gudang', 'Remark'],
+        rows: pdfRows,
+        groups: pdfGroups,
+        grandTotalRow: [
+          {
+            content: `GRAND TOTAL PENERIMAAN STOK GREASE (${filteredStocks.length} Penerimaan)`,
+            colSpan: 4,
+            styles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right' },
+          },
+          {
+            content: `${totalStockQty.toLocaleString('id-ID')} Kemasan`,
+            styles: { fillColor: [30, 41, 59], textColor: [52, 211, 153], fontStyle: 'bold', halign: 'right' },
+          },
+          { content: '', colSpan: 2, styles: { fillColor: [30, 41, 59] } },
+        ],
+        columnStyles: {
+          0: { cellWidth: 10, halign: 'center' },
+          1: { cellWidth: 48, fontStyle: 'bold' },
+          2: { cellWidth: 30, halign: 'center' },
+          3: { cellWidth: 52 },
+          4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+          5: { cellWidth: 35 },
+          6: { cellWidth: 'auto' },
+        },
+        kpis: [
+          { label: 'Total Penerimaan', value: `${filteredStocks.length} DO / Masuk`, accent: 'slate' },
+          { label: 'Total Qty Kemasan', value: `${totalStockQty.toLocaleString('id-ID')} Unit`, accent: 'emerald' },
+          { label: 'Distributor Aktif', value: `${new Set(filteredStocks.map((r) => r.distributor)).size} Vendor`, accent: 'amber' },
+        ],
+        signatories,
+        currentUser,
+        filenamePrefix: 'Laporan_Stok_Masuk_Grease',
+      });
+
+      setPreviewPdfUrl(result.blobUrl);
+      setPreviewFilename(result.filename);
+      setPreviewDownloadFn(() => result.download);
+      setShowPdfPreview(true);
+    }
+  };
 
   // Export CSV
   const handleExportCSV = () => {
@@ -423,15 +690,28 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             {canExport && (
               <button
                 type="button"
                 onClick={handleExportCSV}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-mono font-bold border border-stone-700 transition"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-mono font-bold border border-stone-700 transition whitespace-nowrap shrink-0"
               >
                 <Download className="w-3.5 h-3.5 text-stone-400" />
                 <span>Export CSV</span>
+              </button>
+            )}
+
+            {(canPrintPreview || canExport) && (
+              <button
+                id="btn-print-preview-grease"
+                type="button"
+                onClick={handleDirectPrintPreview}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-mono font-bold border border-emerald-500/50 transition whitespace-nowrap shrink-0"
+                title="Print Preview langsung sesuai tabel aktif"
+              >
+                <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Print Preview</span>
               </button>
             )}
 
@@ -439,7 +719,7 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
               <button
                 type="button"
                 onClick={handleOpenAddModal}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono transition shadow-lg shadow-amber-500/20 active:scale-95"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold font-mono transition shadow-lg shadow-amber-500/20 active:scale-95 whitespace-nowrap shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>{activeTab === 'dist' ? '+ Catat Bon Pemakaian' : '+ Input Stok Masuk'}</span>
@@ -449,11 +729,11 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
         </div>
 
         {/* Sub-Tabs: Pemakaian vs Stok Masuk */}
-        <div className="flex items-center gap-2 mt-5 border-t border-stone-800/80 pt-4">
+        <div className="flex flex-wrap items-center gap-2 mt-5 border-t border-stone-800/80 pt-4">
           <button
             type="button"
             onClick={() => setActiveTab('dist')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono transition ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono transition whitespace-nowrap shrink-0 ${
               activeTab === 'dist'
                 ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
                 : 'bg-stone-800/80 text-stone-400 hover:text-stone-200'
@@ -466,7 +746,7 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('stock')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono transition ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold font-mono transition whitespace-nowrap shrink-0 ${
               activeTab === 'stock'
                 ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
                 : 'bg-stone-800/80 text-stone-400 hover:text-stone-200'
@@ -478,18 +758,51 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
+      {/* Inline 3-Party Validation Bar (seperti Modul 3) */}
+      <FogValidationBar
+        manpowerList={manpowerList}
+        signatories={signatories}
+        resolved={resolvedSig}
+        onChange={updateSignatories}
+        onSave={saveSignatories}
+        canEdit={canEdit}
+        accentColor="amber"
+      />
+
+      {/* Search + Filter Tanggal di Awal & Urutkan (Sort By) */}
+      <div className="space-y-3">
+        <div className="relative">
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={activeTab === 'dist' ? 'Cari unit alat, jenis grease, mekanik...' : 'Cari distributor, nama grease, PIC...'}
+            placeholder={activeTab === 'dist' ? 'Cari unit alat, no bon, jenis grease, mekanik...' : 'Cari distributor, nama grease, PIC...'}
             className="w-full bg-stone-900 border border-stone-800 rounded-xl pl-9 pr-4 py-2.5 text-xs text-stone-100 placeholder-stone-500 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono"
           />
         </div>
+
+        <FogDateSortToolbar
+          startDate={startDate}
+          endDate={endDate}
+          onStartDateChange={setStartDate}
+          onEndDateChange={setEndDate}
+          sortBy={sortBy}
+          onSortByChange={(val) => setSortBy(val as any)}
+          sortOptions={sortOptionsList}
+          onReset={() => {
+            setStartDate('');
+            setEndDate('');
+            setSortBy('DATE_DESC');
+            setSearchTerm('');
+          }}
+          accentColor="amber"
+          resultSummary={
+            activeTab === 'dist'
+              ? `${filteredDistributions.length} Bon • Total ${totalDistQty.toLocaleString('id-ID')} Kg`
+              : `${filteredStocks.length} Penerimaan • Total ${totalStockQty.toLocaleString('id-ID')} Kemasan`
+          }
+        />
       </div>
 
       {/* Main Table: Distribution or Stock */}
@@ -511,28 +824,22 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
-                {filteredDistributions.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="py-8 text-center text-stone-500 text-xs">
-                      Belum ada data bon pemakaian grease. Klik tombol "+ Catat Bon Pemakaian" di atas.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredDistributions.map((d) => (
+                {(() => {
+                  const renderDistRow = (d: GreaseDistributionRecord) => (
                     <tr key={d.id} className="hover:bg-stone-800/40 transition">
                       <td className="py-3 px-3.5 font-bold text-amber-400">{d.noBon || '-'}</td>
-                      <td className="py-3 px-3.5 text-stone-400">{d.tanggal} {d.jam}</td>
+                      <td className="py-3 px-3.5 text-stone-400 whitespace-nowrap">{d.tanggal} {d.jam}</td>
                       <td className="py-3 px-3.5">
                         <span className="font-bold text-stone-100">{d.noUnit}</span>
                         <span className="block text-[10px] text-stone-400 truncate max-w-[140px]">{d.namaAlat}</span>
                       </td>
-                      <td className="py-3 px-3.5 text-stone-300">{d.hmUnit}</td>
+                      <td className="py-3 px-3.5 text-stone-300 tabular-nums">{d.hmUnit}</td>
                       <td className="py-3 px-3.5">
                         <span className="px-2 py-0.5 rounded bg-stone-800 border border-stone-700 text-stone-200 text-[11px] font-semibold">
                           {d.namaGrease}
                         </span>
                       </td>
-                      <td className="py-3 px-3.5 font-bold text-amber-300">{d.qty} {d.satuan}</td>
+                      <td className="py-3 px-3.5 font-bold text-amber-300 tabular-nums">{d.qty} {d.satuan}</td>
                       <td className="py-3 px-3.5 text-stone-300">{d.lokasiPelumasan}</td>
                       <td className="py-3 px-3.5 text-stone-300">{d.picMekanik}</td>
                       <td className="py-3 px-3.5 text-center">
@@ -553,9 +860,56 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                         )}
                       </td>
                     </tr>
-                  ))
-                )}
+                  );
+
+                  if (filteredDistributions.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={9} className="py-8 text-center text-stone-500 text-xs">
+                          Belum ada data bon pemakaian grease sesuai filter yang dipilih.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  if (groupedDistributions) {
+                    return groupedDistributions.map((grp) => (
+                      <React.Fragment key={grp.key}>
+                        <tr className="bg-amber-950/30 border-y border-amber-500/20">
+                          <td colSpan={9} className="py-2 px-3.5 text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wide">
+                            {grp.label} ({grp.items.length} Bon)
+                          </td>
+                        </tr>
+                        {grp.items.map(renderDistRow)}
+                        <tr className="bg-stone-950/90 border-b border-amber-500/30">
+                          <td colSpan={5} className="py-2 px-3.5 text-right text-[11px] font-bold text-stone-300">
+                            SUBTOTAL {grp.key} ({grp.items.length} Bon):
+                          </td>
+                          <td className="py-2 px-3.5 font-black text-amber-400 text-xs tabular-nums">
+                            {grp.subtotalQty.toLocaleString('id-ID')} Kg
+                          </td>
+                          <td colSpan={3} />
+                        </tr>
+                      </React.Fragment>
+                    ));
+                  }
+
+                  return filteredDistributions.map(renderDistRow);
+                })()}
               </tbody>
+              {filteredDistributions.length > 0 && (
+                <tfoot className="bg-stone-950 border-t-2 border-amber-500/40 font-mono">
+                  <tr>
+                    <td colSpan={5} className="py-3 px-3.5 text-right text-xs font-black text-stone-200 uppercase">
+                      GRAND TOTAL PEMAKAIAN ({filteredDistributions.length} Bon):
+                    </td>
+                    <td className="py-3 px-3.5 text-sm font-black text-amber-400 tabular-nums">
+                      {totalDistQty.toLocaleString('id-ID')} Kg
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         ) : (
@@ -573,23 +927,17 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-800/60 font-mono">
-                {filteredStocks.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-stone-500 text-xs">
-                      Belum ada data stok masuk grease. Klik tombol "+ Input Stok Masuk" di atas.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredStocks.map((s) => (
+                {(() => {
+                  const renderStockRow = (s: GreaseStockRecord) => (
                     <tr key={s.id} className="hover:bg-stone-800/40 transition">
                       <td className="py-3 px-3.5 font-bold text-stone-100">{s.distributor}</td>
-                      <td className="py-3 px-3.5 text-stone-400">{s.tanggal} {s.jam}</td>
+                      <td className="py-3 px-3.5 text-stone-400 whitespace-nowrap">{s.tanggal} {s.jam}</td>
                       <td className="py-3 px-3.5">
                         <span className="px-2 py-0.5 rounded bg-stone-800 border border-stone-700 text-stone-200 text-[11px] font-semibold">
                           {s.namaGrease}
                         </span>
                       </td>
-                      <td className="py-3 px-3.5 font-bold text-emerald-400">{s.qty} {s.satuan}</td>
+                      <td className="py-3 px-3.5 font-bold text-emerald-400 tabular-nums">{s.qty} {s.satuan}</td>
                       <td className="py-3 px-3.5 text-stone-300">{s.picGudang}</td>
                       <td className="py-3 px-3.5 text-stone-400 text-[11px] truncate max-w-xs">{s.remark || '-'}</td>
                       <td className="py-3 px-3.5 text-center">
@@ -610,9 +958,56 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
                         )}
                       </td>
                     </tr>
-                  ))
-                )}
+                  );
+
+                  if (filteredStocks.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-stone-500 text-xs">
+                          Belum ada data stok masuk grease sesuai filter yang dipilih.
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  if (groupedStocks) {
+                    return groupedStocks.map((grp) => (
+                      <React.Fragment key={grp.key}>
+                        <tr className="bg-amber-950/30 border-y border-amber-500/20">
+                          <td colSpan={7} className="py-2 px-3.5 text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wide">
+                            {grp.label} ({grp.items.length} Penerimaan)
+                          </td>
+                        </tr>
+                        {grp.items.map(renderStockRow)}
+                        <tr className="bg-stone-950/90 border-b border-amber-500/30">
+                          <td colSpan={3} className="py-2 px-3.5 text-right text-[11px] font-bold text-stone-300">
+                            SUBTOTAL {grp.key} ({grp.items.length} DO):
+                          </td>
+                          <td className="py-2 px-3.5 font-black text-emerald-400 text-xs tabular-nums">
+                            {grp.subtotalQty.toLocaleString('id-ID')} Kemasan
+                          </td>
+                          <td colSpan={3} />
+                        </tr>
+                      </React.Fragment>
+                    ));
+                  }
+
+                  return filteredStocks.map(renderStockRow);
+                })()}
               </tbody>
+              {filteredStocks.length > 0 && (
+                <tfoot className="bg-stone-950 border-t-2 border-amber-500/40 font-mono">
+                  <tr>
+                    <td colSpan={3} className="py-3 px-3.5 text-right text-xs font-black text-stone-200 uppercase">
+                      GRAND TOTAL PENERIMAAN ({filteredStocks.length} DO):
+                    </td>
+                    <td className="py-3 px-3.5 text-sm font-black text-emerald-400 tabular-nums">
+                      {totalStockQty.toLocaleString('id-ID')} Kemasan
+                    </td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
@@ -981,6 +1376,26 @@ export const GreaseSubView: React.FC<GreaseSubViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* MODAL PRATINJAU PDF RESMI */}
+      <PdfPreviewModal
+        isOpen={showPdfPreview}
+        onClose={() => setShowPdfPreview(false)}
+        title={
+          activeTab === 'dist'
+            ? 'PRATINJAU PRINT - PEMAKAIAN GREASE UNIT'
+            : 'PRATINJAU PRINT - STOK MASUK GREASE GUDANG'
+        }
+        subtitle="PT BATU KALI WELANG AMPUH • Site Quarry Purwosari"
+        pdfBlobUrl={previewPdfUrl}
+        filename={previewFilename}
+        onDownload={canExport && previewDownloadFn ? previewDownloadFn : undefined}
+        signatoriesSummary={{
+          pembuat: `${signatories.pembuat} (${signatories.pembuatJabatan})`,
+          diperiksa: `${signatories.diperiksa} (${signatories.diperiksaJabatan})`,
+          diketahui: `${signatories.kabag} (${signatories.kabagJabatan})`,
+        }}
+      />
     </div>
   );
 };
