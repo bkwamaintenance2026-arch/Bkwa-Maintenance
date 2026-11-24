@@ -16,6 +16,7 @@ import {
   ManpowerData,
   RplPackage,
   MasterPartItem,
+  MasterPartInterchangeItem,
   PurchaseRequest
 } from '../types';
 import { ReportSignatories } from './reportSignatories';
@@ -4434,26 +4435,75 @@ export const generateRplPackagePDF = ({
 
   const masterMap = new Map<string, MasterPartItem>();
   const masterPnMap = new Map<string, MasterPartItem>();
+  const interchangeByPnMap = new Map<string, MasterPartInterchangeItem[]>();
+
+  const appendInterchangeToMap = (key: string, subs?: MasterPartInterchangeItem[]) => {
+    if (!key || !subs || subs.length === 0) return;
+    const existing = interchangeByPnMap.get(key) || [];
+    const seen = new Set(
+      existing.map((s) => `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`)
+    );
+    subs.forEach((s) => {
+      const sig = `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`;
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        existing.push(s);
+      }
+    });
+    interchangeByPnMap.set(key, existing);
+  };
+
   masterParts.forEach((mp) => {
     masterMap.set(mp.id, mp);
     const pnNorm = (mp.pn || '').trim().toLowerCase();
     if (pnNorm && pnNorm !== '-' && !masterPnMap.has(pnNorm)) {
       masterPnMap.set(pnNorm, mp);
     }
+    if (pnNorm && pnNorm !== '-') {
+      appendInterchangeToMap(pnNorm, mp.interchangeParts);
+    }
   });
 
-  const tableData = pkg.items.map((item, idx) => {
+  const tableBodyRows: (string | number)[][] = [];
+  const interchangeSubRowIndices = new Set<number>();
+  const interchangeParentRowIndices = new Set<number>();
+  let interchangeItemCount = 0;
+
+  pkg.items.forEach((item, idx) => {
     const itemPnNorm = (item.pn || '').trim().toLowerCase();
     const livePart =
       masterMap.get(item.masterPartId) ||
       (itemPnNorm && itemPnNorm !== '-' ? masterPnMap.get(itemPnNorm) : undefined);
-    const tipe = livePart?.partRelationType || 'In Line';
-    const interchangeCount = livePart?.interchangeParts?.length || 0;
-    const tipeLabel = tipe === 'Interchange' ? `Interchange (${interchangeCount})` : 'In Line';
+
+    const livePnNorm = (livePart?.pn || item.pn || '').trim().toLowerCase();
+    const collectedSubs = [
+      ...(livePart?.interchangeParts || []),
+      ...(livePnNorm && livePnNorm !== '-' ? interchangeByPnMap.get(livePnNorm) || [] : []),
+    ];
+    const subDedup = new Map<string, MasterPartInterchangeItem>();
+    collectedSubs.forEach((s) => {
+      const sig = `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`;
+      if (!subDedup.has(sig)) subDedup.set(sig, s);
+    });
+    const mergedSubs = Array.from(subDedup.values());
+
+    const tipe =
+      livePart?.partRelationType === 'Interchange' || mergedSubs.length > 0
+        ? 'Interchange'
+        : 'In Line';
+    const tipeLabel =
+      tipe === 'Interchange'
+        ? `Interchange (${mergedSubs.length} opsi)`
+        : 'In Line';
+    if (tipe === 'Interchange') interchangeItemCount += 1;
+
     const stokMaster = livePart ? `${livePart.qty} ${livePart.satuan || item.satuan}` : '-';
     const minStock = livePart ? `${Number(livePart.minStock ?? 0)}` : '-';
 
-    return [
+    const parentRowIdx = tableBodyRows.length;
+    if (tipe === 'Interchange') interchangeParentRowIndices.add(parentRowIdx);
+
+    tableBodyRows.push([
       (idx + 1).toString(),
       livePart?.pn || item.pn || '-',
       livePart?.namaPart || item.namaPart || '-',
@@ -4464,12 +4514,68 @@ export const generateRplPackagePDF = ({
       `${item.qtyNeeded} ${livePart?.satuan || item.satuan || 'Pcs'}`,
       stokMaster,
       minStock,
-      item.notes || '-',
-    ];
+      item.notes || (tipe === 'Interchange' && mergedSubs.length > 0 ? 'Bisa supply Induk / Interchange' : '-'),
+    ]);
+
+    if (tipe === 'Interchange' && mergedSubs.length > 0) {
+      mergedSubs.forEach((sub, sIdx) => {
+        const subRowIdx = tableBodyRows.length;
+        interchangeSubRowIndices.add(subRowIdx);
+        const subStok = `${Number(sub.qty ?? 0)} ${sub.satuan || livePart?.satuan || item.satuan || 'Pcs'}`;
+        const subMin = `${Number(sub.minStock ?? 0)}`;
+        tableBodyRows.push([
+          `->`,
+          `ALT: ${sub.pn || '-'}`,
+          `[Alternatif #${sIdx + 1}] ${sub.namaPart || '-'}`,
+          sub.merk || '-',
+          sub.kategori || '-',
+          sub.jenisPart || '-',
+          `Alternatif #${sIdx + 1}`,
+          `Opsi (${item.qtyNeeded} ${sub.satuan || item.satuan || 'Pcs'})`,
+          subStok,
+          subMin,
+          sub.remark ? `${sub.remark} (Bisa supply salah satu)` : 'Opsi pengganti (supply salah satu)',
+        ]);
+      });
+    } else if (tipe === 'Interchange' && mergedSubs.length === 0) {
+      const subRowIdx = tableBodyRows.length;
+      interchangeSubRowIndices.add(subRowIdx);
+      tableBodyRows.push([
+        '->',
+        '-',
+        '[Interchange] Belum ada part alternatif terdaftar di Master Part',
+        '-',
+        '-',
+        '-',
+        'Interchange (0)',
+        '-',
+        '-',
+        '-',
+        '-',
+      ]);
+    }
   });
 
+  // Info banner khusus Logistik jika ada item Interchange
+  let tableStartY = 47;
+  if (interchangeItemCount > 0) {
+    doc.setFillColor(239, 246, 255);
+    doc.setDrawColor(147, 197, 253);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(14, 46, 269, 7, 1, 1, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(3, 105, 161);
+    doc.text(
+      `CATATAN LOGISTIK: Terdapat ${interchangeItemCount} item bertanda [Interchange]. Daftar part pengganti (ALT) ditampilkan tepat di bawah baris induk — Logistik dapat menyuplai SALAH SATU (Part Induk ATAU salah satu Alternatif).`,
+      17,
+      50.5
+    );
+    tableStartY = 55;
+  }
+
   autoTable(doc, {
-    startY: 47,
+    startY: tableStartY,
     head: [[
       'No',
       'Part Number (PN)',
@@ -4483,7 +4589,7 @@ export const generateRplPackagePDF = ({
       'Min Stock',
       'Catatan',
     ]],
-    body: tableData,
+    body: tableBodyRows,
     theme: 'grid',
     headStyles: {
       fillColor: [30, 41, 59],
@@ -4495,8 +4601,8 @@ export const generateRplPackagePDF = ({
       cellPadding: 2,
     },
     bodyStyles: {
-      fontSize: 7.5,
-      cellPadding: 2,
+      fontSize: 7.4,
+      cellPadding: 1.8,
       textColor: [30, 41, 59],
       valign: 'middle',
     },
@@ -4508,13 +4614,31 @@ export const generateRplPackagePDF = ({
       4: { halign: 'center', cellWidth: 22 },
       5: { halign: 'center', cellWidth: 22 },
       6: { halign: 'center', cellWidth: 24 },
-      7: { halign: 'center', fontStyle: 'bold', cellWidth: 20 },
-      8: { halign: 'center', cellWidth: 22 },
+      7: { halign: 'center', fontStyle: 'bold', cellWidth: 22 },
+      8: { halign: 'center', cellWidth: 20 },
       9: { halign: 'center', cellWidth: 16 },
       10: { cellWidth: 32 },
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (interchangeSubRowIndices.has(data.row.index)) {
+          data.cell.styles.fillColor = [239, 246, 255];
+          data.cell.styles.textColor = [30, 58, 138];
+          data.cell.styles.fontSize = 7;
+          if (data.column.index === 1 || data.column.index === 6) {
+            data.cell.styles.textColor = [3, 105, 161];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.column.index === 2) {
+            data.cell.styles.fontStyle = 'normal';
+          }
+        } else if (interchangeParentRowIndices.has(data.row.index) && data.column.index === 6) {
+          data.cell.styles.textColor = [3, 105, 161];
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
     },
     margin: { left: 14, right: 14 },
   });
@@ -5057,6 +5181,341 @@ export const generateFogTableReportPDF = ({
 
   return { doc, blob, blobUrl, filename, download };
 };
+
+export interface MasterPartCatalogPrintRow {
+  noUrut: number;
+  unitSummary: string;
+  unitDetailText?: string;
+  kategori: string;
+  jenisPart: string;
+  merk: string;
+  fungsi: string;
+  namaPart: string;
+  pn: string;
+  qty: number;
+  minStock: number;
+  satuan: string;
+  isInterchange: boolean;
+  interchangeParts: MasterPartInterchangeItem[];
+  remark?: string;
+}
+
+export interface GenerateMasterPartCatalogPdfParams {
+  items: MasterPartCatalogPrintRow[];
+  filterInfo?: string;
+  currentUser?: UserAccount | null;
+  signatories?: Partial<ReportSignatories>;
+}
+
+/**
+ * Generate PDF Resmi Katalog Master Part & Interchange (Modul 8)
+ * Menampilkan rincian alternatif Interchange di bawah item induknya agar Logistik dapat menyuplai salah satu.
+ */
+export const generateMasterPartCatalogPDF = ({
+  items,
+  filterInfo,
+  currentUser,
+  signatories,
+}: GenerateMasterPartCatalogPdfParams): GeneratedPDFResult => {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const now = new Date();
+  const nowStr = now.toLocaleString('id-ID', { hour12: false });
+  const dateStr = now.toISOString().split('T')[0];
+  const exporterName = currentUser?.fullName || currentUser?.username || 'Admin Workshop';
+
+  const primaryColor: [number, number, number] = [180, 83, 9];
+  const darkTextColor: [number, number, number] = [30, 41, 59];
+  const grayTextColor: [number, number, number] = [100, 116, 139];
+
+  const renderHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...grayTextColor);
+    doc.text('DIVISI MAINTENANCE & LOGISTIK WORKSHOP • QUARRY PURWOSARI', 14, 12);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(190, 18, 60);
+    doc.text('KATALOG MASTER PART & INTERCHANGE', 283, 12, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(...primaryColor);
+    doc.text('PT BATU KALI WELANG AMPUH (ETIKA09)', 148.5, 18, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setTextColor(...darkTextColor);
+    doc.text('DAFTAR KATALOG SUKU CADANG, MATERIAL & OPSI INTERCHANGE LOGISTIK', 148.5, 23.5, { align: 'center' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `Dicetak: ${nowStr}   |   Oleh: ${exporterName}${filterInfo ? `   |   Filter: ${filterInfo}` : ''}`,
+      148.5,
+      28,
+      { align: 'center' }
+    );
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.6);
+    doc.line(14, 30.5, 283, 30.5);
+  };
+
+  renderHeader();
+
+  const interchangePartCount = items.filter((i) => i.isInterchange).length;
+  const totalInterchangeSubs = items.reduce((acc, i) => acc + (i.interchangeParts?.length || 0), 0);
+  const lowStockCount = items.filter(
+    (i) => Number(i.minStock || 0) > 0 && Number(i.qty || 0) <= Number(i.minStock || 0)
+  ).length;
+
+  const startY = 33;
+  const cardWidth = 64.5;
+  const cardHeight = 11;
+  const cards = [
+    { label: 'TOTAL PN KATALOG', val: `${items.length} PN Unik`, color: [180, 83, 9] as [number, number, number] },
+    { label: 'ITEM INTERCHANGE', val: `${interchangePartCount} PN (${totalInterchangeSubs} Opsi)`, color: [3, 105, 161] as [number, number, number] },
+    { label: 'FAST MOVING', val: `${items.filter((i) => i.kategori === 'Fast Moving').length} PN`, color: [16, 185, 129] as [number, number, number] },
+    { label: 'STOK RENDAH / KRITIS', val: `${lowStockCount} PN`, color: [190, 18, 60] as [number, number, number] },
+  ];
+
+  cards.forEach((c, idx) => {
+    const x = 14 + idx * (cardWidth + 3.6);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, startY, cardWidth, cardHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(c.label, x + 3, startY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...c.color);
+    doc.text(c.val, x + 3, startY + 8.8);
+  });
+
+  let tableStartY = 47;
+  if (interchangePartCount > 0) {
+    doc.setFillColor(239, 246, 255);
+    doc.setDrawColor(147, 197, 253);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(14, 46, 269, 7, 1, 1, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(3, 105, 161);
+    doc.text(
+      `CATATAN LOGISTIK: Item bertanda [Interchange] menampilkan part alternatif (ALT) tepat di bawah baris induknya. Logistik dapat menyuplai SALAH SATU (Part Induk ATAU Part Alternatif) sesuai ketersediaan stok.`,
+      17,
+      50.5
+    );
+    tableStartY = 55;
+  }
+
+  const tableRows: (string | number)[][] = [];
+  const interchangeSubRowIndices = new Set<number>();
+  const interchangeParentRowIndices = new Set<number>();
+
+  items.forEach((item, idx) => {
+    const tipeLabel = item.isInterchange
+      ? `Interchange (${item.interchangeParts.length} opsi)`
+      : 'In Line';
+    const parentIdx = tableRows.length;
+    if (item.isInterchange) interchangeParentRowIndices.add(parentIdx);
+
+    tableRows.push([
+      String(item.noUrut || idx + 1),
+      item.unitDetailText ? `${item.unitSummary}\n${item.unitDetailText}` : item.unitSummary,
+      item.pn || '-',
+      item.namaPart || '-',
+      item.merk || '-',
+      item.kategori || '-',
+      `${item.jenisPart || '-'}\n${item.fungsi || '-'}`,
+      tipeLabel,
+      `${Number(item.qty || 0)} ${item.satuan || 'Pcs'}`,
+      String(Number(item.minStock ?? 0)),
+      item.remark || (item.isInterchange && item.interchangeParts.length > 0 ? 'Supply Induk / Alternatif' : '-'),
+    ]);
+
+    if (item.isInterchange && item.interchangeParts.length > 0) {
+      item.interchangeParts.forEach((sub, sIdx) => {
+        const subIdx = tableRows.length;
+        interchangeSubRowIndices.add(subIdx);
+        tableRows.push([
+          '->',
+          'Alternatif Pengganti',
+          `ALT: ${sub.pn || '-'}`,
+          `[Alternatif #${sIdx + 1}] ${sub.namaPart || '-'}`,
+          sub.merk || '-',
+          sub.kategori || '-',
+          `${sub.jenisPart || '-'}\n${sub.fungsi || '-'}`,
+          `Opsi #${sIdx + 1}`,
+          `${Number(sub.qty || 0)} ${sub.satuan || item.satuan || 'Pcs'}`,
+          String(Number(sub.minStock ?? 0)),
+          sub.remark ? `${sub.remark} (Bisa supply salah satu)` : 'Opsi supply Logistik (salah satu)',
+        ]);
+      });
+    } else if (item.isInterchange && item.interchangeParts.length === 0) {
+      const subIdx = tableRows.length;
+      interchangeSubRowIndices.add(subIdx);
+      tableRows.push([
+        '->',
+        'Alternatif Pengganti',
+        '-',
+        '[Interchange] Belum ada part alternatif terdaftar',
+        '-',
+        '-',
+        '-',
+        'Interchange (0)',
+        '-',
+        '-',
+        '-',
+      ]);
+    }
+  });
+
+  autoTable(doc, {
+    startY: tableStartY,
+    head: [[
+      'No',
+      'Reff Unit',
+      'Part Number (PN)',
+      'Nama Part',
+      'Merk',
+      'Kategori',
+      'Jenis / Fungsi',
+      'Tipe',
+      'Stok',
+      'Min Stock',
+      'Remark / Keterangan',
+    ]],
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 2,
+    },
+    bodyStyles: {
+      fontSize: 7.3,
+      cellPadding: 1.8,
+      textColor: [30, 41, 59],
+      valign: 'middle',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      1: { cellWidth: 28 },
+      2: { fontStyle: 'bold', textColor: [180, 83, 9], cellWidth: 31 },
+      3: { fontStyle: 'bold', cellWidth: 48 },
+      4: { cellWidth: 22 },
+      5: { halign: 'center', cellWidth: 21 },
+      6: { halign: 'center', cellWidth: 25 },
+      7: { halign: 'center', cellWidth: 24 },
+      8: { halign: 'center', fontStyle: 'bold', cellWidth: 18 },
+      9: { halign: 'center', cellWidth: 15 },
+      10: { cellWidth: 28 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body') {
+        if (interchangeSubRowIndices.has(data.row.index)) {
+          data.cell.styles.fillColor = [239, 246, 255];
+          data.cell.styles.textColor = [30, 58, 138];
+          data.cell.styles.fontSize = 7;
+          if (data.column.index === 2 || data.column.index === 7) {
+            data.cell.styles.textColor = [3, 105, 161];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.column.index === 3) {
+            data.cell.styles.fontStyle = 'normal';
+          }
+        } else if (interchangeParentRowIndices.has(data.row.index) && data.column.index === 7) {
+          data.cell.styles.textColor = [3, 105, 161];
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  let finalY = (doc as any).lastAutoTable?.finalY || 150;
+  if (finalY > 148) {
+    doc.addPage();
+    renderHeader();
+    finalY = 38;
+  } else {
+    finalY += 8;
+  }
+
+  const sigY = finalY;
+  const colWidth = 75;
+  const pembuatNama = signatories?.pembuatName || exporterName;
+  const pembuatJabatan = signatories?.pembuatJabatan || 'Admin Workshop';
+  const diperiksaNama = signatories?.diperiksaName || 'Dodik Mariyadi';
+  const diperiksaJabatan = signatories?.diperiksaJabatan || 'Kabag Workshop';
+  const disetujuiNama = signatories?.disetujuiName || 'Logistik / Management';
+  const disetujuiJabatan = signatories?.disetujuiJabatan || 'Management';
+
+  const sigCols = [
+    { title: 'Dibuat Oleh :', name: pembuatNama, role: pembuatJabatan, x: 14 },
+    { title: 'Diperiksa Oleh :', name: diperiksaNama, role: diperiksaJabatan, x: 14 + colWidth + 20 },
+    { title: 'Disetujui Oleh :', name: disetujuiNama, role: disetujuiJabatan, x: 14 + (colWidth + 20) * 2 },
+  ];
+
+  sigCols.forEach((sc) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...darkTextColor);
+    doc.text(sc.title, sc.x + colWidth / 2, sigY, { align: 'center' });
+    doc.line(sc.x + 10, sigY + 18, sc.x + colWidth - 10, sigY + 18);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text(sc.name, sc.x + colWidth / 2, sigY + 22, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...grayTextColor);
+    doc.text(sc.role, sc.x + colWidth / 2, sigY + 26, { align: 'center' });
+  });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.4);
+    doc.line(14, 200, 283, 200);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...grayTextColor);
+    doc.text(
+      `PT BATU KALI WELANG AMPUH (ETIKA09) • Katalog Master Part & Interchange • Halaman ${i} dari ${totalPages}`,
+      148.5,
+      204,
+      { align: 'center' }
+    );
+  }
+
+  const cleanDate = dateStr.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Master_Part_Interchange_BKWA_${cleanDate}.pdf`;
+  const blob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(blob);
+  const download = () => doc.save(filename);
+
+  return { doc, blob, blobUrl, filename, download };
+};
+
 
 
 

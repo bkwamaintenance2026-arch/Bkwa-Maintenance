@@ -107,6 +107,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
   const [expandedInterchangePartIds, setExpandedInterchangePartIds] = useState<
     Record<string, boolean>
   >({});
+  const [expandedBuilderInterchangeKeys, setExpandedBuilderInterchangeKeys] = useState<
+    Record<string, boolean>
+  >({});
 
   // Clickable Reff Unit detail modal state
   const [unitRefModal, setUnitRefModal] = useState<{
@@ -199,6 +202,27 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     masterParts.forEach((p) => {
       const k = getNormalizedMasterPartKey(p);
       if (!map.has(k)) map.set(k, p);
+    });
+    return map;
+  }, [masterParts]);
+
+  const mergedInterchangeByPnKeyMap = useMemo(() => {
+    const map = new Map<string, NonNullable<MasterPartItem['interchangeParts']>>();
+    masterParts.forEach((p) => {
+      const k = getNormalizedMasterPartKey(p);
+      if (!k || !p.interchangeParts || p.interchangeParts.length === 0) return;
+      const cur = map.get(k) || [];
+      const seen = new Set(
+        cur.map((s) => `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`)
+      );
+      p.interchangeParts.forEach((s) => {
+        const sig = `${(s.pn || '').trim().toUpperCase()}::${(s.namaPart || '').trim().toLowerCase()}`;
+        if (!seen.has(sig)) {
+          seen.add(sig);
+          cur.push(s);
+        }
+      });
+      map.set(k, cur);
     });
     return map;
   }, [masterParts]);
@@ -572,6 +596,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         unitCount: number;
         isAllNonUnit: boolean;
         unitSummaryLabel: string;
+        mergedInterchangeParts: NonNullable<MasterPartItem['interchangeParts']>;
+        isInterchange: boolean;
       }
     >();
 
@@ -588,6 +614,9 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         : unitCount === 1
         ? unitRefs[0].noUnit
         : `${unitCount} Unit`;
+      const mergedInterchangeParts = mergedInterchangeByPnKeyMap.get(pnKey) || p.interchangeParts || [];
+      const isInterchange =
+        p.partRelationType === 'Interchange' || mergedInterchangeParts.length > 0;
       groupedMap.set(pnKey, {
         pnKey,
         primary: p,
@@ -595,6 +624,8 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         unitCount,
         isAllNonUnit,
         unitSummaryLabel,
+        mergedInterchangeParts,
+        isInterchange,
       });
     });
 
@@ -608,6 +639,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     includeNonUnitInPicker,
     pickerSearch,
     pickerKategoriFilter,
+    mergedInterchangeByPnKeyMap,
   ]);
 
   const draftItemsByPnMap = useMemo(() => {
@@ -634,6 +666,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
     setPickerSearch('');
     setPickerKategoriFilter('ALL');
     setIncludeNonUnitInPicker(false);
+    setExpandedBuilderInterchangeKeys({});
   };
 
   const handleOpenNewBuilder = () => {
@@ -985,12 +1018,21 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
       defaultAlasan: `Pengadaan suku cadang Service Periodic ${pkg.serviceInterval} — Unit ${resolvedNoUnit} — Paket RPL ${pkg.packagePn} (${pkg.packageName}).`,
       items: pkg.items.map((item) => {
         const live = resolveLiveMasterPart(item);
+        const pnKey = getNormalizedMasterPartKey(live || item);
+        const subs = mergedInterchangeByPnKeyMap.get(pnKey) || live?.interchangeParts || [];
+        const baseNote = item.notes || `Paket ${pkg.packagePn} (${pkg.serviceInterval})`;
+        const interchangeNote =
+          subs.length > 0
+            ? ` | Alternatif Interchange (Supply salah satu): ${subs
+                .map((s) => `${s.pn || '-'}${s.merk ? ` (${s.merk})` : ''}`)
+                .join(', ')}`
+            : '';
         return {
           partNumber: live?.pn || item.pn || '-',
           namaBarang: live?.namaPart || item.namaPart,
           qtyDiminta: Math.max(1, Number(item.qtyNeeded) || 1),
           satuan: live?.satuan || item.satuan || 'Pcs',
-          keterangan: item.notes || `Paket ${pkg.packagePn} (${pkg.serviceInterval})`,
+          keterangan: `${baseNote}${interchangeNote}`,
         };
       }),
     });
@@ -1579,8 +1621,13 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                   <tbody className="divide-y divide-stone-800/70">
                     {activePackage.items.map((item, idx) => {
                       const live = resolveLiveMasterPart(item);
-                      const tipe = live?.partRelationType || 'In Line';
-                      const subParts = live?.interchangeParts || [];
+                      const pnKey = getNormalizedMasterPartKey(live || item);
+                      const subParts =
+                        mergedInterchangeByPnKeyMap.get(pnKey) || live?.interchangeParts || [];
+                      const tipe =
+                        live?.partRelationType === 'Interchange' || subParts.length > 0
+                          ? 'Interchange'
+                          : 'In Line';
                       const isInterchange = tipe === 'Interchange' || subParts.length > 0;
                       const isExpanded = Boolean(expandedInterchangePartIds[item.id]);
                       const liveQty = live ? Number(live.qty || 0) : 0;
@@ -2046,127 +2093,206 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
                         const part = group.primary;
                         const selectedItem = draftItemsByPnMap.get(group.pnKey);
                         const isChecked = Boolean(selectedItem);
-                        const tipe = part.partRelationType || 'In Line';
+                        const subParts = group.mergedInterchangeParts;
+                        const isInterchange = group.isInterchange;
+                        const isBuilderExpanded = Boolean(expandedBuilderInterchangeKeys[group.pnKey]);
                         const primaryModel =
                           part.modelUnit && part.modelUnit !== '-'
                             ? part.modelUnit
                             : group.unitRefs[0]?.modelUnit || '';
 
                         return (
-                          <tr
-                            key={group.pnKey}
-                            className={`transition-colors ${
-                              isChecked ? 'bg-amber-500/10' : 'hover:bg-stone-900/50'
-                            }`}
-                          >
-                            {/* Kotak Centang di Sisi Kiri */}
-                            <td className="py-2.5 px-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => handleToggleMasterPartCheckbox(part)}
-                                className="w-4 h-4 accent-amber-500 cursor-pointer"
-                              />
-                            </td>
-                            <td className="py-2.5 px-2 text-center font-mono text-stone-400 tabular-nums">
-                              {idx + 1}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setUnitRefModal({
-                                    isOpen: true,
-                                    title: `Reff Unit — ${part.pn || part.namaPart}`,
-                                    subtitle: `${part.namaPart}${part.merk ? ` (${part.merk})` : ''} · ${group.unitCount} Referensi`,
-                                    entries: group.unitRefs,
-                                  })
-                                }
-                                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-stone-700 bg-stone-900 hover:border-amber-500/60 hover:bg-stone-800/80 text-[11px] font-mono transition-colors"
-                                title="Klik untuk melihat detail No Unit, Brand & Model Unit"
-                              >
-                                <Truck className="w-3 h-3 text-amber-400 shrink-0" />
-                                <span
-                                  className={
-                                    group.isAllNonUnit
-                                      ? 'text-sky-300 font-semibold'
-                                      : 'text-amber-300 font-bold'
-                                  }
-                                >
-                                  {group.unitSummaryLabel}
-                                </span>
-                              </button>
-                              {primaryModel && !group.isAllNonUnit && (
-                                <span className="block text-[10px] text-stone-400 mt-0.5 truncate max-w-[128px]">
-                                  {primaryModel}
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 font-mono font-semibold text-amber-300">
-                              {part.pn || '-'}
-                            </td>
-                            <td
-                              onClick={() => handleToggleMasterPartCheckbox(part)}
-                              className="py-2.5 px-3 font-medium text-stone-100 cursor-pointer"
+                          <React.Fragment key={group.pnKey}>
+                            <tr
+                              className={`transition-colors ${
+                                isChecked ? 'bg-amber-500/10' : 'hover:bg-stone-900/50'
+                              }`}
                             >
-                              {part.namaPart}
-                            </td>
-                            <td className="py-2.5 px-3 text-stone-300">{part.merk || '-'}</td>
-                            <td className="py-2.5 px-3">
-                              <span className="block text-stone-200">{part.kategori}</span>
-                              <span className="text-[10px] text-stone-400 block">{part.jenisPart}</span>
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <span
-                                className={`text-[11px] font-medium ${
-                                  tipe === 'Interchange' ? 'text-sky-300' : 'text-stone-400'
-                                }`}
+                              {/* Kotak Centang di Sisi Kiri */}
+                              <td className="py-2.5 px-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleMasterPartCheckbox(part)}
+                                  className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                />
+                              </td>
+                              <td className="py-2.5 px-2 text-center font-mono text-stone-400 tabular-nums">
+                                {idx + 1}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setUnitRefModal({
+                                      isOpen: true,
+                                      title: `Reff Unit — ${part.pn || part.namaPart}`,
+                                      subtitle: `${part.namaPart}${part.merk ? ` (${part.merk})` : ''} · ${group.unitCount} Referensi`,
+                                      entries: group.unitRefs,
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-stone-700 bg-stone-900 hover:border-amber-500/60 hover:bg-stone-800/80 text-[11px] font-mono transition-colors"
+                                  title="Klik untuk melihat detail No Unit, Brand & Model Unit"
+                                >
+                                  <Truck className="w-3 h-3 text-amber-400 shrink-0" />
+                                  <span
+                                    className={
+                                      group.isAllNonUnit
+                                        ? 'text-sky-300 font-semibold'
+                                        : 'text-amber-300 font-bold'
+                                    }
+                                  >
+                                    {group.unitSummaryLabel}
+                                  </span>
+                                </button>
+                                {primaryModel && !group.isAllNonUnit && (
+                                  <span className="block text-[10px] text-stone-400 mt-0.5 truncate max-w-[128px]">
+                                    {primaryModel}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono font-semibold text-amber-300">
+                                {part.pn || '-'}
+                              </td>
+                              <td
+                                onClick={() => handleToggleMasterPartCheckbox(part)}
+                                className="py-2.5 px-3 font-medium text-stone-100 cursor-pointer"
                               >
-                                {tipe}
-                                {tipe === 'Interchange' && part.interchangeParts?.length
-                                  ? ` (${part.interchangeParts.length})`
-                                  : ''}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono tabular-nums text-stone-200">
-                              {part.qty}{' '}
-                              <span className="text-[10px] text-stone-400">{part.satuan || 'Pcs'}</span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              {isChecked && selectedItem ? (
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={selectedItem.qtyNeeded}
-                                  onChange={(e) =>
-                                    handleUpdateDraftItemByPnKey(
-                                      group.pnKey,
-                                      'qtyNeeded',
-                                      Math.max(1, Number(e.target.value) || 1)
-                                    )
-                                  }
-                                  className="w-16 bg-stone-900 border border-amber-500/60 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
-                                />
-                              ) : (
-                                <span className="text-stone-600 font-mono">-</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              {isChecked && selectedItem ? (
-                                <input
-                                  type="text"
-                                  value={selectedItem.notes || ''}
-                                  onChange={(e) =>
-                                    handleUpdateDraftItemByPnKey(group.pnKey, 'notes', e.target.value)
-                                  }
-                                  placeholder="Catatan item..."
-                                  className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
-                                />
-                              ) : (
-                                <span className="text-stone-600">-</span>
-                              )}
-                            </td>
-                          </tr>
+                                {part.namaPart}
+                              </td>
+                              <td className="py-2.5 px-3 text-stone-300">{part.merk || '-'}</td>
+                              <td className="py-2.5 px-3">
+                                <span className="block text-stone-200">{part.kategori}</span>
+                                <span className="text-[10px] text-stone-400 block">{part.jenisPart}</span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {isInterchange ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedBuilderInterchangeKeys((prev) => ({
+                                        ...prev,
+                                        [group.pnKey]: !prev[group.pnKey],
+                                      }))
+                                    }
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-sky-950/60 text-sky-300 border border-sky-800/80 hover:bg-sky-900/60 transition-colors whitespace-nowrap"
+                                    title="Klik untuk melihat opsi Interchange yang dapat disuplai Logistik"
+                                  >
+                                    {isBuilderExpanded ? (
+                                      <ChevronDown className="w-3 h-3" />
+                                    ) : (
+                                      <ChevronRight className="w-3 h-3" />
+                                    )}
+                                    <span>Interchange ({subParts.length})</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] font-medium text-stone-400">
+                                    In Line
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono tabular-nums text-stone-200">
+                                {part.qty}{' '}
+                                <span className="text-[10px] text-stone-400">{part.satuan || 'Pcs'}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {isChecked && selectedItem ? (
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={selectedItem.qtyNeeded}
+                                    onChange={(e) =>
+                                      handleUpdateDraftItemByPnKey(
+                                        group.pnKey,
+                                        'qtyNeeded',
+                                        Math.max(1, Number(e.target.value) || 1)
+                                      )
+                                    }
+                                    className="w-16 bg-stone-900 border border-amber-500/60 text-amber-300 text-center rounded px-1.5 py-1 font-mono text-xs font-bold focus:outline-none focus:border-amber-400"
+                                  />
+                                ) : (
+                                  <span className="text-stone-600 font-mono">-</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {isChecked && selectedItem ? (
+                                  <input
+                                    type="text"
+                                    value={selectedItem.notes || ''}
+                                    onChange={(e) =>
+                                      handleUpdateDraftItemByPnKey(group.pnKey, 'notes', e.target.value)
+                                    }
+                                    placeholder="Catatan item..."
+                                    className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-amber-500"
+                                  />
+                                ) : (
+                                  <span className="text-stone-600">-</span>
+                                )}
+                              </td>
+                            </tr>
+
+                            {isInterchange && isBuilderExpanded && (
+                              <tr className="bg-stone-950/90">
+                                <td colSpan={11} className="p-3 pl-12 border-b border-stone-800">
+                                  <div className="border border-sky-900/50 rounded-lg overflow-hidden bg-stone-900/60">
+                                    <div className="px-3 py-1.5 bg-sky-950/30 border-b border-sky-900/40 flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold text-sky-300">
+                                      <div className="flex items-center gap-2">
+                                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                                        <span>
+                                          Alternatif Interchange untuk {part.namaPart} ({part.pn || '-'}) — {subParts.length} opsi
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] font-normal text-sky-200/80">
+                                        Otomatis tampil di Print Preview agar Logistik dapat menyuplai salah satu
+                                      </span>
+                                    </div>
+                                    {subParts.length === 0 ? (
+                                      <div className="p-3 text-[11px] text-stone-400">
+                                        Belum ada part alternatif terdaftar pada item ini.
+                                      </div>
+                                    ) : (
+                                      <table className="w-full text-left text-[11px] border-collapse">
+                                        <thead>
+                                          <tr className="bg-stone-900/90 text-stone-400 border-b border-stone-800 font-mono">
+                                            <th className="py-1.5 px-2.5 w-10 text-center">No</th>
+                                            <th className="py-1.5 px-2.5">Part Number (PN)</th>
+                                            <th className="py-1.5 px-2.5">Nama Part Pengganti</th>
+                                            <th className="py-1.5 px-2.5">Merk</th>
+                                            <th className="py-1.5 px-2.5">Kategori / Jenis</th>
+                                            <th className="py-1.5 px-2.5 text-center">Stok</th>
+                                            <th className="py-1.5 px-2.5">Remark</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-800/60">
+                                          {subParts.map((sub, sIdx) => (
+                                            <tr key={sub.id} className="hover:bg-stone-800/30">
+                                              <td className="py-1.5 px-2.5 text-center font-mono text-stone-400">
+                                                {sub.noUrut || sIdx + 1}
+                                              </td>
+                                              <td className="py-1.5 px-2.5 font-mono font-bold text-sky-300">
+                                                {sub.pn || '-'}
+                                              </td>
+                                              <td className="py-1.5 px-2.5 text-stone-100 font-medium">
+                                                {sub.namaPart}
+                                              </td>
+                                              <td className="py-1.5 px-2.5 text-stone-300">{sub.merk || '-'}</td>
+                                              <td className="py-1.5 px-2.5 text-stone-300">
+                                                {sub.kategori} · {sub.jenisPart}
+                                              </td>
+                                              <td className="py-1.5 px-2.5 text-center font-mono text-stone-200">
+                                                {sub.qty} {sub.satuan || 'Pcs'}
+                                              </td>
+                                              <td className="py-1.5 px-2.5 text-stone-400">{sub.remark || '-'}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })
                     )}
@@ -2545,6 +2671,7 @@ export const RplSubView: React.FC<RplSubViewProps> = ({
         isOpen={pdfPreview.isOpen}
         onClose={handleClosePdfPreview}
         title={pdfPreview.title || 'Print Preview Paket RPL'}
+        subtitle="PT BATU KALI WELANG AMPUH • RPL & Opsi Interchange Logistik"
         pdfBlobUrl={pdfPreview.blobUrl}
         filename={pdfPreview.filename}
         onDownload={pdfPreview.downloadFn}

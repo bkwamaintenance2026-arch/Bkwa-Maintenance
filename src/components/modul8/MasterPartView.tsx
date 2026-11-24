@@ -24,12 +24,17 @@ import {
   addOrUpdateMasterPartInterchange,
   deleteMasterPartInterchange,
   getAllRplPackages,
+  getAllManpower,
   isDeveloper,
   canUserInsertModule,
   canUserEditModule,
   canUserDeleteModule,
-  canUserExportModule
+  canUserExportModule,
+  canUserPrintPreviewModule
 } from '../../utils/storage';
+import { generateMasterPartCatalogPDF } from '../../utils/pdfGenerator';
+import { resolveReportSignatories } from '../../utils/reportSignatories';
+import { PdfPreviewModal } from '../common/PdfPreviewModal';
 import { RplSubView } from './RplSubView';
 import { UnitRefDetailModal, UnitRefEntry } from './UnitRefDetailModal';
 import { 
@@ -47,6 +52,7 @@ import {
   Truck, 
   Wrench, 
   FileSpreadsheet, 
+  Printer,
   Copy,
   Info,
   Lock,
@@ -145,9 +151,22 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
   const canEdit = canUserEditModule(currentUser, 8) || isDev;
   const canDelete = canUserDeleteModule(currentUser, 8) || isDev;
   const canExport = canUserExportModule(currentUser, 8) || isDev;
+  const canPrintPreview = canUserPrintPreviewModule(currentUser, 8) || isDev;
 
   const [activeTab, setActiveTab] = useState<'katalog' | 'rpl'>('katalog');
   const [rplPackageCount, setRplPackageCount] = useState(0);
+  const [pdfPreview, setPdfPreview] = useState<{
+    isOpen: boolean;
+    blobUrl: string | null;
+    filename: string;
+    title: string;
+    downloadFn?: () => void;
+  }>({
+    isOpen: false,
+    blobUrl: null,
+    filename: '',
+    title: '',
+  });
 
   // Master parts list state
   const [masterParts, setMasterParts] = useState<MasterPartItem[]>([]);
@@ -1042,6 +1061,87 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handlePrintCatalogPreview = () => {
+    if (!canPrintPreview && !canExport) {
+      setFeedback({
+        type: 'error',
+        message: 'Akses ditolak: Anda tidak memiliki izin Print Preview pada Modul 8.',
+      });
+      return;
+    }
+    if (filteredMasterParts.length === 0) {
+      setFeedback({
+        type: 'error',
+        message: 'Tidak ada data Master Part yang tampil untuk dicetak.',
+      });
+      return;
+    }
+
+    const filterParts: string[] = [];
+    if (filterJenis) filterParts.push(`Jenis: ${filterJenis}`);
+    if (filterNoUnit) filterParts.push(`Unit: ${filterNoUnit}`);
+    if (filterKategori !== 'ALL') filterParts.push(`Kategori: ${filterKategori}`);
+    if (filterFungsi !== 'ALL') filterParts.push(`Fungsi: ${filterFungsi}`);
+    if (filterRelationType !== 'ALL') filterParts.push(`Tipe: ${filterRelationType}`);
+    if (searchQuery.trim()) filterParts.push(`Cari: "${searchQuery.trim()}"`);
+
+    const manpower = getAllManpower();
+    const signatories = resolveReportSignatories(manpower, currentUser);
+
+    const pdfRes = generateMasterPartCatalogPDF({
+      items: filteredMasterParts.map((group, idx) => {
+        const p = group.primary;
+        const unitDetailText =
+          group.isAllNonUnit
+            ? 'Material / Umum'
+            : group.unitRefs.length > 1
+            ? group.unitRefs
+                .slice(0, 4)
+                .map((u) => u.noUnit)
+                .join(', ') + (group.unitRefs.length > 4 ? `, +${group.unitRefs.length - 4}` : '')
+            : group.unitRefs[0]?.modelUnit && group.unitRefs[0]?.modelUnit !== '-'
+            ? group.unitRefs[0].modelUnit
+            : '';
+
+        return {
+          noUrut: p.noUrut || idx + 1,
+          unitSummary: group.unitSummaryLabel,
+          unitDetailText,
+          kategori: p.kategori || '-',
+          jenisPart: p.jenisPart || '-',
+          merk: p.merk || '-',
+          fungsi: p.fungsi || '-',
+          namaPart: p.namaPart,
+          pn: p.pn || '-',
+          qty: Number(p.qty || 0),
+          minStock: Number(p.minStock ?? 0),
+          satuan: p.satuan || 'Pcs',
+          isInterchange: group.isInterchange,
+          interchangeParts: group.mergedInterchangeParts,
+          remark: p.remark || '',
+        };
+      }),
+      filterInfo: filterParts.join(' • '),
+      currentUser,
+      signatories,
+    });
+
+    setPdfPreview({
+      isOpen: true,
+      blobUrl: pdfRes.blobUrl,
+      filename: pdfRes.filename,
+      title: `Print Preview Katalog Master Part & Interchange (${filteredMasterParts.length} PN)`,
+      downloadFn: pdfRes.download,
+    });
+  };
+
+  const handleClosePdfPreview = () => {
+    if (pdfPreview.blobUrl) {
+      URL.revokeObjectURL(pdfPreview.blobUrl);
+    }
+    setPdfPreview({ isOpen: false, blobUrl: null, filename: '', title: '' });
   };
 
   // --- IMPORT CSV MODAL / FEATURE ---
@@ -2107,10 +2207,29 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
 
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {(canPrintPreview || canExport) && (
+              <button
+                id="btn-print-preview-master-part"
+                type="button"
+                onClick={handlePrintCatalogPreview}
+                disabled={filteredMasterParts.length === 0}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+                  filteredMasterParts.length > 0
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                    : 'bg-stone-800 text-stone-600 border-stone-800 cursor-not-allowed'
+                }`}
+                title="Print Preview Katalog Master Part beserta opsi Interchange untuk Logistik"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Preview</span>
+              </button>
+            )}
+
             <button
+              type="button"
               onClick={handleExportCSV}
               disabled={!canExport || filteredMasterParts.length === 0}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
                 canExport && filteredMasterParts.length > 0
                   ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/80 hover:bg-emerald-900/40'
                   : 'bg-stone-800 text-stone-600 border-stone-800 cursor-not-allowed'
@@ -2122,9 +2241,10 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
             </button>
 
             <button
+              type="button"
               onClick={loadParts}
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-300 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-300 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg transition-colors whitespace-nowrap shrink-0"
               title="Segarkan data dari penyimpanan"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-amber-400' : ''}`} />
@@ -3301,6 +3421,17 @@ export const MasterPartView: React.FC<MasterPartViewProps> = ({ units, currentUs
         showStockColumns={true}
         canRemoveEntry={canDelete && unitModalState.entries.length > 1}
         onRemoveEntry={handleRemoveSingleUnitFromModal}
+      />
+
+      {/* MODAL PRINT PREVIEW KATALOG MASTER PART & INTERCHANGE */}
+      <PdfPreviewModal
+        isOpen={pdfPreview.isOpen}
+        onClose={handleClosePdfPreview}
+        title={pdfPreview.title || 'Print Preview Katalog Master Part'}
+        subtitle="PT BATU KALI WELANG AMPUH • Katalog & Opsi Interchange Logistik"
+        pdfBlobUrl={pdfPreview.blobUrl}
+        filename={pdfPreview.filename}
+        onDownload={canExport ? pdfPreview.downloadFn : undefined}
       />
     </div>
   );
